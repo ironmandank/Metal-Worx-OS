@@ -292,6 +292,10 @@ function EmptyState({
   );
 }
 
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
 function InventoryItems({
   setPage,
   setSelectedInventoryItem,
