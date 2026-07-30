@@ -61,6 +61,7 @@ import QuoteBuilder from "./pages/QuoteBuilder";
 import QuotePreview from "./pages/QuotePreview";
 import QuoteCenter from "./pages/QuoteCenter";
 import PilotFeedback from "./pages/PilotFeedback";
+import KnowledgeCenter from "./pages/KnowledgeCenter";
 
 import "./App.css";
 
@@ -617,6 +618,10 @@ function App() {
 
     if (page === "pilotFeedback") {
       return <PilotFeedback />;
+    }
+
+    if (page === "knowledgeCenter") {
+      return <KnowledgeCenter setPage={setPage} />;
     }
 
     if (page === "employeeLogins") {
