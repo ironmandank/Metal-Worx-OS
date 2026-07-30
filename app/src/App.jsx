@@ -265,18 +265,17 @@ function App() {
   }
 
   useEffect(() => {
-    if (!showSplash) {
+    if (!showSplash || !authSession || !authenticatedProfile) {
       return;
     }
 
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       sessionStorage.setItem("mwSplashPlayed", "true");
-
       setShowSplash(false);
     }, 4200);
 
-    return () => clearTimeout(timer);
-  }, [showSplash]);
+    return () => window.clearTimeout(timer);
+  }, [showSplash, authSession, authenticatedProfile]);
 
   function openActionCenter(filter = "All") {
     setActionCenterFilter(filter);
