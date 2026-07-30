@@ -1,0 +1,48 @@
+﻿# Application dependencies and builds
+/node_modules/
+/app/node_modules/
+/app/dist/
+/dist/
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+/app/.env
+/app/.env.*
+!/app/.env.example
+
+# Editors and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Supabase local working files
+/supabase/.temp/
+/supabase/.branches/
+
+# Database and storage backups
+/backups/
+*.backup
+*.dump
+
+# Temporary replacement and recovery files
+*.before-*
+*-before-*
+*-before-*.txt
+*.bak
+*.tmp
+
+# Local backup utilities
+/Backup-MetalWorx*.ps1
+/Test-MetalWorxBackup.ps1
+/backup-metal-worx-storage.mjs
+
+# Root utility package files; production app uses app/package.json
+/package.json
+/package-lock.json
+
+# Logs and test output
+*.log
+coverage/
