@@ -237,6 +237,11 @@ const NAV_GROUPS = [
         icon: IconScan,
       },
       {
+        page: "showSales",
+        label: "Shows & Mobile Sales",
+        icon: IconShoppingCart,
+      },
+      {
         page: "materialRequestCart",
         label: "Material Request Cart",
         icon: IconShoppingCart,

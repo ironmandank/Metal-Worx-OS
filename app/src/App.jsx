@@ -30,6 +30,7 @@ import InventoryLabelPrinting from "./pages/InventoryLabelPrinting";
 import InventoryHistory from "./pages/InventoryHistory";
 import InventoryCountMode from "./pages/InventoryCountMode";
 import InventoryImportWizard from "./pages/InventoryImportWizard";
+import ShowSales from "./pages/ShowSales";
 import QuickTurnaroundDashboard from "./pages/QuickTurnaroundDashboard";
 
 import NewJob from "./pages/NewJob";
@@ -469,6 +470,10 @@ function App() {
       return (
         <InventoryImportWizard setPage={setPage} activeUser={activeUser} />
       );
+    }
+
+    if (page === "showSales") {
+      return <ShowSales setPage={setPage} activeUser={activeUser} />;
     }
 
     if (page === "quickTurnaround") {
