@@ -7,6 +7,8 @@ import {
   IconBuildingFactory2,
   IconCalendarEvent,
   IconClipboardList,
+  IconCopy,
+  IconFileDescription,
   IconHammer,
   IconMapPin,
   IconDeviceTv,
@@ -16,6 +18,7 @@ import {
   IconTool,
   IconTruckDelivery,
   IconUsers,
+  IconX,
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
@@ -95,6 +98,22 @@ const styles = `
   .mc-clock small { color: #66727b; font-size: .53rem; white-space: nowrap; }
   .mc-executive-commitment { font-size: .76rem; }
   .mc-refresh-button { font-size: .72rem; }
+  .mc-brief-backdrop {
+    position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
+    padding: 18px; background: rgba(0,0,0,.82);
+  }
+  .mc-brief-dialog {
+    width: min(920px, 100%); max-height: calc(100vh - 36px); overflow: auto;
+    padding: 18px; border: 1px solid var(--mc-line); border-radius: 10px;
+    background: #10161a; box-shadow: 0 24px 80px rgba(0,0,0,.55);
+  }
+  .mc-brief-textarea {
+    width: 100%; min-height: 52vh; margin-top: 14px; padding: 14px;
+    resize: vertical; border: 1px solid #46515a; border-radius: 7px;
+    color: #f4f6f7; background: #080d10; font: 500 .82rem/1.55 Arial, sans-serif;
+  }
+  .mc-brief-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .mc-huddle-toolbar { display: flex; justify-content: flex-end; padding: 10px 12px 0; }
 
   .mc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .mc-kpi {
@@ -578,6 +597,10 @@ function Dashboard({
   const [outsideProjects, setOutsideProjects] = useState([]);
   const [flowMode, setFlowMode] = useState("shop");
   const [selectedOutsideStage, setSelectedOutsideStage] = useState("");
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefText, setBriefText] = useState("");
+  const [briefCopied, setBriefCopied] = useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -844,6 +867,78 @@ function Dashboard({
       (item) => item.tag === "Overdue" || item.priority === "Critical",
     ),
   ].slice(0, 5);
+
+  async function prepareLeadershipNotes() {
+    setBriefOpen(true);
+    setBriefLoading(true);
+    setBriefCopied(false);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data, error } = await supabase
+        .from("project_daily_updates")
+        .select("*")
+        .eq("update_date", today)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const latestByProject = new Map();
+      (data || []).forEach((update) => {
+        if (!latestByProject.has(String(update.project_id))) {
+          latestByProject.set(String(update.project_id), update);
+        }
+      });
+
+      const lines = [
+        `METAL WORX LEADERSHIP NOTES — ${new Date().toLocaleDateString()}`,
+        "",
+        "INSTRUCTIONS FOR CHATGPT:",
+        "Turn these notes into one concise executive-summary paragraph. Then add short bullets for leadership decisions, blockers, materials or labor needed, and tomorrow's priorities. Do not invent facts.",
+        "",
+        "WHOLE-SHOP PRIORITIES:",
+      ];
+
+      if (commitments.length) {
+        commitments.forEach((item) => lines.push(`- ${item.title || "Priority"} | Owner: ${item.owner || "Unassigned"} | ${item.nextAction || item.detail || "Needs attention"}`));
+      } else {
+        lines.push("- No whole-shop priority is currently recorded.");
+      }
+
+      lines.push("", "ACTIVE OUTSIDE PROJECTS:");
+      outsideProjects.forEach((project) => {
+        const update = latestByProject.get(String(project.id));
+        lines.push("", `${project.project_number || "Project"} — ${project.project_name || project.contact_name || "Unnamed project"}`);
+        lines.push(`Lead: ${project.assigned_to || "Unassigned"}`);
+        lines.push(`Stage: ${project.workflowStage || project.status || "Not recorded"}`);
+        lines.push(`Due: ${project.target_completion_date || project.due_date || "Not set"}`);
+        if (!update) {
+          lines.push("Today's update: NOT SUBMITTED");
+          return;
+        }
+        lines.push(`Today's status: ${update.status || "Not recorded"}`);
+        if (update.work_completed) lines.push(`Completed: ${update.work_completed}`);
+        if (update.work_in_progress) lines.push(`In progress: ${update.work_in_progress}`);
+        if (update.next_steps) lines.push(`Next steps: ${update.next_steps}`);
+        if (update.blockers) lines.push(`Blockers: ${update.blockers}`);
+        if (update.materials_needed) lines.push(`Materials needed: ${update.materials_needed}`);
+        if (update.labor_needed) lines.push(`Labor/help needed: ${update.labor_needed}`);
+        if (update.decisions_needed) lines.push(`Leadership decisions: ${update.decisions_needed}`);
+        if (update.schedule_change) lines.push(`Schedule change: ${update.schedule_change}`);
+        if (update.budget_change) lines.push(`Budget change: ${update.budget_change}`);
+      });
+
+      lines.push("", `OPERATING COUNTS: ${stats.openOrders || 0} open orders; ${outsideProjects.length} active outside projects; ${stats.inProduction || 0} shop jobs in production; ${huddleSummary.blockers || 0} active blockers; ${stats.overdue || 0} overdue actions.`);
+      setBriefText(lines.join("\n"));
+    } catch (error) {
+      setBriefText(`Leadership notes could not be prepared.\n\n${error.message}`);
+    } finally {
+      setBriefLoading(false);
+    }
+  }
+
+  async function copyLeadershipNotes() {
+    await navigator.clipboard.writeText(briefText);
+    setBriefCopied(true);
+  }
 
   const scheduleScore = clampScore(100 - Number(stats.overdue || 0) * 12);
   const projectScore = clampScore(
@@ -1631,6 +1726,11 @@ function Dashboard({
           action="Open Action Center"
           onAction={() => goToActionCenter("All")}
         />
+        <div className="mc-huddle-toolbar">
+          <button className="mc-button primary" type="button" onClick={prepareLeadershipNotes}>
+            <IconFileDescription /> Prepare Leadership Notes
+          </button>
+        </div>
         <div className="mc-huddle-grid">
           <div className="mc-huddle-card">
             <span>Top Priority</span>
@@ -1674,6 +1774,19 @@ function Dashboard({
       <footer className="mc-footer">
         Built by fabricators · Powered by data · Driven by purpose
       </footer>
+
+      {briefOpen && (
+        <div className="mc-brief-backdrop" role="presentation" onMouseDown={() => setBriefOpen(false)}>
+          <section className="mc-brief-dialog" role="dialog" aria-modal="true" aria-label="Leadership notes" onMouseDown={(event) => event.stopPropagation()}>
+            <PanelHead icon={IconFileDescription} title="Leadership Notes for ChatGPT" subtitle="Review, copy, and paste into ChatGPT for the executive summary" />
+            <textarea className="mc-brief-textarea" value={briefLoading ? "Preparing leadership notes…" : briefText} onChange={(event) => setBriefText(event.currentTarget.value)} readOnly={briefLoading} />
+            <div className="mc-brief-actions">
+              <button className="mc-button" type="button" onClick={() => setBriefOpen(false)}><IconX /> Close</button>
+              <button className="mc-button primary" type="button" disabled={briefLoading || !briefText} onClick={copyLeadershipNotes}><IconCopy /> {briefCopied ? "Copied" : "Copy for ChatGPT"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
