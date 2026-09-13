@@ -748,6 +748,10 @@ function App() {
     return <SplashScreen />;
   }
 
+  if (page === "morningHuddleTV") {
+    return <MorningHuddleTV setPage={setPage} />;
+  }
+
   return (
     <AppLayout
       page={page}
