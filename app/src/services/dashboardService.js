@@ -1629,16 +1629,18 @@ export async function getDashboardData() {
       });
     }
 
+    const scheduledInstallDate = project.install_start || project.install_date;
+
     if (
-      project.install_start &&
+      scheduledInstallDate &&
       isWithinNextDays(
-        project.install_start,
+        scheduledInstallDate,
         7
       )
     ) {
       const formatted =
         formatDateTime(
-          project.install_start
+          scheduledInstallDate
         );
 
       outsideSchedule.push({
@@ -1647,7 +1649,7 @@ export async function getDashboardData() {
 
         sortDate:
           new Date(
-            project.install_start
+            scheduledInstallDate
           ).getTime(),
 
         day: formatted.day,
@@ -1673,7 +1675,7 @@ export async function getDashboardData() {
 
         isToday:
           isToday(
-            project.install_start
+            scheduledInstallDate
           ),
       });
     }
@@ -2074,6 +2076,7 @@ export async function getDashboardData() {
           (project) =>
             project.install_required ===
               true &&
+            Boolean(project.install_start || project.install_date) &&
             ![
               "completed",
               "complete",
