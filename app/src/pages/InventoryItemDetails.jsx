@@ -7,11 +7,16 @@ import {
   Divider,
   Group,
   Loader,
+  Modal,
+  NumberInput,
   Paper,
+  Select,
   SimpleGrid,
   Stack,
   Table,
   Text,
+  Textarea,
+  TextInput,
   ThemeIcon,
   Title,
 } from "@mantine/core";
@@ -41,6 +46,7 @@ import {
   IconRulerMeasure,
   IconStar,
   IconTool,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -189,6 +195,11 @@ function InventoryItemDetails({
   const [movements, setMovements] = useState([]);
   const [pendingImage, setPendingImage] = useState(null);
   const [savingImage, setSavingImage] = useState(false);
+  const [editOpened, setEditOpened] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [bins, setBins] = useState([]);
+  const [editForm, setEditForm] = useState({});
 
   const itemId = getItemId(selectedInventoryItem || item);
 
@@ -207,6 +218,8 @@ function InventoryItemDetails({
         labelsResult,
         imagesResult,
         movementsResult,
+        categoriesResult,
+        binsResult,
       ] = await Promise.all([
         supabase
           .from("inventory_item_availability")
@@ -239,6 +252,19 @@ function InventoryItemDetails({
           .eq("inventory_item_id", itemId)
           .order("created_at", { ascending: false })
           .limit(12),
+
+        supabase
+          .from("inventory_categories")
+          .select("id,name,code")
+          .eq("is_active", true)
+          .order("name"),
+
+        supabase
+          .from("inventory_bins")
+          .select("id,name,code,zone")
+          .eq("is_active", true)
+          .order("zone")
+          .order("name"),
       ]);
 
       const requiredResults = [
@@ -246,6 +272,8 @@ function InventoryItemDetails({
         balancesResult,
         labelsResult,
         imagesResult,
+        categoriesResult,
+        binsResult,
       ];
 
       const failedRequiredResult = requiredResults.find(
@@ -262,6 +290,8 @@ function InventoryItemDetails({
       setBinBalances(balancesResult.data || []);
       setLabels(labelsResult.data || []);
       setImages(imagesResult.data || []);
+      setCategories(categoriesResult.data || []);
+      setBins(binsResult.data || []);
 
       if (movementsResult.error) {
         console.warn(
@@ -344,6 +374,127 @@ function InventoryItemDetails({
     if (!item) return;
     setSelectedInventoryItem?.(item);
     setPage?.(pageName);
+  }
+
+  function openEditItem() {
+    setEditForm({
+      item_number: item?.item_number || "",
+      sku: item?.sku || "",
+      name: item?.name || "",
+      description: item?.description || "",
+      category_id: item?.category_id || "",
+      default_bin_id: item?.default_bin_id || "",
+      standard_cost: numberValue(item?.standard_cost),
+      selling_price: numberValue(item?.selling_price),
+      reorder_point: numberValue(item?.reorder_point),
+      reorder_quantity: numberValue(item?.reorder_quantity),
+      notes: item?.notes || "",
+    });
+    setEditOpened(true);
+  }
+
+  async function saveItemChanges() {
+    if (!String(editForm.name || "").trim() || !String(editForm.item_number || "").trim()) {
+      notifications.show({
+        title: "Item Name and Number Required",
+        message: "Enter an item name and item number before saving.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setSavingItem(true);
+    try {
+      const { error } = await supabase
+        .from("inventory_items")
+        .update({
+          item_number: String(editForm.item_number).trim(),
+          sku: String(editForm.sku || "").trim() || null,
+          name: String(editForm.name).trim(),
+          description: String(editForm.description || "").trim() || null,
+          category_id: editForm.category_id || null,
+          default_bin_id: editForm.default_bin_id || null,
+          standard_cost: numberValue(editForm.standard_cost),
+          selling_price: numberValue(editForm.selling_price),
+          reorder_point: numberValue(editForm.reorder_point),
+          reorder_quantity: numberValue(editForm.reorder_quantity),
+          notes: String(editForm.notes || "").trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", itemId);
+
+      if (error) throw error;
+      notifications.show({
+        title: "Inventory Item Updated",
+        message: "Item details and default bin were saved.",
+        color: "green",
+      });
+      setEditOpened(false);
+      await loadItemDetails();
+    } catch (error) {
+      notifications.show({
+        title: "Item Update Failed",
+        message: error.message || "Unable to update this inventory item.",
+        color: "red",
+      });
+    } finally {
+      setSavingItem(false);
+    }
+  }
+
+  async function removeInventoryItem() {
+    const confirmed = window.confirm(
+      `Remove "${item?.name || "this item"}" from active inventory? Items with transaction history will be archived so records remain accurate.`
+    );
+    if (!confirmed) return;
+
+    setSavingItem(true);
+    try {
+      const movementResult = await supabase
+        .from("inventory_movements")
+        .select("id", { count: "exact", head: true })
+        .eq("inventory_item_id", itemId);
+      if (movementResult.error) throw movementResult.error;
+
+      let archived = Number(movementResult.count || 0) > 0;
+      if (!archived) {
+        const deleteResult = await supabase
+          .from("inventory_items")
+          .delete()
+          .eq("id", itemId);
+        if (deleteResult.error) archived = true;
+      }
+
+      if (archived) {
+        const archiveResult = await supabase
+          .from("inventory_items")
+          .update({
+            is_active: false,
+            available_for_show_sales: false,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", itemId);
+        if (archiveResult.error) throw archiveResult.error;
+      }
+
+      notifications.show({
+        title: archived ? "Inventory Item Archived" : "Inventory Item Deleted",
+        message: archived
+          ? "The item is hidden from active inventory and its transaction history is preserved."
+          : "The unused inventory item was permanently deleted.",
+        color: "green",
+      });
+      setSelectedInventoryItem?.(null);
+      setPage?.("inventoryItems");
+    } catch (error) {
+      notifications.show({
+        title: "Unable to Remove Item",
+        message: error.message || "The inventory item could not be removed.",
+        color: "red",
+      });
+    } finally {
+      setSavingItem(false);
+    }
   }
 
   function openBin(balance) {
@@ -1165,9 +1316,18 @@ function InventoryItemDetails({
                 variant="light"
                 color="gray"
                 leftSection={<IconEdit size={18} />}
-                onClick={() => openAction("editInventoryItem")}
+                onClick={openEditItem}
               >
                 Edit Item
+              </Button>
+              <Button
+                variant="light"
+                color="red"
+                leftSection={<IconTrash size={18} />}
+                loading={savingItem}
+                onClick={removeInventoryItem}
+              >
+                Delete / Archive
               </Button>
               <Button
                 color="red"
@@ -1268,6 +1428,38 @@ function InventoryItemDetails({
           </MWPanel>
         </Box>
       </SimpleGrid>
+
+      <Modal
+        opened={editOpened}
+        onClose={() => setEditOpened(false)}
+        title="Update Inventory Item"
+        size="lg"
+        centered
+      >
+        <Stack>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <TextInput label="Item Number" required value={editForm.item_number || ""} onChange={(event) => setEditForm((current) => ({ ...current, item_number: event.currentTarget.value }))} />
+            <TextInput label="SKU" value={editForm.sku || ""} onChange={(event) => setEditForm((current) => ({ ...current, sku: event.currentTarget.value }))} />
+          </SimpleGrid>
+          <TextInput label="Item Name" required value={editForm.name || ""} onChange={(event) => setEditForm((current) => ({ ...current, name: event.currentTarget.value }))} />
+          <Textarea label="Description" minRows={2} value={editForm.description || ""} onChange={(event) => setEditForm((current) => ({ ...current, description: event.currentTarget.value }))} />
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Select label="Category" clearable searchable data={categories.map((category) => ({ value: category.id, label: category.name }))} value={editForm.category_id || null} onChange={(value) => setEditForm((current) => ({ ...current, category_id: value || "" }))} />
+            <Select label="Default Bin / Storage" clearable searchable data={bins.map((bin) => ({ value: bin.id, label: [bin.code, bin.name, bin.zone].filter(Boolean).join(" · ") }))} value={editForm.default_bin_id || null} onChange={(value) => setEditForm((current) => ({ ...current, default_bin_id: value || "" }))} />
+          </SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <NumberInput label="Standard Cost" min={0} decimalScale={2} value={editForm.standard_cost || 0} onChange={(value) => setEditForm((current) => ({ ...current, standard_cost: value }))} />
+            <NumberInput label="Selling Price" min={0} decimalScale={2} value={editForm.selling_price || 0} onChange={(value) => setEditForm((current) => ({ ...current, selling_price: value }))} />
+            <NumberInput label="Reorder Point" min={0} value={editForm.reorder_point || 0} onChange={(value) => setEditForm((current) => ({ ...current, reorder_point: value }))} />
+            <NumberInput label="Reorder Quantity" min={0} value={editForm.reorder_quantity || 0} onChange={(value) => setEditForm((current) => ({ ...current, reorder_quantity: value }))} />
+          </SimpleGrid>
+          <Textarea label="Internal Notes" minRows={2} value={editForm.notes || ""} onChange={(event) => setEditForm((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setEditOpened(false)}>Cancel</Button>
+            <Button color="red" loading={savingItem} onClick={saveItemChanges}>Save Changes</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
         <MWPanel
