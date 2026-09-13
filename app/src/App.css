@@ -2287,6 +2287,86 @@ textarea.form-input {
 }
 
 @media (max-width: 650px) {
+  html,
+  body,
+  #root,
+  .mw-app-shell,
+  .mw-main,
+  .mw-content {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .mw-content > *,
+  .mw-content section,
+  .mw-content article,
+  .mw-content [class*="mantine-Card"],
+  .mw-content [class*="mantine-Paper"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .mw-content [style*="grid-column: span"],
+  .mw-content [style*="grid-column:span"] {
+    grid-column: 1 / -1 !important;
+  }
+
+  .mw-content h1,
+  .mw-content h2,
+  .mw-content h3,
+  .mw-content h4,
+  .mw-content h5,
+  .mw-content h6,
+  .mw-content [class*="mantine-Title"] {
+    max-width: 100%;
+    line-height: 1.2 !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+    hyphens: none;
+  }
+
+  .mw-content button,
+  .mw-content [class*="mantine-Button-label"],
+  .mw-content [class*="mantine-Badge-label"] {
+    white-space: normal;
+    line-height: 1.2;
+    text-align: center;
+  }
+
+  .mw-content [class*="mantine-Badge-root"] {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    min-height: 26px;
+    padding-block: 4px;
+  }
+
+  .mw-content [class*="mantine-Tabs-list"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .mw-content [class*="mantine-Tabs-tab"] {
+    flex: 1 1 132px;
+    min-width: 0;
+    padding-inline: 9px;
+  }
+
+  .mw-content [class*="mantine-Group-root"] {
+    max-width: 100%;
+  }
+
+  .mw-content [class*="mantine-Table-root"] {
+    min-width: 720px;
+  }
+
+  .mw-content [class*="mantine-ScrollArea-root"] {
+    max-width: 100%;
+  }
+
   .mw-dashboard-stats,
   .mw-outside-focus-grid {
     grid-template-columns: 1fr;
