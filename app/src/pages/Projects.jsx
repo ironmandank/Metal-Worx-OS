@@ -18,10 +18,13 @@ import {
   IconAlertTriangle,
   IconArrowRight,
   IconClipboardCheck,
+  IconCircleCheck,
   IconMapPin,
   IconRefresh,
+  IconRotateClockwise,
   IconSearch,
   IconTool,
+  IconTrash,
   IconTruckDelivery,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -267,6 +270,81 @@ function Projects({ setPage, setSelectedProject }) {
   function editProject(project) {
     setSelectedProject(project);
     setPage("editProject");
+  }
+
+  async function completeProject(project) {
+    if (!window.confirm(`Mark "${project.project_name || project.project_number}" complete and remove it from the active-project board?`)) return;
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        status: "Completed",
+        percent_complete: 100,
+        completed_at: new Date().toISOString(),
+        next_action: "Project complete",
+        is_active: false,
+      })
+      .eq("id", project.id);
+    if (error) {
+      setErrorMessage(error.message || "The project could not be completed.");
+      return;
+    }
+    await loadProjects();
+  }
+
+  async function reopenProject(project) {
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        status: "In Progress",
+        completed_at: null,
+        is_active: true,
+        next_action: "Review project status",
+      })
+      .eq("id", project.id);
+    if (error) {
+      setErrorMessage(error.message || "The project could not be reopened.");
+      return;
+    }
+    await loadProjects();
+  }
+
+  async function removeProject(project) {
+    if (!window.confirm(`Delete/archive "${project.project_name || project.project_number}"? Linked business records will be preserved.`)) return;
+    try {
+      const linkedTables = [
+        "project_quotes",
+        "project_material_requests",
+        "project_payments",
+        "project_checklist_items",
+        "project_daily_updates",
+      ];
+      const counts = await Promise.all(
+        linkedTables.map((table) =>
+          supabase.from(table).select("id", { count: "exact", head: true }).eq("project_id", project.id)
+        )
+      );
+      const failedCount = counts.find((result) => result.error);
+      if (failedCount?.error) throw failedCount.error;
+      const hasHistory = counts.some((result) => Number(result.count || 0) > 0);
+
+      if (hasHistory) {
+        const { error } = await supabase
+          .from("projects")
+          .update({
+            is_active: false,
+            status: project.status === "Completed" ? "Completed" : "Cancelled",
+            next_action: "Archived",
+          })
+          .eq("id", project.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("projects").delete().eq("id", project.id);
+        if (error) throw error;
+      }
+      await loadProjects();
+    } catch (error) {
+      setErrorMessage(error.message || "The project could not be removed.");
+    }
   }
 
   if (loading) {
@@ -627,6 +705,36 @@ function Projects({ setPage, setSelectedProject }) {
                         onClick={() => editProject(project)}
                       >
                         Edit Project
+                      </Button>
+                      {project.status === "Completed" ? (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="green"
+                          leftSection={<IconRotateClockwise size={17} />}
+                          onClick={() => reopenProject(project)}
+                        >
+                          Reopen Project
+                        </Button>
+                      ) : (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="green"
+                          leftSection={<IconCircleCheck size={17} />}
+                          onClick={() => completeProject(project)}
+                        >
+                          Mark Complete
+                        </Button>
+                      )}
+                      <Button
+                        fullWidth
+                        variant="subtle"
+                        color="red"
+                        leftSection={<IconTrash size={17} />}
+                        onClick={() => removeProject(project)}
+                      >
+                        Delete / Archive
                       </Button>
                     </Stack>
                   </Stack>
