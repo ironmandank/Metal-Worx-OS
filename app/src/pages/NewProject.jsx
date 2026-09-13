@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   ActionIcon,
   Button,
   Divider,
@@ -13,12 +14,15 @@ import {
   Text,
   Textarea,
   TextInput,
+  FileInput,
 } from "@mantine/core";
 import {
   DateInput,
   DateTimePicker,
 } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
+import JSZip from "jszip";
+import * as XLSX from "xlsx";
 
 import { supabase } from "../lib/supabase";
 import { generateNumber } from "../lib/generateNumber";
@@ -78,6 +82,44 @@ function normalizeDateValue(value) {
   }
 
   return value;
+}
+
+const cleanLine = (value) => String(value || "").replace(/^\s*[-•☐□*]+\s*/, "").trim();
+
+function prepareIntakeDraft(sourceText) {
+  const lines = String(sourceText || "").split(/\r?\n/).map(cleanLine).filter(Boolean);
+  const findValue = (labels) => {
+    const row = lines.find((line) => labels.some((label) => line.toLowerCase().startsWith(`${label}:`)));
+    return row ? row.slice(row.indexOf(":") + 1).trim() : "";
+  };
+  const projectName = findValue(["project", "project name", "job", "job name", "title"]) || lines[0] || "";
+  const customerName = findValue(["customer", "client", "company"]);
+  const assignedTo = findValue(["assigned to", "project lead", "lead", "owner"]);
+  const dueDate = findValue(["due", "due date", "needed by", "required by"]);
+  const checklist = lines.filter((line) => /^(task|checklist|to do|todo|step)\s*:/i.test(line)).map((line) => cleanLine(line.slice(line.indexOf(":") + 1))).filter(Boolean);
+  const materials = lines.filter((line) => /^(material|materials|supply|supplies)\s*:/i.test(line)).map((line) => cleanLine(line.slice(line.indexOf(":") + 1))).filter(Boolean);
+  const quoteItems = lines.map((line) => {
+    const match = line.match(/^(.*?)(?:\s+|\s*[-–—:]\s*)\$([\d,]+(?:\.\d{1,2})?)$/);
+    return match ? { title: cleanLine(match[1]), quantity: 1, unit_price: Number(match[2].replace(/,/g, "")) } : null;
+  }).filter(Boolean);
+  return { projectName, customerName, assignedTo, dueDate, checklist, materials, quoteItems, sourceText: String(sourceText || "").trim() };
+}
+
+async function readIntakeFile(file) {
+  if (!file) return "";
+  const extension = file.name.split(".").pop().toLowerCase();
+  if (["txt", "csv", "md"].includes(extension)) return file.text();
+  if (["xlsx", "xls"].includes(extension)) {
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    return workbook.SheetNames.map((name) => `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`).join("\n\n");
+  }
+  if (extension === "docx") {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const xml = await zip.file("word/document.xml")?.async("string");
+    if (!xml) throw new Error("The Word document did not contain readable text.");
+    return xml.replace(/<w:tab\/?[^>]*>/g, "\t").replace(/<\/w:p>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+  }
+  throw new Error("Use a Word (.docx), Excel (.xlsx/.xls), text, CSV, or Markdown file. PDF intake will be added with the secured AI service.");
 }
 
 async function createProjectMaterialRequests({
@@ -149,6 +191,12 @@ function NewProject({ setPage }) {
 
   const [saving, setSaving] =
     useState(false);
+  const [intakeText, setIntakeText] = useState("");
+  const [intakeFile, setIntakeFile] = useState(null);
+  const [intakeDraft, setIntakeDraft] = useState(null);
+  const [intakeChecklist, setIntakeChecklist] = useState([]);
+  const [intakeQuoteItems, setIntakeQuoteItems] = useState([]);
+  const [preparingIntake, setPreparingIntake] = useState(false);
 
   const [
     materialRequests,
@@ -312,6 +360,25 @@ function NewProject({ setPage }) {
       ...current,
       [field]: value,
     }));
+  }
+
+  async function prepareProjectIntake() {
+    setPreparingIntake(true);
+    try {
+      const fileText = intakeFile ? await readIntakeFile(intakeFile) : "";
+      const source = [intakeText, fileText].filter(Boolean).join("\n\n");
+      if (!source.trim()) throw new Error("Paste a project write-up or choose a supported document first.");
+      const draft = prepareIntakeDraft(source);
+      setIntakeDraft(draft);
+      setIntakeChecklist(draft.checklist);
+      setIntakeQuoteItems(draft.quoteItems);
+      setFormData((current) => ({ ...current, project_name: draft.projectName || current.project_name, assigned_to: draft.assignedTo || current.assigned_to, due_date: /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate) ? draft.dueDate : current.due_date, notes: draft.sourceText }));
+      if (!projectPath) applyProjectPreset("General Project");
+      if (draft.materials.length) setMaterialRequests(draft.materials.map((item) => ({ ...createBlankMaterialRequest(), item })));
+      notifications.show({ title: "Project Draft Prepared", message: "Review every field, quote item, material, and checklist item before creating the project.", color: "blue" });
+    } catch (error) {
+      notifications.show({ title: "Intake Could Not Be Prepared", message: error.message, color: "red" });
+    } finally { setPreparingIntake(false); }
   }
 
   function updateMaterialRequest(
@@ -1003,6 +1070,21 @@ function NewProject({ setPage }) {
         }
       }
 
+      if (intakeChecklist.length > 0) {
+        const { error: checklistError } = await supabase.from("project_checklist_items").insert(intakeChecklist.map((task, index) => ({ project_id: createdProject.id, phase: "Imported Intake", task_title: task, sort_order: index + 1, assigned_to: createdProject.assigned_to || null, priority: "Normal", status: "Not Started", notes: "Prepared from the reviewed project intake write-up." })));
+        if (checklistError) throw checklistError;
+      }
+
+      if (intakeQuoteItems.length > 0) {
+        const subtotal = intakeQuoteItems.reduce((sum, item) => sum + Number(item.quantity || 1) * Number(item.unit_price || 0), 0);
+        const quoteNumber = await generateNumber("Quote");
+        const customer = customers.find((item) => String(item.id) === String(formData.customer_id));
+        const { data: createdQuote, error: quoteError } = await supabase.from("project_quotes").insert({ quote_number: quoteNumber, project_id: createdProject.id, quote_title: `${createdProject.project_name} Quote`, customer_id: createdProject.customer_id, customer_name: customer?.company_name || customer?.customer_name || intakeDraft?.customerName || formData.contact_name || null, project_name: createdProject.project_name, assigned_to: createdProject.assigned_to, scope_of_work: intakeDraft?.sourceText || createdProject.notes, subtotal, tax_rate: 0.07, tax_amount: subtotal * 0.07, total_amount: subtotal * 1.07, status: "Draft", quote_type: "Project Quote", quote_layout: "Detailed Fabrication" }).select().single();
+        if (quoteError) throw quoteError;
+        const { error: itemError } = await supabase.from("project_quote_items").insert(intakeQuoteItems.map((item, index) => ({ quote_id: createdQuote.id, item_type: "Base", title: item.title, description: "Prepared from the reviewed project intake write-up.", quantity: item.quantity || 1, unit_price: item.unit_price || 0, line_total: Number(item.quantity || 1) * Number(item.unit_price || 0), sort_order: index + 1, show_on_pdf: true })));
+        if (itemError) throw itemError;
+      }
+
       let successMessage =
         `${projectNumber} was created successfully.`;
 
@@ -1144,6 +1226,15 @@ function NewProject({ setPage }) {
         }}
         spacing="lg"
       >
+        <MWSection title="Project Intake Assistant">
+          <Stack>
+            <Alert color="blue" title="Review before creation">Paste a project email or write-up, or upload Word, Excel, text, CSV, or Markdown. The assistant prepares a draft; it does not save records until you click Create Project.</Alert>
+            <FileInput label="Project document" placeholder="Choose DOCX, XLSX, XLS, TXT, CSV, or MD" accept=".docx,.xlsx,.xls,.txt,.csv,.md" value={intakeFile} onChange={setIntakeFile} clearable />
+            <Textarea label="Project write-up" placeholder="Paste the customer request, scope, tasks, materials, pricing, dates, and project lead here…" minRows={7} autosize value={intakeText} onChange={(event) => setIntakeText(event.currentTarget.value)} />
+            <Button color="blue" loading={preparingIntake} onClick={prepareProjectIntake}>Prepare Project Draft</Button>
+            {intakeDraft && <Alert color="green" title="Draft prepared"><Text size="sm">Project: {intakeDraft.projectName || "Review required"}</Text><Text size="sm">Checklist items: {intakeChecklist.length} · Quote items: {intakeQuoteItems.length} · Materials: {intakeDraft.materials.length}</Text><Text size="xs" c="dimmed" mt="xs">Review and edit the regular project fields below before saving.</Text></Alert>}
+          </Stack>
+        </MWSection>
         <MWSection title="Project Intake">
           <Stack>
             <Select

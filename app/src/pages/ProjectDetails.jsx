@@ -66,6 +66,7 @@ import MWSection from "../components/ui/MWSection";
 import MWSectionHeader from "../components/ui/MWSectionHeader";
 import MWStatPill from "../components/ui/MWStatPill";
 import MWStatusBadge from "../components/ui/MWStatusBadge";
+import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
 
 function money(value) {
   return Number(value || 0).toLocaleString("en-US", {
@@ -1987,6 +1988,13 @@ function ProjectDetails({
             <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
               Notes
             </Tabs.Tab>
+
+            <Tabs.Tab
+              value="tracking"
+              leftSection={<IconClipboardCheck size={16} />}
+            >
+              Checklist & Updates
+            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="overview">
@@ -3509,6 +3517,15 @@ function ProjectDetails({
                 </Group>
               </Stack>
             </MWInfoCard>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="tracking">
+            <ProjectTrackingWorkspace
+              project={project}
+              activeUser={activeUser}
+              setPage={setPage}
+              onShowOverview={() => setActiveTab("overview")}
+            />
           </Tabs.Panel>
         </Tabs>
       </Stack>

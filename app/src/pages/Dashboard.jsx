@@ -9,6 +9,7 @@ import {
   IconClipboardList,
   IconHammer,
   IconMapPin,
+  IconDeviceTv,
   IconRefresh,
   IconShieldCheck,
   IconSparkles,
@@ -79,7 +80,7 @@ const styles = `
   .mc-title-block span { display: block; margin-top: 7px; color: #dce1e5; font-size: 1rem; }
   .mc-top-actions {
     position: relative; z-index: 1; display: grid;
-    grid-template-columns: 148px 200px 96px;
+    grid-template-columns: 148px 180px 200px 96px;
     align-items: center; justify-content: end; gap: 8px;
   }
   .mc-clock {
@@ -499,7 +500,13 @@ function getOutsideProjectStage(project) {
     return "Assembly";
   }
 
-  if (project.install_required) {
+  const hasInstallDate = Boolean(project.install_start || project.install_date);
+
+  if (project.install_required && !hasInstallDate) {
+    return "Install Date Needed";
+  }
+
+  if (project.install_required && hasInstallDate) {
     if (["Scheduled", "In Progress"].includes(project.install_status)) {
       return "Installation";
     }
@@ -789,6 +796,7 @@ function Dashboard({
       "Test Fit",
       "Finish / Corrections",
       "Assembly",
+      "Install Date Needed",
       "Installation",
       "Office Closeout",
     ];
@@ -932,6 +940,12 @@ function Dashboard({
               })}
             </small>
           </div>
+          <button
+            className="mc-button"
+            onClick={() => goToPage("morningHuddleTV")}
+          >
+            <IconDeviceTv /> TV Huddle
+          </button>
           <button
             className="mc-button primary mc-executive-commitment"
             onClick={() => goToPage("quickTurnaround")}

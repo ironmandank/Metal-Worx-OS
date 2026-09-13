@@ -6,6 +6,7 @@ import {
   Group,
   Loader,
   Paper,
+  Progress,
   SimpleGrid,
   Stack,
   Text,
@@ -16,10 +17,14 @@ import {
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconClipboardCheck,
+  IconCircleCheck,
   IconMapPin,
   IconRefresh,
+  IconRotateClockwise,
   IconSearch,
   IconTool,
+  IconTrash,
   IconTruckDelivery,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -106,6 +111,7 @@ function Projects({ setPage, setSelectedProject }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [trackingByProject, setTrackingByProject] = useState({});
 
   const loadProjects = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -126,7 +132,62 @@ function Projects({ setPage, setSelectedProject }) {
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
 
-      setProjects(projectResult.data || []);
+      const loadedProjects = projectResult.data || [];
+      const projectIds = loadedProjects.map((project) => project.id);
+      let checklistRows = [];
+      let updateRows = [];
+
+      if (projectIds.length) {
+        const [checklistResult, updateResult] = await Promise.all([
+          supabase
+            .from("project_checklist_items")
+            .select("project_id, status")
+            .in("project_id", projectIds),
+          supabase
+            .from("project_daily_updates")
+            .select(
+              "project_id, update_date, status, leadership_attention_required, created_at"
+            )
+            .in("project_id", projectIds)
+            .order("update_date", { ascending: false })
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (checklistResult.error) throw checklistResult.error;
+        if (updateResult.error) throw updateResult.error;
+        checklistRows = checklistResult.data || [];
+        updateRows = updateResult.data || [];
+      }
+
+      const trackingMap = Object.fromEntries(
+        loadedProjects.map((project) => [
+          project.id,
+          {
+            tasks: 0,
+            applicable: 0,
+            complete: 0,
+            blocked: 0,
+            latestUpdate: null,
+          },
+        ])
+      );
+
+      checklistRows.forEach((task) => {
+        const tracking = trackingMap[task.project_id];
+        if (!tracking) return;
+        tracking.tasks += 1;
+        if (task.status !== "Not Applicable") tracking.applicable += 1;
+        if (task.status === "Complete") tracking.complete += 1;
+        if (task.status === "Blocked") tracking.blocked += 1;
+      });
+
+      updateRows.forEach((update) => {
+        const tracking = trackingMap[update.project_id];
+        if (tracking && !tracking.latestUpdate) tracking.latestUpdate = update;
+      });
+
+      setProjects(loadedProjects);
+      setTrackingByProject(trackingMap);
       setCustomers(
         Object.fromEntries(
           (customerResult.data || []).map((customer) => [
@@ -197,13 +258,93 @@ function Projects({ setPage, setSelectedProject }) {
   ).length;
 
   function openProject(project) {
-    setSelectedProject(project);
+    setSelectedProject({ ...project, initialTab: "overview" });
+    setPage("projectDetails");
+  }
+
+  function openProjectChecklist(project) {
+    setSelectedProject({ ...project, initialTab: "tracking" });
     setPage("projectDetails");
   }
 
   function editProject(project) {
     setSelectedProject(project);
     setPage("editProject");
+  }
+
+  async function completeProject(project) {
+    if (!window.confirm(`Mark "${project.project_name || project.project_number}" complete and remove it from the active-project board?`)) return;
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        status: "Completed",
+        percent_complete: 100,
+        completed_at: new Date().toISOString(),
+        next_action: "Project complete",
+        is_active: false,
+      })
+      .eq("id", project.id);
+    if (error) {
+      setErrorMessage(error.message || "The project could not be completed.");
+      return;
+    }
+    await loadProjects();
+  }
+
+  async function reopenProject(project) {
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        status: "In Progress",
+        completed_at: null,
+        is_active: true,
+        next_action: "Review project status",
+      })
+      .eq("id", project.id);
+    if (error) {
+      setErrorMessage(error.message || "The project could not be reopened.");
+      return;
+    }
+    await loadProjects();
+  }
+
+  async function removeProject(project) {
+    if (!window.confirm(`Delete/archive "${project.project_name || project.project_number}"? Linked business records will be preserved.`)) return;
+    try {
+      const linkedTables = [
+        "project_quotes",
+        "project_material_requests",
+        "project_payments",
+        "project_checklist_items",
+        "project_daily_updates",
+      ];
+      const counts = await Promise.all(
+        linkedTables.map((table) =>
+          supabase.from(table).select("id", { count: "exact", head: true }).eq("project_id", project.id)
+        )
+      );
+      const failedCount = counts.find((result) => result.error);
+      if (failedCount?.error) throw failedCount.error;
+      const hasHistory = counts.some((result) => Number(result.count || 0) > 0);
+
+      if (hasHistory) {
+        const { error } = await supabase
+          .from("projects")
+          .update({
+            is_active: false,
+            status: project.status === "Completed" ? "Completed" : "Cancelled",
+            next_action: "Archived",
+          })
+          .eq("id", project.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("projects").delete().eq("id", project.id);
+        if (error) throw error;
+      }
+      await loadProjects();
+    } catch (error) {
+      setErrorMessage(error.message || "The project could not be removed.");
+    }
   }
 
   if (loading) {
@@ -329,6 +470,17 @@ function Projects({ setPage, setSelectedProject }) {
                 project.finish_required && "Finish",
                 project.install_required && "Install",
               ].filter(Boolean);
+              const tracking = trackingByProject[project.id] || {
+                tasks: 0,
+                applicable: 0,
+                complete: 0,
+                blocked: 0,
+                latestUpdate: null,
+              };
+              const checklistPercent = tracking.applicable
+                ? Math.round((tracking.complete / tracking.applicable) * 100)
+                : 0;
+              const latestUpdate = tracking.latestUpdate;
 
               return (
                 <Paper
@@ -446,6 +598,70 @@ function Projects({ setPage, setSelectedProject }) {
                       </Text>
                     </Paper>
 
+                    <Paper
+                      p="sm"
+                      radius="md"
+                      style={{
+                        background: "rgba(0,0,0,.2)",
+                        border:
+                          tracking.blocked > 0 ||
+                          latestUpdate?.leadership_attention_required
+                            ? "1px solid rgba(255,70,75,.55)"
+                            : "1px solid rgba(255,255,255,.06)",
+                      }}
+                    >
+                      <Group justify="space-between" mb={6}>
+                        <Group gap={6}>
+                          <IconClipboardCheck size={16} />
+                          <Text size="sm" fw={800}>
+                            Checklist
+                          </Text>
+                        </Group>
+                        <Text size="sm" fw={800}>
+                          {tracking.tasks
+                            ? `${tracking.complete}/${tracking.applicable}`
+                            : "Not started"}
+                        </Text>
+                      </Group>
+                      <Progress
+                        value={checklistPercent}
+                        color={tracking.blocked ? "red" : "green"}
+                        size="sm"
+                        radius="xl"
+                      />
+                      <Group gap="xs" mt="sm" wrap="wrap">
+                        {tracking.blocked > 0 && (
+                          <Badge color="red" variant="filled">
+                            {tracking.blocked} Blocked
+                          </Badge>
+                        )}
+                        {latestUpdate ? (
+                          <Badge
+                            color={
+                              latestUpdate.status === "Blocked"
+                                ? "red"
+                                : latestUpdate.status === "At Risk"
+                                  ? "orange"
+                                  : "green"
+                            }
+                            variant="light"
+                          >
+                            {latestUpdate.status} · Updated{" "}
+                            {formatDate(latestUpdate.update_date)}
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="light">
+                            No daily update
+                          </Badge>
+                        )}
+                        {latestUpdate?.leadership_attention_required && (
+                          <Badge color="red" variant="filled">
+                            Leadership Attention
+                          </Badge>
+                        )}
+                      </Group>
+                    </Paper>
+
                     <Group gap="xs" wrap="wrap">
                       {requirements.length ? (
                         requirements.map((requirement) => (
@@ -464,8 +680,9 @@ function Projects({ setPage, setSelectedProject }) {
                       )}
                     </Group>
 
-                    <Group grow>
+                    <Stack gap="xs">
                       <Button
+                        fullWidth
                         color="red"
                         rightSection={<IconArrowRight size={17} />}
                         onClick={() => openProject(project)}
@@ -473,13 +690,53 @@ function Projects({ setPage, setSelectedProject }) {
                         Open Project
                       </Button>
                       <Button
+                        fullWidth
+                        variant="light"
+                        color="blue"
+                        leftSection={<IconClipboardCheck size={17} />}
+                        onClick={() => openProjectChecklist(project)}
+                      >
+                        Checklist & Updates
+                      </Button>
+                      <Button
+                        fullWidth
                         variant="light"
                         color="gray"
                         onClick={() => editProject(project)}
                       >
-                        Edit
+                        Edit Project
                       </Button>
-                    </Group>
+                      {project.status === "Completed" ? (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="green"
+                          leftSection={<IconRotateClockwise size={17} />}
+                          onClick={() => reopenProject(project)}
+                        >
+                          Reopen Project
+                        </Button>
+                      ) : (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="green"
+                          leftSection={<IconCircleCheck size={17} />}
+                          onClick={() => completeProject(project)}
+                        >
+                          Mark Complete
+                        </Button>
+                      )}
+                      <Button
+                        fullWidth
+                        variant="subtle"
+                        color="red"
+                        leftSection={<IconTrash size={17} />}
+                        onClick={() => removeProject(project)}
+                      >
+                        Delete / Archive
+                      </Button>
+                    </Stack>
                   </Stack>
                 </Paper>
               );

@@ -12,6 +12,7 @@ import {
 } from "./lib/supabase";
 
 import Dashboard from "./pages/Dashboard";
+import MorningHuddleTV from "./pages/MorningHuddleTV";
 import ActionCenter from "./pages/ActionCenter";
 import Callbacks from "./pages/Callbacks";
 import InternalChat from "./pages/InternalChat";
@@ -321,6 +322,10 @@ function App() {
           openCallback={openCallback}
         />
       );
+    }
+
+    if (page === "morningHuddleTV") {
+      return <MorningHuddleTV setPage={setPage} />;
     }
 
     if (page === "actionCenter") {
@@ -741,6 +746,10 @@ function App() {
 
   if (showSplash) {
     return <SplashScreen />;
+  }
+
+  if (page === "morningHuddleTV") {
+    return <MorningHuddleTV setPage={setPage} />;
   }
 
   return (
