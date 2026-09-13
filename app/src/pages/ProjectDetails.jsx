@@ -67,6 +67,7 @@ import MWSectionHeader from "../components/ui/MWSectionHeader";
 import MWStatPill from "../components/ui/MWStatPill";
 import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
+import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
 
 function money(value) {
   return Number(value || 0).toLocaleString("en-US", {
@@ -352,7 +353,7 @@ function ProjectDetails({
 
   const [materialRequests, setMaterialRequests] = useState([]);
 
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(selectedProject?.initialTab || "overview");
 
   const [materialsLoading, setMaterialsLoading] = useState(false);
 
@@ -409,6 +410,7 @@ function ProjectDetails({
     loadProject();
     loadMaterialRequests();
     loadProjectPayments();
+    setActiveTab(selectedProject.initialTab || "overview");
   }, [selectedProject]);
 
   async function loadProject() {
@@ -1995,6 +1997,10 @@ function ProjectDetails({
             >
               Checklist & Updates
             </Tabs.Tab>
+
+            <Tabs.Tab value="package" leftSection={<IconPackage size={16} />}>
+              Files & Package
+            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="overview">
@@ -3526,6 +3532,10 @@ function ProjectDetails({
               setPage={setPage}
               onShowOverview={() => setActiveTab("overview")}
             />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="package">
+            <ProjectPackageWorkspace project={project} activeUser={activeUser} />
           </Tabs.Panel>
         </Tabs>
       </Stack>
