@@ -1265,6 +1265,8 @@ export async function getDashboardData() {
     actionCenterData,
     hotTodayResult,
     quickCommitmentsResult,
+    dailyUpdatesResult,
+    checklistItemsResult,
   ] = await Promise.all([
     supabase
       .from("customer_orders")
@@ -1295,6 +1297,16 @@ export async function getDashboardData() {
     supabase
       .from("quick_turnaround_commitments")
       .select("*"),
+
+    supabase
+      .from("project_daily_updates")
+      .select("*")
+      .order("update_date", { ascending: false })
+      .limit(200),
+
+    supabase
+      .from("project_checklist_items")
+      .select("project_id,status,blocker,target_date"),
   ]);
 
   if (customerOrdersResult.error) {
@@ -1331,6 +1343,9 @@ export async function getDashboardData() {
 
   const customers =
     customersResult.data || [];
+
+  const dailyUpdates = dailyUpdatesResult.error ? [] : dailyUpdatesResult.data || [];
+  const checklistItems = checklistItemsResult.error ? [] : checklistItemsResult.data || [];
 
   if (hotTodayResult.error) {
     console.warn(
@@ -1942,6 +1957,10 @@ export async function getDashboardData() {
       blockerItems.slice(0, 8),
 
     recentCompletions,
+
+    dailyUpdates,
+
+    checklistItems,
   };
 
   const totalProjectHealth =
