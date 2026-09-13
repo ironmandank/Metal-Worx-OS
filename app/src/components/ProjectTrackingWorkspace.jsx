@@ -59,15 +59,13 @@ const EMPTY_UPDATE = {
   leadership_attention_required: false,
 };
 
-const EXAMPLE_TASKS = [
-  ["Planning", "Confirm final scope and measurements"],
-  ["Design", "Complete drawings and customer approval"],
-  ["Materials", "Price, order, and receive required materials"],
-  ["Fabrication", "Complete fabrication and internal quality check"],
-  ["Finish", "Complete paint or powder coating"],
-  ["Installation", "Confirm installation date and site readiness"],
-  ["Closeout", "Complete final inspection, payment, and records"],
-];
+const CHECKLIST_TEMPLATES = {
+  "General Outside Project": [["Planning","Confirm final scope and measurements"],["Design","Complete drawings and customer approval"],["Materials","Price, order, and receive required materials"],["Fabrication","Complete fabrication and internal quality check"],["Finish","Complete paint or powder coating"],["Installation","Confirm installation date and site readiness"],["Closeout","Complete final inspection, payment, and records"]],
+  "Handrail / Guardrail": [["Site","Field measure and document mounting conditions"],["Design","Approve layout, height, returns, and code requirements"],["Materials","Order rail, posts, plate, anchors, and finish supplies"],["Fabrication","Cut, fit, weld, and inspect rail sections"],["Finish","Prep and apply approved finish"],["Installation","Confirm crew, access, anchors, and install date"],["Closeout","Final inspection, photos, cleanup, and customer signoff"]],
+  "Gate / Fence": [["Site","Verify opening, grade, swing, and utilities"],["Design","Approve gate/fence layout and hardware"],["Materials","Order steel, posts, hinges, latch, and anchors"],["Fabrication","Fabricate panels, gate, and posts"],["Finish","Prep and apply approved finish"],["Installation","Set posts, install sections, and adjust hardware"],["Closeout","Function test, photos, cleanup, and signoff"]],
+  "Container Modification": [["Planning","Confirm container scope, access, and dimensions"],["Design","Approve openings, reinforcements, and attachments"],["Materials","Order steel, hardware, sealant, and finish supplies"],["Fabrication","Cut, reinforce, weld, and weatherproof modifications"],["Quality","Inspect welds, fit, operation, and water protection"],["Delivery","Confirm transport or site installation plan"],["Closeout","Final photos, customer review, and records"]],
+  "Repair / Restoration": [["Intake","Document existing condition and repair limits"],["Estimate","Confirm repair method and customer approval"],["Materials","Source replacement steel, hardware, and coatings"],["Repair","Disassemble, repair, weld, and test fit"],["Finish","Clean, prep, and refinish"],["Delivery","Schedule pickup, delivery, or reinstallation"],["Closeout","Final inspection, photos, and customer acceptance"]],
+};
 
 function formatDate(value) {
   if (!value) return "Not set";
@@ -97,6 +95,7 @@ function ProjectTrackingWorkspace({
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskForm, setTaskForm] = useState(EMPTY_TASK);
   const [dailyForm, setDailyForm] = useState(EMPTY_UPDATE);
+  const [selectedTemplate, setSelectedTemplate] = useState("General Outside Project");
 
   async function loadTracking() {
     if (!project?.id) return;
@@ -191,11 +190,12 @@ function ProjectTrackingWorkspace({
     }
   }
 
-  async function addExampleChecklist() {
+  async function addTemplateChecklist() {
     if (tasks.length > 0) return;
     setSavingTask(true);
     try {
-      const rows = EXAMPLE_TASKS.map(([phase, title], index) => ({
+      const selectedTasks = CHECKLIST_TEMPLATES[selectedTemplate] || CHECKLIST_TEMPLATES["General Outside Project"];
+      const rows = selectedTasks.map(([phase, title], index) => ({
         project_id: project.id,
         phase,
         task_title: title,
@@ -203,18 +203,18 @@ function ProjectTrackingWorkspace({
         assigned_to: project.assigned_to || activeUser || null,
         priority: "Normal",
         status: "Not Started",
-        notes: "Example checklist item — edit or remove as needed.",
+        notes: `${selectedTemplate} template item — edit or remove as needed.`,
       }));
       const { error } = await supabase.from("project_checklist_items").insert(rows);
       if (error) throw error;
       await loadTracking();
       notifications.show({
-        title: "Example Checklist Added",
-        message: "This project now has a seven-step example checklist.",
+        title: "Checklist Template Added",
+        message: `${selectedTemplate} was copied to this project.`,
         color: "green",
       });
     } catch (error) {
-      notifications.show({ title: "Example Could Not Be Added", message: error.message, color: "red" });
+      notifications.show({ title: "Template Could Not Be Added", message: error.message, color: "red" });
     } finally {
       setSavingTask(false);
     }
@@ -377,7 +377,10 @@ function ProjectTrackingWorkspace({
           <Alert color="gray" title="Blank checklist" icon={<IconClipboardCheck size={18} />}>
             <Stack gap="sm">
               <Text size="sm">Add only the tasks required for this project. New projects will remain blank.</Text>
-              <Group><Button variant="light" color="blue" loading={savingTask} onClick={addExampleChecklist}>Load Example Checklist Here</Button></Group>
+              <Group align="end">
+                <Select label="Start from a template" value={selectedTemplate} data={Object.keys(CHECKLIST_TEMPLATES)} onChange={(value) => setSelectedTemplate(value || "General Outside Project")} style={{ minWidth: 250 }} />
+                <Button variant="light" color="blue" loading={savingTask} onClick={addTemplateChecklist}>Copy Template to Project</Button>
+              </Group>
             </Stack>
           </Alert>
         ) : (
