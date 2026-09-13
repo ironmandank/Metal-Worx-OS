@@ -92,6 +92,7 @@ function ProjectTrackingWorkspace({
   const [loading, setLoading] = useState(true);
   const [savingTask, setSavingTask] = useState(false);
   const [savingUpdate, setSavingUpdate] = useState(false);
+  const [savingNoChange, setSavingNoChange] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskForm, setTaskForm] = useState(EMPTY_TASK);
   const [dailyForm, setDailyForm] = useState(EMPTY_UPDATE);
@@ -291,7 +292,7 @@ function ProjectTrackingWorkspace({
       );
       const { error } = await supabase.from("project_daily_updates").insert({
         project_id: project.id,
-        project_lead: activeUser || project.assigned_to || null,
+        project_lead: project.assigned_to || activeUser || null,
         ...clean,
       });
       if (error) throw error;
@@ -305,6 +306,37 @@ function ProjectTrackingWorkspace({
       notifications.show({ title: "Update Could Not Be Saved", message: error.message, color: "red" });
     } finally {
       setSavingUpdate(false);
+    }
+  }
+
+  async function saveNoChangeUpdate() {
+    const updateDate = dailyForm.update_date || new Date().toISOString().slice(0, 10);
+    const lead = project.assigned_to || activeUser || null;
+
+    if (!window.confirm(`Record a no-change update for ${formatDate(updateDate)}?`)) return;
+
+    setSavingNoChange(true);
+    try {
+      const { error } = await supabase.from("project_daily_updates").insert({
+        project_id: project.id,
+        project_lead: lead,
+        update_date: updateDate,
+        status: dailyForm.status || "On Track",
+        work_in_progress: "No change reported. Work remains in its current stage.",
+        next_steps: "Continue the current project plan.",
+        leadership_attention_required: false,
+      });
+      if (error) throw error;
+      await loadTracking();
+      notifications.show({
+        title: "No-Change Update Saved",
+        message: `${lead || "The project lead"} is recorded as current for ${formatDate(updateDate)}.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({ title: "Update Could Not Be Saved", message: error.message, color: "red" });
+    } finally {
+      setSavingNoChange(false);
     }
   }
 
@@ -535,7 +567,7 @@ function ProjectTrackingWorkspace({
           <Select label="Overall Status" allowDeselect={false} value={dailyForm.status} data={["On Track", "At Risk", "Blocked", "Complete"]} onChange={(value) => setDailyForm((current) => ({ ...current, status: value || "On Track" }))} />
           <TextInput
             label="Updated By"
-            value={activeUser || project.assigned_to || "Project Lead"}
+            value={project.assigned_to || activeUser || "Project Lead"}
             readOnly
           />
           <Checkbox mt={30} label="Leadership attention required" checked={dailyForm.leadership_attention_required} onChange={(event) => setDailyForm((current) => ({ ...current, leadership_attention_required: event.currentTarget.checked }))} />
@@ -550,7 +582,17 @@ function ProjectTrackingWorkspace({
           <Textarea label="Budget Changes" minRows={2} value={dailyForm.budget_change} onChange={(event) => setDailyForm((current) => ({ ...current, budget_change: event.currentTarget.value }))} />
         </SimpleGrid>
 
-        <Group justify="flex-end" mt="lg"><Button color="red" leftSection={<IconCheck size={17} />} loading={savingUpdate} onClick={saveDailyUpdate}>Save Today's Update</Button></Group>
+        <Group justify="flex-end" mt="lg">
+          <Button
+            variant="light"
+            color="gray"
+            loading={savingNoChange}
+            onClick={saveNoChangeUpdate}
+          >
+            No Change Today
+          </Button>
+          <Button color="red" leftSection={<IconCheck size={17} />} loading={savingUpdate} onClick={saveDailyUpdate}>Save Project Update</Button>
+        </Group>
       </Card>
 
       <Card withBorder radius="lg" p="lg">
