@@ -36,7 +36,7 @@ const styles = `
   .tv-kpi strong { display:block; margin-top:8px; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
   .tv-grid { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:12px; margin-top:14px; }
-  .tv-panel { min-height:330px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
+  .tv-panel { min-height:260px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:13px 16px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(17px,1.25vw,24px); line-height:1.2; text-transform:uppercase; }
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
   .tv-list { list-style:none; padding:0; margin:0; }
@@ -53,7 +53,7 @@ const styles = `
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
     .tv-summary{padding:14px}.tv-summary p{font-size:17px;line-height:1.42}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:92px;padding:12px}.tv-kpi span{font-size:12px}.tv-kpi strong{font-size:36px}
-    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel:first-child{grid-column:auto;min-height:0}.tv-panel h2{font-size:17px}.tv-list li{font-size:16px}.tv-empty{font-size:16px;min-height:110px}
+    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel:first-child{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-list li{padding:12px;font-size:15px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
 
@@ -65,16 +65,11 @@ function buildExecutiveSummary(data) {
   const s = h.summary || {};
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.combined || [];
-  const updates = h.dailyUpdates || [];
-  const today = new Date().toISOString().slice(0, 10);
-  const updatedToday = new Set(updates.filter((u) => String(u.update_date).slice(0,10) === today).map((u) => String(u.project_id)));
-  const missing = projects.filter((p) => !updatedToday.has(String(p.id))).length;
   const sentences = [`Metal Worx begins today with ${priorityItems.length} Hot Today or quick-turnaround priorit${priorityItems.length === 1 ? "y" : "ies"}, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, ${projects.length} active outside project${projects.length === 1 ? "" : "s"}, and ${s.todayFieldWork || 0} scheduled field activit${s.todayFieldWork === 1 ? "y" : "ies"}.`];
   if (s.blockers) sentences.push(`${s.blockers} active blocker${s.blockers === 1 ? " requires" : "s require"} leadership attention before new work is released.`);
   else sentences.push("No active operational blockers are currently recorded.");
   if (s.overdueActions) sentences.push(`${s.overdueActions} overdue action${s.overdueActions === 1 ? " must" : "s must"} be assigned and recovered today.`);
-  if (missing) sentences.push(`${missing} outside project${missing === 1 ? " is" : "s are"} still missing today’s lead update.`);
-  else if (projects.length) sentences.push("All active outside projects have a dated update for today.");
+  if (projects.length) sentences.push("Outside-project leads are listed on the board for huddle assignments and follow-up.");
   return sentences.join(" ");
 }
 
@@ -97,10 +92,7 @@ export default function MorningHuddleTV({ setPage }) {
   const summary = huddle.summary || {};
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.combined || [];
-  const todayKey = now.toISOString().slice(0,10);
-  const todayUpdates = (huddle.dailyUpdates || []).filter((u) => String(u.update_date).slice(0,10) === todayKey);
-  const updatedIds = new Set(todayUpdates.map((u) => String(u.project_id)));
-  const missingUpdates = projects.filter((p) => !updatedIds.has(String(p.id)));
+  const projectLeadCount = new Set(projects.map((project) => String(project.owner || project.assigned_to || "").trim()).filter(Boolean)).size;
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
   const executive = useMemo(() => buildExecutiveSummary(data), [data]);
   const priorities = [...priorityItems, ...(huddle.todayFocus || [])].filter((item,index,all) => all.findIndex((candidate) => String(candidate.sourceType || candidate.type) === String(item.sourceType || item.type) && String(candidate.sourceId || candidate.id) === String(item.sourceId || item.id)) === index).slice(0,8);
@@ -121,7 +113,7 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-kpi danger"><span>Hot Items / Quick Turnaround</span><strong>{priorityItems.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
       <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
-      <div className="tv-kpi warn"><span>Missing Updates</span><strong>{missingUpdates.length}</strong></div>
+      <div className="tv-kpi"><span>Outside Project Leads</span><strong>{projectLeadCount}</strong></div>
       <div className="tv-kpi danger"><span>Blockers</span><strong>{summary.blockers || blockers.length}</strong></div>
       <div className="tv-kpi warn"><span>Overdue</span><strong>{summary.overdueActions || 0}</strong></div>
       <div className="tv-kpi good"><span>Field Today</span><strong>{summary.todayFieldWork || 0}</strong></div>
@@ -132,7 +124,7 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-panel"><h2><IconTool/> Art & Shop Production</h2>{shopWorkload.length ? <ul className="tv-list">{shopWorkload.map((item)=><li key={item.name}><strong>{item.name}: {item.count}</strong><small>Active work at this station</small></li>)}</ul>:<div className="tv-empty">No active shop production is recorded.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <ul className="tv-list">{field.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Field activity")}</strong><small>{dateOnly(x.start || x.date || x.dueDate)} · {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No field work scheduled today.</div>}</div>
       <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <ul className="tv-list">{blockers.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></li>)}</ul>:<div className="tv-empty">No blockers recorded.</div>}</div>
-      <div className="tv-panel"><h2><IconUsers/> Missing Lead Updates</h2>{missingUpdates.length ? <ul className="tv-list">{missingUpdates.slice(0,8).map((p)=><li key={p.id}><strong>{text(p.title || p.projectName || p.project_name || p.project_number,"Project")}</strong><small>{text(p.owner || p.assigned_to)}</small></li>)}</ul>:<div className="tv-empty">Every active project is current.</div>}</div>
+      <div className="tv-panel"><h2><IconUsers/> Outside Project Leads</h2>{projects.length ? <ul className="tv-list">{projects.slice(0,12).map((p)=><li key={p.id}><strong>{text(p.title || p.projectName || p.project_name || p.project_number,"Project")}</strong><small>Lead: {text(p.owner || p.assigned_to)}</small></li>)}</ul>:<div className="tv-empty">No active outside projects.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><ul className="tv-list"><li><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></li><li><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></li><li><strong>Busiest shop station: {summary.busiestDepartment || "None"}</strong><small>{summary.busiestDepartmentCount || 0} active at this station</small></li></ul></div>
     </section>
     <div className="tv-foot">Auto-refreshes every 30 seconds · Metal Worx Operations System</div>
