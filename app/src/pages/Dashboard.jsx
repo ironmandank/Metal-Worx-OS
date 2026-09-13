@@ -499,7 +499,13 @@ function getOutsideProjectStage(project) {
     return "Assembly";
   }
 
-  if (project.install_required) {
+  const hasInstallDate = Boolean(project.install_start || project.install_date);
+
+  if (project.install_required && !hasInstallDate) {
+    return "Install Date Needed";
+  }
+
+  if (project.install_required && hasInstallDate) {
     if (["Scheduled", "In Progress"].includes(project.install_status)) {
       return "Installation";
     }
@@ -789,6 +795,7 @@ function Dashboard({
       "Test Fit",
       "Finish / Corrections",
       "Assembly",
+      "Install Date Needed",
       "Installation",
       "Office Closeout",
     ];
