@@ -20,6 +20,7 @@ import {
   IconLayoutDashboard,
   IconLogout,
   IconMapPin,
+  IconMenu2,
   IconMessage,
   IconPackage,
   IconPalette,
@@ -484,6 +485,7 @@ function AppLayout({
     setActiveDepartment("");
     setOpenGroup("");
     setShowNotifications(false);
+    if (window.matchMedia("(max-width: 650px)").matches) setExpanded(false);
     setPage(pageName);
   }
 
@@ -492,6 +494,7 @@ function AppLayout({
     setSelectedDepartment(department);
     setOpenGroup("");
     setShowNotifications(false);
+    if (window.matchMedia("(max-width: 650px)").matches) setExpanded(false);
     setPage("departmentQueue");
   }
 
@@ -518,6 +521,18 @@ function AppLayout({
       }`}
     >
       <style>{GLOBAL_STATUS_STYLES}</style>
+
+      {expanded && (
+        <button
+          type="button"
+          className="mw-mobile-nav-backdrop"
+          aria-label="Close navigation"
+          onClick={() => {
+            setExpanded(false);
+            setOpenGroup("");
+          }}
+        />
+      )}
 
       <aside className="mw-sidebar mw-icon-rail">
         <div className="mw-rail-brand">
@@ -662,6 +677,18 @@ function AppLayout({
 
       <main className="mw-main">
         <header className="mw-topbar mw-compact-topbar">
+          <button
+            type="button"
+            className="mw-mobile-menu-button"
+            onClick={() => {
+              setExpanded(true);
+              setOpenGroup("");
+            }}
+            aria-label="Open navigation"
+          >
+            <IconMenu2 />
+            <span>Menu</span>
+          </button>
           <div className="mw-topbar-search">
             <IconSearch />
             <input placeholder="Search orders, customers, jobs, projects, inventory..." />
