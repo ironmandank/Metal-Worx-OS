@@ -602,8 +602,9 @@ function Projects({ setPage, setSelectedProject }) {
                       )}
                     </Group>
 
-                    <Group grow>
+                    <Stack gap="xs">
                       <Button
+                        fullWidth
                         color="red"
                         rightSection={<IconArrowRight size={17} />}
                         onClick={() => openProject(project)}
@@ -611,21 +612,23 @@ function Projects({ setPage, setSelectedProject }) {
                         Open Project
                       </Button>
                       <Button
+                        fullWidth
                         variant="light"
                         color="blue"
                         leftSection={<IconClipboardCheck size={17} />}
                         onClick={() => openProjectChecklist(project)}
                       >
-                        Checklist
+                        Checklist & Updates
                       </Button>
                       <Button
+                        fullWidth
                         variant="light"
                         color="gray"
                         onClick={() => editProject(project)}
                       >
-                        Edit
+                        Edit Project
                       </Button>
-                    </Group>
+                    </Stack>
                   </Stack>
                 </Paper>
               );
