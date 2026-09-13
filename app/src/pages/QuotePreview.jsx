@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Group, Loader, Table, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import * as XLSX from "xlsx";
 
 import { supabase } from "../lib/supabase";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
@@ -108,6 +109,35 @@ function splitLines(value) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function safeFileName(value) {
+  return String(value || "Metal-Worx-Quote")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function imageUrlToDataUrl(url) {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 function QuoteTextSection({ title, value, className = "" }) {
@@ -317,6 +347,94 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const assumptions = splitLines(quote?.assumptions);
   const exclusions = splitLines(quote?.exclusions);
 
+  async function exportWord() {
+    try {
+      const documentNode = document.querySelector(".mw-quote-document");
+      if (!documentNode) throw new Error("Quote document is not ready.");
+      const clone = documentNode.cloneNode(true);
+      const logoData = await imageUrlToDataUrl(COMPANY_LOGO_URL);
+      clone.querySelectorAll("img.quote-logo").forEach((image) => {
+        image.setAttribute("src", logoData);
+      });
+      const styles = document.querySelector("style[data-metal-worx-quote]")?.textContent || "";
+      const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${quote.quote_number || "Metal Worx Quote"}</title><style>${styles}</style></head><body>${clone.outerHTML}</body></html>`;
+      downloadBlob(
+        new Blob(["\ufeff", html], { type: "application/msword" }),
+        `${safeFileName(quote.quote_number || projectItem)}.doc`,
+      );
+    } catch (error) {
+      notifications.show({
+        title: "Word Export Failed",
+        message: error.message || "Unable to create the Word quote.",
+        color: "red",
+      });
+    }
+  }
+
+  function exportExcel() {
+    const workbook = XLSX.utils.book_new();
+    const summaryRows = [
+      ["METAL WORX INC.", ""],
+      ["PROJECT QUOTATION", projectItem],
+      ["Quote Number", quote.quote_number || ""],
+      ["Quote Date", formatLongDate(quoteDate)],
+      ["Valid Through", formatLongDate(quote.valid_until)],
+      ["Prepared For", projectCompany || projectPerson],
+      ["Contact", projectPerson],
+      ["Project Location", projectLocation || ""],
+      ["Project Reference", selectedProject?.project_number || "Standalone Quote"],
+      ["Estimated Total", grandTotal],
+      [],
+      ["Project Summary", quote.scope_of_work || ""],
+      ["Specifications", quote.specifications || ""],
+      ["Included Services", quote.included_services || ""],
+    ];
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+    summarySheet["!cols"] = [{ wch: 24 }, { wch: 90 }];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, "Quote Summary");
+
+    const pricingSheet = XLSX.utils.json_to_sheet(
+      pricingRows.map((row) => ({
+        Description: row.title,
+        Details: row.description,
+        Basis: row.basis,
+        Amount: row.amount,
+      })),
+    );
+    XLSX.utils.sheet_add_aoa(
+      pricingSheet,
+      [
+        ["Contract Subtotal", contractSubtotal],
+        ["Sales Tax", taxAmount],
+        ["Total Estimated Price", grandTotal],
+      ],
+      { origin: -1 },
+    );
+    pricingSheet["!cols"] = [
+      { wch: 34 },
+      { wch: 70 },
+      { wch: 22 },
+      { wch: 18 },
+    ];
+    XLSX.utils.book_append_sheet(workbook, pricingSheet, "Pricing");
+
+    const termsSheet = XLSX.utils.aoa_to_sheet([
+      ["Section", "Details"],
+      ["Schedule", quote.project_schedule || ""],
+      ["Customer Responsibilities", quote.customer_responsibilities || ""],
+      ["Assumptions", quote.assumptions || ""],
+      ["Exclusions / Changes", quote.exclusions || ""],
+      ["Down Payment", quote.down_payment_terms || ""],
+      ["Payment Terms", quote.payment_terms || ""],
+      ["Warranty", quote.warranty_terms || ""],
+      ["Additional Terms", quote.disclaimer || ""],
+      ["Acceptance", quote.acceptance_terms || ""],
+    ]);
+    termsSheet["!cols"] = [{ wch: 30 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(workbook, termsSheet, "Terms");
+    XLSX.writeFile(workbook, `${safeFileName(quote.quote_number || projectItem)}.xlsx`);
+  }
+
   if (loading) {
     return (
       <>
@@ -362,7 +480,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
   return (
     <>
-      <style>{`
+      <style data-metal-worx-quote>{`
         .quote-screen-controls {
           margin-bottom: 22px;
         }
@@ -374,6 +492,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           background: #fff;
           color: #17191c;
           font-family: Arial, Helvetica, sans-serif;
+          font-size: 12pt;
           box-shadow: 0 20px 55px rgba(0, 0, 0, .38);
         }
 
@@ -395,7 +514,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           gap: 24px;
           align-items: center;
           padding-bottom: 12px;
-          border-bottom: 3px solid #c8102e;
+          border-bottom: 1px solid #111;
           margin-bottom: 20px;
         }
 
@@ -416,20 +535,20 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         }
 
         .quote-title-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.6fr) minmax(250px, .8fr);
-          border: 1px solid #17191c;
+          display: block;
+          border: 0;
           margin-bottom: 20px;
         }
 
         .quote-title-block {
-          background: #17191c;
-          color: #fff;
-          padding: 20px 22px;
+          background: #fff;
+          color: #111;
+          padding: 10px 22px 14px;
+          text-align: center;
         }
 
         .quote-title-block .eyebrow {
-          color: #ff1f35 !important;
+          color: #111 !important;
           font-size: 11px;
           font-weight: 900;
           letter-spacing: .16em;
@@ -438,20 +557,21 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
         .quote-title-block h1 {
           margin: 7px 0 4px;
-          color: #ffffff !important;
-          font-size: 30px;
+          color: #111 !important;
+          font-size: 24px;
           line-height: 1.06;
           text-transform: uppercase;
         }
 
         .quote-title-block p {
           margin: 0;
-          color: #e2e2e2 !important;
+          color: #111 !important;
           font-size: 15px;
         }
 
         .quote-meta {
-          background: #e7e9ec;
+          display: none;
+          background: #e7e7e7;
           padding: 15px 17px;
         }
 
@@ -464,7 +584,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         }
 
         .quote-meta-row span:first-child {
-          color: #35556e;
+          color: #111;
           font-weight: 900;
           text-transform: uppercase;
         }
@@ -496,13 +616,13 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
         .quote-info-cell:nth-child(4n + 3),
         .quote-info-cell:nth-child(4n + 4) {
-          background: #f2f4f7;
+          background: #e7e7e7;
         }
 
         .quote-info-label {
           display: block;
           margin-bottom: 5px;
-          color: #35556e;
+          color: #111;
           font-size: 10px;
           font-weight: 900;
           letter-spacing: .04em;
@@ -522,16 +642,16 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         }
 
         .quote-price-label {
-          background: #17191c;
-          color: #fff;
+          background: #e7e7e7;
+          color: #111;
           padding: 14px 16px;
           font-weight: 900;
           letter-spacing: .06em;
         }
 
         .quote-price-value {
-          background: #b60018;
-          color: #fff;
+          background: #e7e7e7;
+          color: #111;
           padding: 11px 16px;
           text-align: right;
           font-size: 25px;
@@ -554,7 +674,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         .quote-section h2 {
           margin: 0 0 10px;
           padding-bottom: 7px;
-          border-bottom: 2px solid #c8102e;
+          border-bottom: 1px solid #111;
           font-size: 19px;
           line-height: 1.15;
         }
@@ -597,7 +717,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         }
 
         .quote-table tbody tr:nth-child(even) td {
-          background: #f2f4f7;
+          background: #e7e7e7;
         }
 
         .quote-line-description {
@@ -609,13 +729,13 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         }
 
         .quote-total-row td {
-          background: #e6eef5 !important;
-          color: #19384f;
+          background: #e7e7e7 !important;
+          color: #111;
           font-weight: 900;
         }
 
         .quote-grand-row td {
-          background: #17191c !important;
+          background: #111 !important;
           color: #fff !important;
           font-size: 14px;
           font-weight: 900;
@@ -707,8 +827,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         .quote-signature h3 {
           margin: -11px -11px 54px;
           padding: 9px 11px;
-          background: #e7e9ec;
-          color: #19384f;
+          background: #e7e7e7;
+          color: #111;
           font-size: 11px;
         }
 
@@ -861,6 +981,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             >
               Export PDF
             </Button>
+            <Button variant="light" color="gray" onClick={exportWord}>
+              Export Word
+            </Button>
+            <Button variant="light" color="green" onClick={exportExcel}>
+              Export Excel
+            </Button>
           </Group>
         </Group>
       </div>
@@ -876,15 +1002,17 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <div className="quote-company">
               METAL WORX INC.
               <br />
-              CUSTOM FABRICATION
-              <br />
               1122 Gillespie St. | Fayetteville, NC 28306
+              <br />
+              (910) 438-9353 | info@metalworxinc.net
+              <br />
+              www.metalworxinc.net | Veteran Owned
             </div>
           </header>
 
           <section className="quote-title-grid">
             <div className="quote-title-block">
-              <div className="eyebrow">Professional Quote</div>
+              <div className="eyebrow">PROJECT QUOTATION</div>
               <h1>{projectItem}</h1>
               <p>
                 {selectedProject?.project_type ||
@@ -978,7 +1106,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           />
 
           <footer className="quote-footer">
-            METAL WORX INC. | CONFIDENTIAL CUSTOMER QUOTE | {quote.quote_number}
+            METAL WORX INC. | Veteran Owned | American Made | Page 1
           </footer>
         </article>
 
@@ -992,9 +1120,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <div className="quote-company">
               METAL WORX INC.
               <br />
-              CUSTOM FABRICATION
+              1122 Gillespie St. | Fayetteville, NC 28306
               <br />
-              {quote.quote_number}
+              (910) 438-9353 | info@metalworxinc.net
+              <br />
+              www.metalworxinc.net | Veteran Owned
             </div>
           </header>
 
@@ -1093,7 +1223,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           )}
 
           <footer className="quote-footer">
-            METAL WORX INC. | CONFIDENTIAL CUSTOMER QUOTE | {quote.quote_number}
+            METAL WORX INC. | Veteran Owned | American Made | Page 2
           </footer>
         </article>
 
@@ -1107,9 +1237,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <div className="quote-company">
               METAL WORX INC.
               <br />
-              CUSTOM FABRICATION
+              1122 Gillespie St. | Fayetteville, NC 28306
               <br />
-              {quote.quote_number}
+              (910) 438-9353 | info@metalworxinc.net
+              <br />
+              www.metalworxinc.net | Veteran Owned
             </div>
           </header>
 
@@ -1183,7 +1315,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             )}
 
           <footer className="quote-footer">
-            METAL WORX INC. | CONFIDENTIAL CUSTOMER QUOTE | {quote.quote_number}
+            METAL WORX INC. | Veteran Owned | American Made | Page 3
           </footer>
         </article>
 
@@ -1197,9 +1329,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <div className="quote-company">
               METAL WORX INC.
               <br />
-              CUSTOM FABRICATION
+              1122 Gillespie St. | Fayetteville, NC 28306
               <br />
-              {quote.quote_number}
+              (910) 438-9353 | info@metalworxinc.net
+              <br />
+              www.metalworxinc.net | Veteran Owned
             </div>
           </header>
 
@@ -1257,8 +1391,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           </section>
 
           <footer className="quote-footer">
-            METAL WORX INC. | 1122 GILLESPIE ST. | FAYETTEVILLE, NC 28306 |
-            (910) 438-9353 | {quote.quote_number}
+            METAL WORX INC. | Veteran Owned | American Made | Page 4
           </footer>
         </article>
       </main>
