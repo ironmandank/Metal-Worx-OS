@@ -7,6 +7,7 @@ import {
   Loader,
   Paper,
   Progress,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
@@ -20,6 +21,7 @@ import {
   IconClipboardCheck,
   IconCircleCheck,
   IconMapPin,
+  IconPackage,
   IconRefresh,
   IconRotateClockwise,
   IconSearch,
@@ -106,6 +108,8 @@ function getProjectIdentity(project, customer) {
 
 function Projects({ setPage, setSelectedProject }) {
   const [projects, setProjects] = useState([]);
+  const [completedProjects, setCompletedProjects] = useState([]);
+  const [viewMode, setViewMode] = useState("active");
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -124,7 +128,6 @@ function Projects({ setPage, setSelectedProject }) {
         supabase
           .from("projects")
           .select("*")
-          .eq("is_active", true)
           .order("created_at", { ascending: false }),
         supabase.from("customers").select("*"),
       ]);
@@ -132,8 +135,15 @@ function Projects({ setPage, setSelectedProject }) {
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
 
-      const loadedProjects = projectResult.data || [];
-      const projectIds = loadedProjects.map((project) => project.id);
+      const allProjects = projectResult.data || [];
+      const loadedProjects = allProjects.filter(
+        (project) => project.is_active === true && !["Completed", "Cancelled"].includes(project.status)
+      );
+      const loadedCompletedProjects = allProjects.filter(
+        (project) => project.status === "Completed"
+      );
+      const trackedProjects = [...loadedProjects, ...loadedCompletedProjects];
+      const projectIds = trackedProjects.map((project) => project.id);
       let checklistRows = [];
       let updateRows = [];
 
@@ -160,7 +170,7 @@ function Projects({ setPage, setSelectedProject }) {
       }
 
       const trackingMap = Object.fromEntries(
-        loadedProjects.map((project) => [
+        trackedProjects.map((project) => [
           project.id,
           {
             tasks: 0,
@@ -187,6 +197,7 @@ function Projects({ setPage, setSelectedProject }) {
       });
 
       setProjects(loadedProjects);
+      setCompletedProjects(loadedCompletedProjects);
       setTrackingByProject(trackingMap);
       setCustomers(
         Object.fromEntries(
@@ -213,9 +224,10 @@ function Projects({ setPage, setSelectedProject }) {
 
   const filteredProjects = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return projects;
+    const source = viewMode === "completed" ? completedProjects : projects;
+    if (!term) return source;
 
-    return projects.filter((project) => {
+    return source.filter((project) => {
       const customer = customers[project.customer_id];
       const person = getProjectPerson(project, customer);
       const company = getProjectCompany(project, customer, person);
@@ -242,7 +254,7 @@ function Projects({ setPage, setSelectedProject }) {
         .toLowerCase()
         .includes(term);
     });
-  }, [customers, projects, search]);
+  }, [completedProjects, customers, projects, search, viewMode]);
 
   const siteVisitCount = projects.filter(
     (project) =>
@@ -251,7 +263,7 @@ function Projects({ setPage, setSelectedProject }) {
   ).length;
   const installCount = projects.filter(
     (project) =>
-      project.install_required && project.install_status !== "Completed"
+      project.install_required && project.install_date && project.install_status !== "Completed"
   ).length;
   const holdCount = projects.filter(
     (project) => project.status === "On Hold"
@@ -422,10 +434,24 @@ function Projects({ setPage, setSelectedProject }) {
       )}
 
       <MWPanel
-        title="Project Tracker"
-        subtitle={`${filteredProjects.length} of ${projects.length} active projects shown`}
+        title={viewMode === "completed" ? "Completed Project Library" : "Project Tracker"}
+        subtitle={
+          viewMode === "completed"
+            ? `${filteredProjects.length} of ${completedProjects.length} completed project packages shown`
+            : `${filteredProjects.length} of ${projects.length} active projects shown`
+        }
         icon={IconTool}
       >
+        <SegmentedControl
+          mb="lg"
+          fullWidth
+          value={viewMode}
+          onChange={setViewMode}
+          data={[
+            { label: `Active Projects (${projects.length})`, value: "active" },
+            { label: `Completed Library (${completedProjects.length})`, value: "completed" },
+          ]}
+        />
         <Group mb="lg" wrap="wrap">
           <TextInput
             style={{ flex: 1, minWidth: 280 }}
@@ -449,7 +475,7 @@ function Projects({ setPage, setSelectedProject }) {
 
         {!filteredProjects.length ? (
           <Alert color="gray" icon={<IconTool size={18} />}>
-            No active projects match the current search.
+            No {viewMode === "completed" ? "completed project packages" : "active projects"} match the current search.
           </Alert>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg">
@@ -687,17 +713,32 @@ function Projects({ setPage, setSelectedProject }) {
                         rightSection={<IconArrowRight size={17} />}
                         onClick={() => openProject(project)}
                       >
-                        Open Project
+                        {viewMode === "completed" ? "Open Project Package" : "Open Project"}
                       </Button>
-                      <Button
-                        fullWidth
-                        variant="light"
-                        color="blue"
-                        leftSection={<IconClipboardCheck size={17} />}
-                        onClick={() => openProjectChecklist(project)}
-                      >
-                        Checklist & Updates
-                      </Button>
+                      {viewMode === "completed" ? (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="blue"
+                          leftSection={<IconPackage size={17} />}
+                          onClick={() => {
+                            setSelectedProject({ ...project, initialTab: "package" });
+                            setPage("projectDetails");
+                          }}
+                        >
+                          Files & Reuse Checklist
+                        </Button>
+                      ) : (
+                        <Button
+                          fullWidth
+                          variant="light"
+                          color="blue"
+                          leftSection={<IconClipboardCheck size={17} />}
+                          onClick={() => openProjectChecklist(project)}
+                        >
+                          Checklist & Updates
+                        </Button>
+                      )}
                       <Button
                         fullWidth
                         variant="light"
