@@ -6,6 +6,7 @@ import {
   Group,
   Loader,
   Paper,
+  Progress,
   SimpleGrid,
   Stack,
   Text,
@@ -16,6 +17,7 @@ import {
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconClipboardCheck,
   IconMapPin,
   IconRefresh,
   IconSearch,
@@ -106,6 +108,7 @@ function Projects({ setPage, setSelectedProject }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [trackingByProject, setTrackingByProject] = useState({});
 
   const loadProjects = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -126,7 +129,62 @@ function Projects({ setPage, setSelectedProject }) {
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
 
-      setProjects(projectResult.data || []);
+      const loadedProjects = projectResult.data || [];
+      const projectIds = loadedProjects.map((project) => project.id);
+      let checklistRows = [];
+      let updateRows = [];
+
+      if (projectIds.length) {
+        const [checklistResult, updateResult] = await Promise.all([
+          supabase
+            .from("project_checklist_items")
+            .select("project_id, status")
+            .in("project_id", projectIds),
+          supabase
+            .from("project_daily_updates")
+            .select(
+              "project_id, update_date, status, leadership_attention_required, created_at"
+            )
+            .in("project_id", projectIds)
+            .order("update_date", { ascending: false })
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (checklistResult.error) throw checklistResult.error;
+        if (updateResult.error) throw updateResult.error;
+        checklistRows = checklistResult.data || [];
+        updateRows = updateResult.data || [];
+      }
+
+      const trackingMap = Object.fromEntries(
+        loadedProjects.map((project) => [
+          project.id,
+          {
+            tasks: 0,
+            applicable: 0,
+            complete: 0,
+            blocked: 0,
+            latestUpdate: null,
+          },
+        ])
+      );
+
+      checklistRows.forEach((task) => {
+        const tracking = trackingMap[task.project_id];
+        if (!tracking) return;
+        tracking.tasks += 1;
+        if (task.status !== "Not Applicable") tracking.applicable += 1;
+        if (task.status === "Complete") tracking.complete += 1;
+        if (task.status === "Blocked") tracking.blocked += 1;
+      });
+
+      updateRows.forEach((update) => {
+        const tracking = trackingMap[update.project_id];
+        if (tracking && !tracking.latestUpdate) tracking.latestUpdate = update;
+      });
+
+      setProjects(loadedProjects);
+      setTrackingByProject(trackingMap);
       setCustomers(
         Object.fromEntries(
           (customerResult.data || []).map((customer) => [
@@ -197,7 +255,12 @@ function Projects({ setPage, setSelectedProject }) {
   ).length;
 
   function openProject(project) {
-    setSelectedProject(project);
+    setSelectedProject({ ...project, initialTab: "overview" });
+    setPage("projectDetails");
+  }
+
+  function openProjectChecklist(project) {
+    setSelectedProject({ ...project, initialTab: "tracking" });
     setPage("projectDetails");
   }
 
@@ -329,6 +392,17 @@ function Projects({ setPage, setSelectedProject }) {
                 project.finish_required && "Finish",
                 project.install_required && "Install",
               ].filter(Boolean);
+              const tracking = trackingByProject[project.id] || {
+                tasks: 0,
+                applicable: 0,
+                complete: 0,
+                blocked: 0,
+                latestUpdate: null,
+              };
+              const checklistPercent = tracking.applicable
+                ? Math.round((tracking.complete / tracking.applicable) * 100)
+                : 0;
+              const latestUpdate = tracking.latestUpdate;
 
               return (
                 <Paper
@@ -446,6 +520,70 @@ function Projects({ setPage, setSelectedProject }) {
                       </Text>
                     </Paper>
 
+                    <Paper
+                      p="sm"
+                      radius="md"
+                      style={{
+                        background: "rgba(0,0,0,.2)",
+                        border:
+                          tracking.blocked > 0 ||
+                          latestUpdate?.leadership_attention_required
+                            ? "1px solid rgba(255,70,75,.55)"
+                            : "1px solid rgba(255,255,255,.06)",
+                      }}
+                    >
+                      <Group justify="space-between" mb={6}>
+                        <Group gap={6}>
+                          <IconClipboardCheck size={16} />
+                          <Text size="sm" fw={800}>
+                            Checklist
+                          </Text>
+                        </Group>
+                        <Text size="sm" fw={800}>
+                          {tracking.tasks
+                            ? `${tracking.complete}/${tracking.applicable}`
+                            : "Not started"}
+                        </Text>
+                      </Group>
+                      <Progress
+                        value={checklistPercent}
+                        color={tracking.blocked ? "red" : "green"}
+                        size="sm"
+                        radius="xl"
+                      />
+                      <Group gap="xs" mt="sm" wrap="wrap">
+                        {tracking.blocked > 0 && (
+                          <Badge color="red" variant="filled">
+                            {tracking.blocked} Blocked
+                          </Badge>
+                        )}
+                        {latestUpdate ? (
+                          <Badge
+                            color={
+                              latestUpdate.status === "Blocked"
+                                ? "red"
+                                : latestUpdate.status === "At Risk"
+                                  ? "orange"
+                                  : "green"
+                            }
+                            variant="light"
+                          >
+                            {latestUpdate.status} · Updated{" "}
+                            {formatDate(latestUpdate.update_date)}
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="light">
+                            No daily update
+                          </Badge>
+                        )}
+                        {latestUpdate?.leadership_attention_required && (
+                          <Badge color="red" variant="filled">
+                            Leadership Attention
+                          </Badge>
+                        )}
+                      </Group>
+                    </Paper>
+
                     <Group gap="xs" wrap="wrap">
                       {requirements.length ? (
                         requirements.map((requirement) => (
@@ -471,6 +609,14 @@ function Projects({ setPage, setSelectedProject }) {
                         onClick={() => openProject(project)}
                       >
                         Open Project
+                      </Button>
+                      <Button
+                        variant="light"
+                        color="blue"
+                        leftSection={<IconClipboardCheck size={17} />}
+                        onClick={() => openProjectChecklist(project)}
+                      >
+                        Checklist
                       </Button>
                       <Button
                         variant="light"
