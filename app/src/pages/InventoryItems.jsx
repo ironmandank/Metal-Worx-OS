@@ -3,6 +3,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Group,
   Loader,
   ScrollArea,
@@ -30,6 +31,7 @@ import {
   IconRefresh,
   IconSearch,
   IconTool,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -336,6 +338,10 @@ function InventoryItems({
     setStorageFilter,
   ] = useState("all");
 
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkBinId, setBulkBinId] = useState("");
+  const [bulkWorking, setBulkWorking] = useState(false);
+
   useEffect(() => {
     loadInventoryItems();
   }, []);
@@ -606,6 +612,120 @@ function InventoryItems({
     statusFilter,
     storageFilter,
   ]);
+
+  const displayedIds = filteredItems.map((item) => item.inventory_item_id);
+  const allDisplayedSelected =
+    displayedIds.length > 0 &&
+    displayedIds.every((id) => selectedIds.includes(id));
+
+  function toggleItemSelection(itemId) {
+    setSelectedIds((current) =>
+      current.includes(itemId)
+        ? current.filter((id) => id !== itemId)
+        : [...current, itemId]
+    );
+  }
+
+  function toggleAllDisplayed() {
+    setSelectedIds((current) =>
+      allDisplayedSelected
+        ? current.filter((id) => !displayedIds.includes(id))
+        : Array.from(new Set([...current, ...displayedIds]))
+    );
+  }
+
+  async function changeSelectedBin() {
+    if (!selectedIds.length || !bulkBinId) return;
+    setBulkWorking(true);
+    try {
+      const { error } = await supabase
+        .from("inventory_items")
+        .update({
+          default_bin_id: bulkBinId,
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", selectedIds);
+      if (error) throw error;
+      notifications.show({
+        title: "Default Bin Updated",
+        message: `${selectedIds.length} selected item(s) were updated.`,
+        color: "green",
+      });
+      setSelectedIds([]);
+      setBulkBinId("");
+      await loadInventoryItems();
+    } catch (error) {
+      notifications.show({
+        title: "Bin Update Failed",
+        message: error.message || "Unable to update the selected items.",
+        color: "red",
+      });
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
+  async function removeSelectedItems() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Delete/archive ${selectedIds.length} selected inventory item(s)? Items tied to business history will be archived.`)) return;
+    setBulkWorking(true);
+    try {
+      const linkedResults = await Promise.all([
+        supabase.from("inventory_movements").select("inventory_item_id").in("inventory_item_id", selectedIds),
+        supabase.from("material_request_items").select("inventory_item_id").in("inventory_item_id", selectedIds),
+        supabase.from("show_sale_items").select("inventory_item_id").in("inventory_item_id", selectedIds),
+      ]);
+      const failedResult = linkedResults.find((result) => result.error);
+      if (failedResult?.error) throw failedResult.error;
+
+      const linkedIds = new Set(
+        linkedResults.flatMap((result) =>
+          (result.data || []).map((row) => row.inventory_item_id)
+        )
+      );
+      const deletableIds = selectedIds.filter((id) => !linkedIds.has(id));
+      const archiveIds = selectedIds.filter((id) => linkedIds.has(id));
+      let deletedCount = 0;
+
+      if (deletableIds.length) {
+        const deleteResult = await supabase
+          .from("inventory_items")
+          .delete()
+          .in("id", deletableIds);
+        if (deleteResult.error) archiveIds.push(...deletableIds);
+        else deletedCount = deletableIds.length;
+      }
+
+      const uniqueArchiveIds = Array.from(new Set(archiveIds));
+      if (uniqueArchiveIds.length) {
+        const { error } = await supabase
+          .from("inventory_items")
+          .update({
+            is_active: false,
+            available_for_show_sales: false,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", uniqueArchiveIds);
+        if (error) throw error;
+      }
+
+      notifications.show({
+        title: "Inventory Updated",
+        message: `${deletedCount} deleted; ${uniqueArchiveIds.length} archived.`,
+        color: "green",
+      });
+      setSelectedIds([]);
+      await loadInventoryItems();
+    } catch (error) {
+      notifications.show({
+        title: "Bulk Remove Failed",
+        message: error.message || "Unable to remove the selected items.",
+        color: "red",
+      });
+    } finally {
+      setBulkWorking(false);
+    }
+  }
 
   const showroomCount = useMemo(
     () =>
@@ -1063,6 +1183,64 @@ function InventoryItems({
           color="red"
           compact
         >
+          <Stack gap="sm" mb="md">
+            <Group justify="space-between" align="flex-end" wrap="wrap">
+              <Group gap="sm">
+                <Checkbox
+                  checked={allDisplayedSelected}
+                  indeterminate={
+                    selectedIds.length > 0 && !allDisplayedSelected
+                  }
+                  onChange={toggleAllDisplayed}
+                  label={
+                    allDisplayedSelected
+                      ? "Clear displayed"
+                      : "Select all displayed"
+                  }
+                />
+                <Text size="sm" c="dimmed">
+                  {selectedIds.length} selected
+                </Text>
+              </Group>
+              <Group gap="xs" align="flex-end" wrap="wrap">
+                <Select
+                  label="Change selected default bin"
+                  placeholder="Choose bin"
+                  searchable
+                  clearable
+                  w={260}
+                  value={bulkBinId || null}
+                  onChange={(value) => setBulkBinId(value || "")}
+                  data={bins.map((bin) => ({
+                    value: bin.id,
+                    label: [bin.code, bin.name, bin.zone]
+                      .filter(Boolean)
+                      .join(" · "),
+                  }))}
+                  disabled={!selectedIds.length || bulkWorking}
+                />
+                <Button
+                  color="blue"
+                  variant="light"
+                  disabled={!selectedIds.length || !bulkBinId}
+                  loading={bulkWorking}
+                  onClick={changeSelectedBin}
+                >
+                  Apply Bin
+                </Button>
+                <Button
+                  color="red"
+                  leftSection={<IconTrash size={16} />}
+                  disabled={!selectedIds.length}
+                  loading={bulkWorking}
+                  onClick={removeSelectedItems}
+                >
+                  Delete / Archive Selected
+                </Button>
+              </Group>
+            </Group>
+          </Stack>
+
           {filteredItems.length === 0 ? (
             <EmptyState
               hasFilters={hasFilters}
@@ -1114,6 +1292,14 @@ function InventoryItems({
               >
                 <Table.Thead>
                   <Table.Tr>
+                    <Table.Th style={{ width: 46 }}>
+                      <Checkbox
+                        aria-label="Select all displayed inventory items"
+                        checked={allDisplayedSelected}
+                        indeterminate={selectedIds.length > 0 && !allDisplayedSelected}
+                        onChange={toggleAllDisplayed}
+                      />
+                    </Table.Th>
                     <Table.Th
                       style={{
                         width: 270,
@@ -1219,6 +1405,15 @@ function InventoryItems({
                             openItem(item)
                           }
                         >
+                          <Table.Td
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Checkbox
+                              aria-label={`Select ${item.name}`}
+                              checked={selectedIds.includes(item.inventory_item_id)}
+                              onChange={() => toggleItemSelection(item.inventory_item_id)}
+                            />
+                          </Table.Td>
                           <Table.Td>
                             <Group
                               gap="md"
