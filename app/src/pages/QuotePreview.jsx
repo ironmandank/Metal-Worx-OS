@@ -572,8 +572,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             image,
             bytes,
             type: blob.type.includes("png") ? "png" : "jpg",
-            width: Math.max(80, Math.round(dimensions.width * scale)),
-            height: Math.max(60, Math.round(dimensions.height * scale)),
+            width: Math.max(1, Math.round(dimensions.width * scale)),
+            height: Math.max(1, Math.round(dimensions.height * scale)),
           });
         } catch (imageError) {
           console.warn("Quote image was skipped during Word export:", imageError);
