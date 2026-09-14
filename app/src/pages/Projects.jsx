@@ -51,14 +51,14 @@ const CALENDAR_TYPES = [
 
 const capacityCalendarStyles = `
   .mw-capacity-shell { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; background: #0b1014; }
-  .mw-capacity-grid { display: grid; grid-template-columns: 290px repeat(28, 40px); min-width: 1410px; }
+  .mw-capacity-grid { display: grid; grid-template-columns: 290px repeat(28, 48px); min-width: 1634px; }
   .mw-capacity-project, .mw-capacity-corner { position: sticky; left: 0; z-index: 3; background: #11181d; border-right: 2px solid #35414a; }
   .mw-capacity-corner { padding: 13px 16px; font-size: 11px; font-weight: 900; letter-spacing: .08em; color: #cbd2d7; }
   .mw-capacity-date { display: grid; place-items: center; min-height: 54px; padding: 5px 2px; border-right: 1px solid #252d33; border-bottom: 1px solid #35414a; background: #11181d; }
   .mw-capacity-date.weekend { background: #171419; }
   .mw-capacity-date.today { background: #3a0a0f; box-shadow: inset 0 -3px #f21b2d; }
   .mw-capacity-date small { color: #7f8a92; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-  .mw-capacity-date strong { color: #f3f5f6; font-size: 15px; }
+  .mw-capacity-date strong { color: #f3f5f6; font-size: 12px; white-space: nowrap; }
   .mw-capacity-project { min-height: 56px; padding: 8px 14px; border-bottom: 1px solid #252d33; cursor: pointer; }
   .mw-capacity-project:hover { background: #182127; }
   .mw-capacity-project strong, .mw-capacity-project span, .mw-capacity-project small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -72,7 +72,7 @@ const capacityCalendarStyles = `
   .mw-capacity-bar.start { margin-left:4px; border-radius:7px 0 0 7px; }
   .mw-capacity-bar.end { margin-right:4px; border-radius:0 7px 7px 0; }
   .mw-capacity-bar.single { margin:0 4px; border-radius:7px; }
-  @media (max-width: 700px) { .mw-capacity-grid { grid-template-columns: 220px repeat(28, 38px); min-width:1284px; } .mw-capacity-project, .mw-capacity-corner { max-width:220px; } }
+  @media (max-width: 700px) { .mw-capacity-grid { grid-template-columns: 220px repeat(28, 46px); min-width:1508px; } .mw-capacity-project, .mw-capacity-corner { max-width:220px; } }
 `;
 
 function getStatusColor(status) {
@@ -523,10 +523,10 @@ function Projects({ setPage, setSelectedProject }) {
             <div className="mw-capacity-shell">
               <div className="mw-capacity-grid">
                 <div className="mw-capacity-corner">PROJECT • LEAD • WORK WINDOW</div>
-                {calendarDays.map((day, index) => {
+                {calendarDays.map((day) => {
                   const today = dateKey(day) === dateKey(new Date());
                   const weekend = day.getDay() === 0 || day.getDay() === 6;
-                  return <div key={dateKey(day)} className={`mw-capacity-date ${weekend ? "weekend" : ""} ${today ? "today" : ""}`}><small>{index === 0 || day.getDate() === 1 ? day.toLocaleDateString("en-US", { month:"short" }) : day.toLocaleDateString("en-US", { weekday:"short" })}</small><strong>{day.getDate()}</strong></div>;
+                  return <div key={dateKey(day)} className={`mw-capacity-date ${weekend ? "weekend" : ""} ${today ? "today" : ""}`}><small>{day.toLocaleDateString("en-US", { weekday:"short" })}</small><strong>{day.toLocaleDateString("en-US", { month:"short", day:"numeric" })}</strong></div>;
                 })}
                 {scheduledProjects.map((project) => {
                   const calendarType = getCalendarType(project);
