@@ -46,6 +46,7 @@ import {
   markAllNotificationsReadForName,
   markNotificationRead,
 } from "../../services/notificationService";
+import AnimatedWalkthrough from "../AnimatedWalkthrough";
 
 const GLOBAL_STATUS_STYLES = `
   .mw-global-shop-status {
@@ -679,7 +680,8 @@ function AppLayout({
         <header className="mw-topbar mw-compact-topbar">
           <button
             type="button"
-            className="mw-mobile-menu-button"
+          className="mw-mobile-menu-button"
+          data-tour="nav-menu"
             onClick={() => {
               setExpanded(true);
               setOpenGroup("");
@@ -689,7 +691,7 @@ function AppLayout({
             <IconMenu2 />
             <span>Menu</span>
           </button>
-          <div className="mw-topbar-search">
+          <div className="mw-topbar-search" data-tour="global-search">
             <IconSearch />
             <input placeholder="Search orders, customers, jobs, projects, inventory..." />
           </div>
@@ -697,6 +699,7 @@ function AppLayout({
           <div className="mw-topbar-actions">
             <div
               className="mw-global-shop-status"
+              data-tour="shop-status"
               title="Metal Worx shop systems are online"
               aria-label="Shop status live"
             >
@@ -705,7 +708,7 @@ function AppLayout({
               <small>Live</small>
             </div>
 
-            <div className="mw-notification-wrap">
+            <div className="mw-notification-wrap" data-tour="notifications">
               <button
                 type="button"
                 className="mw-notification-button"
@@ -767,6 +770,8 @@ function AppLayout({
               )}
             </div>
 
+            <AnimatedWalkthrough currentPage={activePage} navigate={navigate} />
+
             <div className="mw-topbar-user">
               <div className="mw-topbar-avatar">
                 {safeActiveUser.charAt(0).toUpperCase()}
@@ -779,7 +784,7 @@ function AppLayout({
           </div>
         </header>
 
-        <section className="mw-content">{children}</section>
+        <section className="mw-content" data-tour="page-content">{children}</section>
       </main>
     </div>
   );
