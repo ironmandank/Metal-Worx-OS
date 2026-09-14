@@ -49,6 +49,32 @@ const CALENDAR_TYPES = [
   { label: "Other Project", color: "#66717a", terms: [] },
 ];
 
+const capacityCalendarStyles = `
+  .mw-capacity-shell { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; background: #0b1014; }
+  .mw-capacity-grid { display: grid; grid-template-columns: 290px repeat(28, 40px); min-width: 1410px; }
+  .mw-capacity-project, .mw-capacity-corner { position: sticky; left: 0; z-index: 3; background: #11181d; border-right: 2px solid #35414a; }
+  .mw-capacity-corner { padding: 13px 16px; font-size: 11px; font-weight: 900; letter-spacing: .08em; color: #cbd2d7; }
+  .mw-capacity-date { display: grid; place-items: center; min-height: 54px; padding: 5px 2px; border-right: 1px solid #252d33; border-bottom: 1px solid #35414a; background: #11181d; }
+  .mw-capacity-date.weekend { background: #171419; }
+  .mw-capacity-date.today { background: #3a0a0f; box-shadow: inset 0 -3px #f21b2d; }
+  .mw-capacity-date small { color: #7f8a92; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+  .mw-capacity-date strong { color: #f3f5f6; font-size: 15px; }
+  .mw-capacity-project { min-height: 56px; padding: 8px 14px; border-bottom: 1px solid #252d33; cursor: pointer; }
+  .mw-capacity-project:hover { background: #182127; }
+  .mw-capacity-project strong, .mw-capacity-project span, .mw-capacity-project small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mw-capacity-project strong { color:#fff; font-size: 13px; }
+  .mw-capacity-project span { color:#b7c0c6; font-size: 11px; margin-top:2px; }
+  .mw-capacity-project small { color:#7f8a92; font-size: 9px; margin-top:2px; text-transform:uppercase; letter-spacing:.05em; }
+  .mw-capacity-cell { min-height:56px; border-right:1px solid #20282e; border-bottom:1px solid #252d33; background:rgba(255,255,255,.018); padding:14px 0; }
+  .mw-capacity-cell.weekend { background:rgba(255,255,255,.035); }
+  .mw-capacity-cell.today { box-shadow: inset 2px 0 rgba(242,27,45,.65), inset -2px 0 rgba(242,27,45,.65); }
+  .mw-capacity-bar { height:28px; border-radius:0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
+  .mw-capacity-bar.start { margin-left:4px; border-radius:7px 0 0 7px; }
+  .mw-capacity-bar.end { margin-right:4px; border-radius:0 7px 7px 0; }
+  .mw-capacity-bar.single { margin:0 4px; border-radius:7px; }
+  @media (max-width: 700px) { .mw-capacity-grid { grid-template-columns: 220px repeat(28, 38px); min-width:1284px; } .mw-capacity-project, .mw-capacity-corner { max-width:220px; } }
+`;
+
 function getStatusColor(status) {
   if (status === "Completed") return "green";
   if (status === "In Progress") return "blue";
@@ -315,16 +341,15 @@ function Projects({ setPage, setSelectedProject }) {
       const customer = project ? customers[project.customer_id] : null;
       const identity = project ? getProjectIdentity(project, customer) : "";
       const lead = project ? project.assigned_to || project.intake_owner || "" : "";
-      return `<section class="sheet"><header><img src="${companyLogo}" alt="Metal Worx"><div><h1>DAILY PROJECT UPDATE</h1><p>Outside Fabrication • Field & Shop Operations</p></div></header><div class="instructions">Project lead: complete at the end of the shift and return to Operations for entry into Metal Worx OS.</div><div class="meta"><span><b>DATE</b>${"____________________"}</span><span><b>PROJECT LEAD</b>${lead || "____________________"}</span></div><div class="meta"><span class="wide"><b>PROJECT</b>${identity || "____________________________________________"}</span><span><b>PROJECT #</b>${project?.project_number || "________________"}</span></div><div class="status"><b>OVERALL STATUS</b> ☐ On Track &nbsp;&nbsp; ☐ At Risk &nbsp;&nbsp; ☐ Blocked &nbsp;&nbsp; ☐ Complete</div>${[
-        "Work Completed Today", "Work Currently In Progress", "Next Steps", "Problems / Blockers", "Materials Needed", "Labor / Help Needed", "Schedule Changes", "Leadership Decision Needed"
-      ].map((label) => `<div class="field"><b>${label}</b><div></div></div>`).join("")}<div class="bottom"><span><b>ESTIMATED COMPLETION</b> ____________________</span><span><b>LEAD INITIALS</b> __________</span><span><b>LEADERSHIP ATTENTION</b> ☐ Yes ☐ No</span></div><footer>METAL WORX INC. • FAYETTEVILLE, NC • DAILY OPERATIONS CONTROL</footer></section>`;
+      const field = (label, size = "normal") => `<div class="field ${size}"><b>${label}</b><div></div></div>`;
+      return `<section class="sheet"><header><div class="brand"><img src="${companyLogo}" alt="Metal Worx"><div><h1>DAILY PROJECT UPDATE</h1><p>OUTSIDE FABRICATION • FIELD & SHOP OPERATIONS</p></div></div><div class="doc"><b>MW-OPS-01</b><span>Daily Control Record</span></div></header><div class="instructions"><b>PROJECT LEAD:</b> Complete at the end of the shift. Be specific about quantities, locations, decisions, and dates. Return to Operations for entry into Metal Worx OS.</div><div class="meta"><span class="wide"><b>PROJECT / CUSTOMER</b>${identity || "____________________________________________"}</span><span><b>PROJECT NUMBER</b>${project?.project_number || "________________"}</span></div><div class="meta"><span><b>DATE</b>____________________</span><span><b>PROJECT LEAD</b>${lead || "____________________"}</span><span><b>CREW / SUPPORT</b>____________________</span></div><div class="status"><b>OVERALL STATUS</b><span>☐ On Track</span><span>☐ At Risk</span><span>☐ Blocked</span><span>☐ Complete</span><span>Percent Complete: ______ %</span></div><div class="primary">${field("1. WORK COMPLETED TODAY", "large")}${field("2. WORK CURRENTLY IN PROGRESS", "large")}${field("3. NEXT STEPS / TOMORROW'S PLAN", "large")}</div><div class="two-col"><div>${field("4. PROBLEMS / BLOCKERS")}${field("5. MATERIALS NEEDED — ITEM, QTY & NEEDED-BY DATE")}${field("6. LABOR / EQUIPMENT HELP NEEDED")}</div><div>${field("7. SCHEDULE OR SITE CHANGES")}${field("8. CUSTOMER / VENDOR FOLLOW-UP")}${field("9. LEADERSHIP DECISION NEEDED")}</div></div><div class="bottom"><span><b>ESTIMATED COMPLETION DATE</b>____________________</span><span><b>LEADERSHIP ATTENTION</b>☐ Yes &nbsp;&nbsp; ☐ No</span><span><b>LEAD INITIALS</b>____________</span><span><b>OPS ENTERED</b>____________</span></div><footer><b>METAL WORX INC.</b><span>1122 Gillespie Street • Fayetteville, NC 28306 • (910) 438-9353</span><span>Controlled Daily Operations Record</span></footer></section>`;
     }).join("");
     const popup = window.open("", "_blank");
     if (!popup) {
       setErrorMessage("Allow pop-ups for Metal Worx OS, then try printing again.");
       return;
     }
-    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter;margin:.3in}*{box-sizing:border-box}body{margin:0;font:11px Arial;color:#111}.sheet{page-break-after:always;min-height:10.25in;border:2px solid #20252a;padding:14px;position:relative}.sheet:last-child{page-break-after:auto}header{height:64px;display:flex;align-items:center;gap:18px;border-bottom:6px solid #b00012;padding:0 4px 9px}header img{width:150px;height:48px;object-fit:contain}h1{margin:0;font-size:24px;letter-spacing:.06em}header p{margin:3px 0 0;color:#555;font-weight:bold}.instructions{padding:7px 8px;background:#eee;border:1px solid #bbb;margin:8px 0}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:34px;padding:5px 8px;border-right:1px solid #555;font-size:13px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:8px;letter-spacing:.08em;color:#555;margin-bottom:3px}.status{border:1px solid #555;padding:7px;font-size:12px}.status b{margin-right:18px}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #b00012;padding:4px 7px;letter-spacing:.03em}.field div{height:43px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 20px,#ddd 21px)}.bottom{display:flex;justify-content:space-between;border:1px solid #555;margin-top:8px;padding:7px;gap:12px}.bottom span{flex:1}footer{position:absolute;left:14px;right:14px;bottom:8px;border-top:2px solid #b00012;padding-top:4px;color:#555;font-size:9px;font-weight:bold;text-align:center;letter-spacing:.08em}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter portrait;margin:.25in}*{box-sizing:border-box}body{margin:0;background:#d9dde0;font:10px Arial,Helvetica,sans-serif;color:#111}.sheet{page-break-after:always;width:8in;min-height:10.5in;margin:16px auto;background:#fff;border:1px solid #20252a;padding:14px 16px 11px;position:relative;box-shadow:0 8px 28px rgba(0,0,0,.18)}.sheet:last-child{page-break-after:auto}header{height:72px;display:flex;align-items:center;justify-content:space-between;border-top:8px solid #b00012;border-bottom:2px solid #20252a;padding:7px 4px}.brand{display:flex;align-items:center;gap:16px}.brand img{width:130px;height:48px;object-fit:contain}.brand h1{margin:0;font-size:22px;letter-spacing:.055em}.brand p{margin:4px 0 0;color:#555;font-size:9px;font-weight:800;letter-spacing:.07em}.doc{text-align:right;border-left:1px solid #999;padding-left:12px}.doc b,.doc span{display:block}.doc b{color:#b00012;font-size:11px}.doc span{color:#666;font-size:8px;margin-top:3px}.instructions{padding:7px 9px;background:#f0f1f2;border-left:5px solid #b00012;margin:8px 0;line-height:1.35}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:38px;padding:6px 8px;border-right:1px solid #555;font-size:12px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:7px;letter-spacing:.1em;color:#596168;margin-bottom:5px}.status{display:flex;align-items:center;gap:16px;border:1px solid #555;padding:8px;font-size:10px}.status b{margin-right:4px;letter-spacing:.06em}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #c60018;padding:4px 7px;font-size:9px;letter-spacing:.045em}.field div{height:50px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 23px,#d7dadd 24px)}.field.large div{height:62px}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}.bottom{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;border:1px solid #555;margin-top:8px;padding:7px;gap:10px}.bottom span{border-right:1px solid #bbb;padding-right:6px}.bottom span:last-child{border:0}footer{display:flex;justify-content:space-between;align-items:center;margin-top:9px;border-top:3px solid #b00012;padding-top:5px;color:#555;font-size:7px;letter-spacing:.05em}footer b{color:#111}@media print{body{background:#fff}.sheet{margin:0;width:auto;min-height:10.45in;box-shadow:none}}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
     popup.document.close();
   }
 
@@ -438,6 +463,7 @@ function Projects({ setPage, setSelectedProject }) {
 
   return (
     <Stack gap="xl">
+      <style>{capacityCalendarStyles}</style>
       <MWPageHeader
         title="Outside Fabrication"
         subtitle="Field fabrication, railings, gates, installs, repairs, and shop-intake projects."
@@ -494,25 +520,35 @@ function Projects({ setPage, setSelectedProject }) {
         </Group>
         {scheduledProjects.length ? (
           <ScrollArea type="auto">
-            <Box miw={1050}>
-              <Box style={{ display:"grid", gridTemplateColumns:"220px repeat(28, 34px)", gap:2 }}>
-                <Text size="xs" fw={800}>PROJECT / LEAD</Text>
-                {calendarDays.map((day) => <Text key={dateKey(day)} size="xs" ta="center" c={day.getDay() === 0 || day.getDay() === 6 ? "red.4" : "dimmed"}>{day.getDate()}</Text>)}
+            <div className="mw-capacity-shell">
+              <div className="mw-capacity-grid">
+                <div className="mw-capacity-corner">PROJECT • LEAD • WORK WINDOW</div>
+                {calendarDays.map((day, index) => {
+                  const today = dateKey(day) === dateKey(new Date());
+                  const weekend = day.getDay() === 0 || day.getDay() === 6;
+                  return <div key={dateKey(day)} className={`mw-capacity-date ${weekend ? "weekend" : ""} ${today ? "today" : ""}`}><small>{index === 0 || day.getDate() === 1 ? day.toLocaleDateString("en-US", { month:"short" }) : day.toLocaleDateString("en-US", { weekday:"short" })}</small><strong>{day.getDate()}</strong></div>;
+                })}
                 {scheduledProjects.map((project) => {
                   const calendarType = getCalendarType(project);
-                  const start = dateKey(addDays(project.planned_start_date, 0));
-                  const startIndex = calendarDays.findIndex((day) => dateKey(day) === start);
+                  const startDate = addDays(project.planned_start_date, 0);
                   const duration = Number(project.planned_duration_days || 1);
+                  const endDate = addDays(project.planned_start_date, duration - 1);
                   return <Box key={project.id} style={{ display:"contents" }}>
-                    <Button variant="subtle" color="gray" size="compact-xs" justify="flex-start" onClick={() => openProject(project)} style={{overflow:"hidden"}}>{project.project_name || project.project_number} · {project.assigned_to || "Unassigned"}</Button>
-                    {calendarDays.map((day, index) => {
-                      const active = startIndex >= 0 && index >= startIndex && index < startIndex + duration;
-                      return <Box key={`${project.id}-${dateKey(day)}`} h={28} style={{ background: active ? calendarType.color : "rgba(255,255,255,.035)", border: active && project.priority === "Rush" ? "2px solid #ff3445" : "1px solid transparent", borderRadius:3 }} title={active ? `${calendarType.label} — ${project.project_name}: day ${index-startIndex+1} of ${duration}` : ""}/>;
+                    <div className="mw-capacity-project" onClick={() => openProject(project)}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span><small>{formatDate(project.planned_start_date)} — {duration} workday{duration === 1 ? "" : "s"} • {calendarType.label}</small></div>
+                    {calendarDays.map((day) => {
+                      const dayStamp = new Date(`${dateKey(day)}T12:00:00`).getTime();
+                      const active = dayStamp >= startDate.getTime() && dayStamp <= endDate.getTime();
+                      const isStart = active && dayStamp === startDate.getTime();
+                      const isEnd = active && dayStamp === endDate.getTime();
+                      const today = dateKey(day) === dateKey(new Date());
+                      const weekend = day.getDay() === 0 || day.getDay() === 6;
+                      const barClass = isStart && isEnd ? "single" : `${isStart ? "start" : ""} ${isEnd ? "end" : ""}`;
+                      return <div key={`${project.id}-${dateKey(day)}`} className={`mw-capacity-cell ${weekend ? "weekend" : ""} ${today ? "today" : ""}`} title={active ? `${calendarType.label} — ${project.project_name || project.project_number}` : ""}>{active && <div className={`mw-capacity-bar ${barClass}`} style={{background:calendarType.color,border:project.priority === "Rush" ? "2px solid #ff3445" : "none"}}/>}</div>;
                     })}
                   </Box>;
                 })}
-              </Box>
-            </Box>
+              </div>
+            </div>
           </ScrollArea>
         ) : <Alert color="blue">No projects are scheduled yet. Add a planned start date and estimated workdays in Edit Project.</Alert>}
       </MWPanel>
