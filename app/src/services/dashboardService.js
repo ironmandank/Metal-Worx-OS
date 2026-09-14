@@ -595,6 +595,82 @@ function buildPriorityFeed(
   };
 }
 
+function buildArtHotItems(manualItems, customerOrders, customerMap) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const windowEnd = new Date(today);
+  windowEnd.setDate(windowEnd.getDate() + 14);
+  const closedStatuses = new Set([
+    "completed",
+    "cancelled",
+    "closed",
+    "office closeout complete",
+  ]);
+  const priorityOrder = { Critical: 0, High: 1, Normal: 2 };
+
+  const manual = (manualItems || [])
+    .filter((item) => item.status === "Active")
+    .map((item) => ({
+      id: item.id,
+      sourceType: "artHotItem",
+      sourceId: item.id,
+      title: item.title,
+      customer: item.customer_name || "Customer not entered",
+      owner: item.assigned_to || "Unassigned",
+      fulfillmentMethod: item.fulfillment_method || "Pickup",
+      dueDate: item.promised_date || null,
+      dueDisplay: item.promised_date
+        ? new Date(`${item.promised_date}T12:00:00`).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          })
+        : "Date not set",
+      priority: item.priority || "High",
+      notes: item.notes || "",
+      manual: true,
+    }));
+
+  const datedOrders = (customerOrders || [])
+    .filter((order) => {
+      if (!order.due_date || order.fulfillment_completed) return false;
+      if (closedStatuses.has(String(order.status || "").trim().toLowerCase())) return false;
+      const due = new Date(`${order.due_date}T12:00:00`);
+      return !Number.isNaN(due.getTime()) && due <= windowEnd;
+    })
+    .map((order) => {
+      const customer = customerMap.get(order.customer_id);
+      const customerName = customer?.company_name ||
+        [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") ||
+        customer?.contact_name || "Customer";
+      return {
+        id: `order-${order.id}`,
+        sourceType: "customerOrder",
+        sourceId: order.id,
+        title: [order.order_number, order.order_type].filter(Boolean).join(" — ") || `Order #${order.id}`,
+        customer: customerName,
+        owner: order.order_owner || "Unassigned",
+        fulfillmentMethod: order.fulfillment_method || "Pickup",
+        dueDate: order.due_date,
+        dueDisplay: new Date(`${order.due_date}T12:00:00`).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        priority: order.rush || order.is_quick_turnaround ? "Critical" : "High",
+        notes: order.notes || "",
+        manual: false,
+      };
+    });
+
+  return [...manual, ...datedOrders]
+    .sort((a, b) => {
+      const dateA = a.dueDate ? new Date(`${a.dueDate}T12:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      const dateB = b.dueDate ? new Date(`${b.dueDate}T12:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
+      if (dateA !== dateB) return dateA - dateB;
+      return (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9);
+    })
+    .slice(0, 10);
+}
+
 function getProjectName(project) {
   return (
     project.project_name ||
@@ -1264,6 +1340,7 @@ export async function getDashboardData() {
     customersResult,
     actionCenterData,
     hotTodayResult,
+    artHotItemsResult,
     quickCommitmentsResult,
     dailyUpdatesResult,
     checklistItemsResult,
@@ -1293,6 +1370,11 @@ export async function getDashboardData() {
     supabase
       .from("hot_today_items")
       .select("*"),
+
+    supabase
+      .from("art_hot_items")
+      .select("*")
+      .eq("status", "Active"),
 
     supabase
       .from("quick_turnaround_commitments")
@@ -1371,6 +1453,16 @@ export async function getDashboardData() {
       customer.id,
       customer,
     ])
+  );
+
+  if (artHotItemsResult.error) {
+    console.warn("Hot Artwork dashboard feed unavailable:", artHotItemsResult.error);
+  }
+
+  const artHotItems = buildArtHotItems(
+    artHotItemsResult.data || [],
+    customerOrders,
+    customerMap
   );
 
   function getCustomerName(customerId) {
@@ -1961,6 +2053,8 @@ export async function getDashboardData() {
     dailyUpdates,
 
     checklistItems,
+
+    artHotItems,
   };
 
   const totalProjectHealth =
@@ -2154,6 +2248,7 @@ export async function getDashboardData() {
     shopFlow,
     morningHuddle,
     priorityFeed,
+    artHotItems,
     operationsHealth,
   };
 }
