@@ -731,7 +731,7 @@ function QuoteCenter({
           color="blue"
           onClick={() => setShowSiteEstimate((current) => !current)}
         >
-          {showSiteEstimate ? "Close Pre-Quote Estimate" : "Pre-Quote Site Estimate"}
+          {showSiteEstimate\n            ? "Close Site Visit & Mileage"\n            : "Plan Site Visit & Mileage"}
         </Button>
         <Button
           color="red"
@@ -742,7 +742,7 @@ function QuoteCenter({
       </Group>
 
       {showSiteEstimate && (
-        <MWSection title="Pre-Quote Site Estimate" subtitle="Plan a site visit, calculate travel, and request field information before creating a formal quote.">
+        <MWSection title="Site Visit, Google Maps & Mileage" subtitle="Use this before a potential job becomes a formal quote.">
           <Stack gap="md">
             <Alert color="blue">
               This worksheet does <b>not</b> create a quote. It stays saved on this device while you gather the address, mileage, measurements, photos, labor, and material requirements.
