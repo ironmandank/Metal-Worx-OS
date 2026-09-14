@@ -399,7 +399,9 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const projectItem = getProjectItem(selectedProject, quote);
   const quoteDate =
     quote?.quote_date || quote?.created_at || new Date().toISOString();
-  const projectLocation = [
+  const projectLocation =
+    quote?.job_site_address ||
+    [
     selectedProject?.job_address || quote?.billing_address,
     [
       selectedProject?.city || quote?.billing_city,
@@ -411,6 +413,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   ]
     .filter(Boolean)
     .join(", ");
+
+  const travelSummary =
+    Number(quote?.travel_round_trip_miles || 0) > 0
+      ? `${Number(quote.travel_round_trip_miles).toLocaleString("en-US")} round-trip miles from Metal Worx`
+      : "";
 
   const pricingRows = [
     ...pricedMaterials.map((request) => ({
@@ -524,6 +531,9 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           new TableRow({ children: [wordCell("Prepared For", { gray: true, bold: true }), wordCell(projectCompany || projectPerson), wordCell("Prepared By", { gray: true, bold: true }), wordCell(quote.prepared_by || "Metal Worx Inc.") ] }),
           new TableRow({ children: [wordCell("Project", { gray: true, bold: true }), wordCell(projectItem), wordCell("Location", { gray: true, bold: true }), wordCell(projectLocation || "Not specified") ] }),
           new TableRow({ children: [wordCell("Valid Through", { gray: true, bold: true }), wordCell(formatLongDate(quote.valid_until)), wordCell("Schedule", { gray: true, bold: true }), wordCell(quote.project_schedule || "To be scheduled") ] }),
+          ...(travelSummary
+            ? [new TableRow({ children: [wordCell("Travel", { gray: true, bold: true }), wordCell(travelSummary), wordCell("Route Origin", { gray: true, bold: true }), wordCell("1122 Gillespie Street, Fayetteville, NC 28306") ] })]
+            : []),
         ],
       });
       const pricingTable = new WordTable({
@@ -712,6 +722,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       ["Prepared For", projectCompany || projectPerson],
       ["Contact", projectPerson],
       ["Project Location", projectLocation || ""],
+      ["Round-Trip Mileage", Number(quote.travel_round_trip_miles || 0)],
+      ["Mileage Rate", Number(quote.travel_rate_per_mile || 0)],
       ["Project Reference", selectedProject?.project_number || "Standalone Quote"],
       ["Estimated Total", grandTotal],
       [],
