@@ -1551,7 +1551,7 @@ function ProjectDetails({
             <main class="record">
               <header class="header">
                 <img class="logo" src="/metal_worx_header_logo_transparent(1).png" alt="Metal Worx" />
-                <div><div><div class="eyebrow">Internal Project Record</div><div class="internal-note">Operations copy — not a customer quote</div><h1>${escapeHtml(project.project_name || "Outside Project")}</h1></div>
+                <div><div class="eyebrow">Internal Project Record</div><div class="internal-note">Operations copy — not a customer quote</div><h1>${escapeHtml(project.project_name || "Outside Project")}</h1></div>
                 <div class="number"><span class="label">Project Number</span><strong>${escapeHtml(project.project_number || project.id)}</strong><span class="status">${escapeHtml(project.status || "Unknown")}</span></div>
               </header>
 
