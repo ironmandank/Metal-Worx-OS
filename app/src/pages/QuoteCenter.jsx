@@ -7,11 +7,13 @@ import {
   Checkbox,
   Group,
   Loader,
+  NumberInput,
   Select,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
+  Textarea,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -39,6 +41,37 @@ const TEMPLATE_FIELDS = [
   "safety_technical_notice",
   "acceptance_terms",
 ];
+
+const SHOP_ADDRESS = "1122 Gillespie Street, Fayetteville, NC 28306";
+const PREQUOTE_STORAGE_KEY = "metal-worx-prequote-site-estimate";
+
+function googleMapsDirectionsUrl(destination) {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
+    SHOP_ADDRESS,
+  )}&destination=${encodeURIComponent(destination || "")}&travelmode=driving`;
+}
+
+function loadSavedSiteEstimate() {
+  const empty = {
+    customer: "",
+    contact: "",
+    phone: "",
+    destination: "",
+    visitDate: "",
+    assignedTo: "",
+    oneWayMiles: 0,
+    ratePerMile: 0,
+    notes: "",
+  };
+  try {
+    return {
+      ...empty,
+      ...JSON.parse(window.localStorage.getItem(PREQUOTE_STORAGE_KEY) || "{}"),
+    };
+  } catch {
+    return empty;
+  }
+}
 
 function money(value) {
   return Number(value || 0).toLocaleString("en-US", {
@@ -91,6 +124,8 @@ function QuoteCenter({
   const [converting, setConverting] = useState(false);
   const [conversionQuote, setConversionQuote] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSiteEstimate, setShowSiteEstimate] = useState(true);
+  const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Open");
   const [typeFilter, setTypeFilter] = useState("All");
@@ -121,6 +156,62 @@ function QuoteCenter({
   useEffect(() => {
     loadCenter();
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      PREQUOTE_STORAGE_KEY,
+      JSON.stringify(siteEstimate),
+    );
+  }, [siteEstimate]);
+
+  function updateSiteEstimate(field, value) {
+    setSiteEstimate((current) => ({ ...current, [field]: value }));
+  }
+
+  function siteEstimateSummary() {
+    const oneWay = Number(siteEstimate.oneWayMiles || 0);
+    const roundTrip = oneWay * 2;
+    const travelCost = roundTrip * Number(siteEstimate.ratePerMile || 0);
+    return [
+      "METAL WORX — PRE-QUOTE SITE ESTIMATE",
+      "",
+      `Potential Customer / Job: ${siteEstimate.customer || "Not entered"}`,
+      `Contact: ${siteEstimate.contact || "Not entered"}`,
+      `Phone: ${siteEstimate.phone || "Not entered"}`,
+      `Job-Site Address: ${siteEstimate.destination || "Not entered"}`,
+      `Requested Site Visit: ${siteEstimate.visitDate || "Not scheduled"}`,
+      `Assigned To: ${siteEstimate.assignedTo || "Not assigned"}`,
+      `Google Maps Route: ${googleMapsDirectionsUrl(siteEstimate.destination)}`,
+      `Estimated Mileage: ${oneWay || "Confirm"} one way / ${roundTrip || "Confirm"} round trip`,
+      `Mileage Rate: ${money(siteEstimate.ratePerMile)} per mile`,
+      `Estimated Travel Charge: ${money(travelCost)}`,
+      "",
+      "Site Notes / Estimate Needed:",
+      siteEstimate.notes || "Please inspect the site, confirm measurements, labor, materials, equipment, access, and installation requirements.",
+      "",
+      "Return measurements, photos, scope details, estimated labor hours, material requirements, and any site concerns to Operations so a formal quote can be prepared.",
+    ].join("\n");
+  }
+
+  function emailSiteEstimate() {
+    if (!siteEstimate.destination.trim()) {
+      notifications.show({ title: "Job-Site Address Required", message: "Enter the potential job address before preparing the email.", color: "orange" });
+      return;
+    }
+    const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(siteEstimateSummary())}`;
+  }
+
+  async function copySiteEstimate() {
+    await navigator.clipboard.writeText(siteEstimateSummary());
+    notifications.show({ title: "Estimate Summary Copied", message: "Paste it into email, text, or the project notes when ready.", color: "green" });
+  }
+
+  function clearSiteEstimate() {
+    if (!window.confirm("Clear this pre-quote site estimate?")) return;
+    window.localStorage.removeItem(PREQUOTE_STORAGE_KEY);
+    setSiteEstimate(loadSavedSiteEstimate());
+  }
 
   async function loadCenter() {
     setLoading(true);
@@ -634,7 +725,14 @@ function QuoteCenter({
         showDashboard={true}
       />
 
-      <Group justify="flex-end" mb="lg">
+      <Group justify="space-between" mb="lg" wrap="wrap">
+        <Button
+          variant={showSiteEstimate ? "filled" : "light"}
+          color="blue"
+          onClick={() => setShowSiteEstimate((current) => !current)}
+        >
+          {showSiteEstimate ? "Close Pre-Quote Estimate" : "Pre-Quote Site Estimate"}
+        </Button>
         <Button
           color="red"
           onClick={() => setShowCreate((current) => !current)}
@@ -643,9 +741,40 @@ function QuoteCenter({
         </Button>
       </Group>
 
-      <Alert color="blue" mb="lg" title="Job-Site Maps, Mileage & Field Estimates">
-        Open a quote with <b>Open Quote &amp; Mileage</b>. In <b>Job Site &amp; Travel</b>, enter the address, open the Google Maps route from 1122 Gillespie Street, record the mileage, and prepare the field-estimate email.
-      </Alert>
+      {showSiteEstimate && (
+        <MWSection title="Pre-Quote Site Estimate" subtitle="Plan a site visit, calculate travel, and request field information before creating a formal quote.">
+          <Stack gap="md">
+            <Alert color="blue">
+              This worksheet does <b>not</b> create a quote. It stays saved on this device while you gather the address, mileage, measurements, photos, labor, and material requirements.
+            </Alert>
+            <SimpleGrid cols={{ base: 1, md: 2 }}>
+              <TextInput label="Potential Customer / Job" placeholder="Customer, company, or project name" value={siteEstimate.customer} onChange={(event) => updateSiteEstimate("customer", event.currentTarget.value)} />
+              <TextInput label="Job-Site Address" placeholder="Street, city, state, ZIP" required value={siteEstimate.destination} onChange={(event) => updateSiteEstimate("destination", event.currentTarget.value)} />
+              <TextInput label="Contact Name" value={siteEstimate.contact} onChange={(event) => updateSiteEstimate("contact", event.currentTarget.value)} />
+              <TextInput label="Contact Phone" value={siteEstimate.phone} onChange={(event) => updateSiteEstimate("phone", event.currentTarget.value)} />
+              <TextInput type="date" label="Requested Site-Visit Date" value={siteEstimate.visitDate} onChange={(event) => updateSiteEstimate("visitDate", event.currentTarget.value)} />
+              <TextInput label="Assigned Estimator" placeholder="Chad, Kory, etc." value={siteEstimate.assignedTo} onChange={(event) => updateSiteEstimate("assignedTo", event.currentTarget.value)} />
+            </SimpleGrid>
+            <Group align="flex-end" grow wrap="wrap">
+              <Button variant="light" color="blue" disabled={!siteEstimate.destination.trim()} onClick={() => window.open(googleMapsDirectionsUrl(siteEstimate.destination), "_blank", "noopener,noreferrer")}>Open Route in Google Maps</Button>
+              <NumberInput label="One-Way Miles" description="Enter Google Maps mileage" min={0} decimalScale={1} value={Number(siteEstimate.oneWayMiles || 0)} onChange={(value) => updateSiteEstimate("oneWayMiles", Number(value || 0))} />
+              <NumberInput label="Round-Trip Miles" value={Number(siteEstimate.oneWayMiles || 0) * 2} readOnly />
+              <NumberInput label="Charge Per Mile" prefix="$" min={0} decimalScale={2} value={Number(siteEstimate.ratePerMile || 0)} onChange={(value) => updateSiteEstimate("ratePerMile", Number(value || 0))} />
+            </Group>
+            <Card withBorder radius="md" p="md">
+              <Group justify="space-between"><Text fw={800}>Estimated travel charge</Text><Title order={3} c="green">{money(Number(siteEstimate.oneWayMiles || 0) * 2 * Number(siteEstimate.ratePerMile || 0))}</Title></Group>
+            </Card>
+            <Textarea label="Site Notes / Estimate Needed" description="Measurements, photos, access, labor, materials, equipment, installation, or customer requests." minRows={4} autosize value={siteEstimate.notes} onChange={(event) => updateSiteEstimate("notes", event.currentTarget.value)} />
+            <Group justify="space-between" wrap="wrap">
+              <Button variant="subtle" color="red" onClick={clearSiteEstimate}>Clear Worksheet</Button>
+              <Group wrap="wrap">
+                <Button variant="light" color="gray" onClick={copySiteEstimate}>Copy Estimate Summary</Button>
+                <Button color="blue" disabled={!siteEstimate.destination.trim()} onClick={emailSiteEstimate}>Prepare Site-Visit Email</Button>
+              </Group>
+            </Group>
+          </Stack>
+        </MWSection>
+      )}
 
       {conversionPanel}
 
