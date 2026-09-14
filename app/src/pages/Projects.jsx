@@ -38,6 +38,16 @@ import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
+import companyLogo from "../assets/metal-worx-official-transparent.png";
+
+const CALENDAR_TYPES = [
+  { label: "Railings & Handrails", color: "#1677c8", terms: ["rail", "handrail"] },
+  { label: "Gates & Fences", color: "#2f9e44", terms: ["gate", "fence"] },
+  { label: "Repair & Restoration", color: "#e67700", terms: ["repair", "restore", "restoration"] },
+  { label: "Custom Fabrication", color: "#7950f2", terms: ["fabrication", "custom", "prototype", "container", "trailer"] },
+  { label: "Install & Field Work", color: "#0ca6a6", terms: ["install", "field", "site"] },
+  { label: "Other Project", color: "#66717a", terms: [] },
+];
 
 function getStatusColor(status) {
   if (status === "Completed") return "green";
@@ -117,6 +127,14 @@ function addDays(value, days) {
 
 function dateKey(date) {
   return date.toISOString().slice(0, 10);
+}
+
+function getCalendarType(project) {
+  const words = [project.project_type, project.project_category, project.project_name, project.notes]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return CALENDAR_TYPES.find((type) => type.terms.some((term) => words.includes(term))) || CALENDAR_TYPES.at(-1);
 }
 
 function Projects({ setPage, setSelectedProject }) {
@@ -297,16 +315,16 @@ function Projects({ setPage, setSelectedProject }) {
       const customer = project ? customers[project.customer_id] : null;
       const identity = project ? getProjectIdentity(project, customer) : "";
       const lead = project ? project.assigned_to || project.intake_owner || "" : "";
-      return `<section class="sheet"><header><h1>METAL WORX — DAILY PROJECT UPDATE</h1><p>Complete before the daily cutoff and return this sheet to Operations.</p></header><div class="top"><b>Date:</b> ____________________ <b>Lead:</b> ${lead || "____________________"}</div><div class="top"><b>Project:</b> ${identity || "____________________________________________"}</div><div class="top"><b>Project Number:</b> ${project?.project_number || "____________________"} <b>Estimated Completion:</b> ____________________</div>${[
+      return `<section class="sheet"><header><img src="${companyLogo}" alt="Metal Worx"><div><h1>DAILY PROJECT UPDATE</h1><p>Outside Fabrication • Field & Shop Operations</p></div></header><div class="instructions">Project lead: complete at the end of the shift and return to Operations for entry into Metal Worx OS.</div><div class="meta"><span><b>DATE</b>${"____________________"}</span><span><b>PROJECT LEAD</b>${lead || "____________________"}</span></div><div class="meta"><span class="wide"><b>PROJECT</b>${identity || "____________________________________________"}</span><span><b>PROJECT #</b>${project?.project_number || "________________"}</span></div><div class="status"><b>OVERALL STATUS</b> ☐ On Track &nbsp;&nbsp; ☐ At Risk &nbsp;&nbsp; ☐ Blocked &nbsp;&nbsp; ☐ Complete</div>${[
         "Work Completed Today", "Work Currently In Progress", "Next Steps", "Problems / Blockers", "Materials Needed", "Labor / Help Needed", "Schedule Changes", "Leadership Decision Needed"
-      ].map((label) => `<div class="field"><b>${label}</b><div></div></div>`).join("")}<footer>Lead initials: ____________________ &nbsp;&nbsp; Leadership attention required: ☐ Yes ☐ No</footer></section>`;
+      ].map((label) => `<div class="field"><b>${label}</b><div></div></div>`).join("")}<div class="bottom"><span><b>ESTIMATED COMPLETION</b> ____________________</span><span><b>LEAD INITIALS</b> __________</span><span><b>LEADERSHIP ATTENTION</b> ☐ Yes ☐ No</span></div><footer>METAL WORX INC. • FAYETTEVILLE, NC • DAILY OPERATIONS CONTROL</footer></section>`;
     }).join("");
     const popup = window.open("", "_blank");
     if (!popup) {
       setErrorMessage("Allow pop-ups for Metal Worx OS, then try printing again.");
       return;
     }
-    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter;margin:.35in}*{box-sizing:border-box}body{margin:0;font:12px Arial;color:#111}.sheet{page-break-after:always;min-height:10.2in;border:2px solid #111;padding:18px}.sheet:last-child{page-break-after:auto}header{border-bottom:5px solid #b00012;margin-bottom:12px}h1{margin:0;font-size:22px}header p{margin:5px 0 10px}.top{display:flex;gap:28px;border-bottom:1px solid #777;padding:8px 3px;font-size:13px}.field{margin-top:9px}.field b{display:block;background:#eee;border:1px solid #777;padding:5px}.field div{height:48px;border:1px solid #777;border-top:0}footer{margin-top:12px;font-weight:bold}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter;margin:.3in}*{box-sizing:border-box}body{margin:0;font:11px Arial;color:#111}.sheet{page-break-after:always;min-height:10.25in;border:2px solid #20252a;padding:14px;position:relative}.sheet:last-child{page-break-after:auto}header{height:64px;display:flex;align-items:center;gap:18px;border-bottom:6px solid #b00012;padding:0 4px 9px}header img{width:150px;height:48px;object-fit:contain}h1{margin:0;font-size:24px;letter-spacing:.06em}header p{margin:3px 0 0;color:#555;font-weight:bold}.instructions{padding:7px 8px;background:#eee;border:1px solid #bbb;margin:8px 0}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:34px;padding:5px 8px;border-right:1px solid #555;font-size:13px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:8px;letter-spacing:.08em;color:#555;margin-bottom:3px}.status{border:1px solid #555;padding:7px;font-size:12px}.status b{margin-right:18px}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #b00012;padding:4px 7px;letter-spacing:.03em}.field div{height:43px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 20px,#ddd 21px)}.bottom{display:flex;justify-content:space-between;border:1px solid #555;margin-top:8px;padding:7px;gap:12px}.bottom span{flex:1}footer{position:absolute;left:14px;right:14px;bottom:8px;border-top:2px solid #b00012;padding-top:4px;color:#555;font-size:9px;font-weight:bold;text-align:center;letter-spacing:.08em}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
     popup.document.close();
   }
 
@@ -470,6 +488,10 @@ function Projects({ setPage, setSelectedProject }) {
         icon={IconCalendarEvent}
         rightSection={<Group gap="xs"><Button size="xs" variant="light" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(false)}>Print Blank Sheet</Button><Button size="xs" color="red" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(true)}>Print Active Projects</Button></Group>}
       >
+        <Group gap="md" mb="md" wrap="wrap">
+          {CALENDAR_TYPES.map((type) => <Group key={type.label} gap={6}><Box w={14} h={14} style={{background:type.color,borderRadius:3}}/><Text size="xs" fw={700}>{type.label}</Text></Group>)}
+          <Group gap={6}><Box w={14} h={14} style={{background:"transparent",border:"2px solid #ff3445",borderRadius:3}}/><Text size="xs" fw={700}>Rush Priority</Text></Group>
+        </Group>
         {scheduledProjects.length ? (
           <ScrollArea type="auto">
             <Box miw={1050}>
@@ -477,6 +499,7 @@ function Projects({ setPage, setSelectedProject }) {
                 <Text size="xs" fw={800}>PROJECT / LEAD</Text>
                 {calendarDays.map((day) => <Text key={dateKey(day)} size="xs" ta="center" c={day.getDay() === 0 || day.getDay() === 6 ? "red.4" : "dimmed"}>{day.getDate()}</Text>)}
                 {scheduledProjects.map((project) => {
+                  const calendarType = getCalendarType(project);
                   const start = dateKey(addDays(project.planned_start_date, 0));
                   const startIndex = calendarDays.findIndex((day) => dateKey(day) === start);
                   const duration = Number(project.planned_duration_days || 1);
@@ -484,7 +507,7 @@ function Projects({ setPage, setSelectedProject }) {
                     <Button variant="subtle" color="gray" size="compact-xs" justify="flex-start" onClick={() => openProject(project)} style={{overflow:"hidden"}}>{project.project_name || project.project_number} · {project.assigned_to || "Unassigned"}</Button>
                     {calendarDays.map((day, index) => {
                       const active = startIndex >= 0 && index >= startIndex && index < startIndex + duration;
-                      return <Box key={`${project.id}-${dateKey(day)}`} h={28} style={{ background: active ? (project.priority === "Rush" ? "#c40018" : "#1769aa") : "rgba(255,255,255,.035)", borderRadius:3 }} title={active ? `${project.project_name}: day ${index-startIndex+1} of ${duration}` : ""}/>;
+                      return <Box key={`${project.id}-${dateKey(day)}`} h={28} style={{ background: active ? calendarType.color : "rgba(255,255,255,.035)", border: active && project.priority === "Rush" ? "2px solid #ff3445" : "1px solid transparent", borderRadius:3 }} title={active ? `${calendarType.label} — ${project.project_name}: day ${index-startIndex+1} of ${duration}` : ""}/>;
                     })}
                   </Box>;
                 })}
