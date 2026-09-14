@@ -73,6 +73,50 @@ const TOURS = {
   },
 };
 
+const STEP_DETAILS = {
+  "Operations Command Center": ["heading:Operations Flow", "Live customer orders, production work, outside projects, schedules, materials, and daily lead updates."],
+  "Customer Orders": ["heading:Customer Orders", "Saved customer orders, promised dates, fulfillment details, payments, and production links."],
+  "Create an Order": ["heading:Person Who Ordered", "Information entered on this form becomes the customer order used by artwork, production, payment, and huddle screens."],
+  "Quote Center": ["heading:Quote Center", "Saved customer, project, scope, item, pricing, terms, and Metal Worx company information."],
+  "Inventory Control": ["text:Delete / Archive Selected", "Inventory items, storage positions, receipts, adjustments, reservations, and sales."],
+  "Office Closeout": ["heading:Office Closeout Queue", "Orders and projects that are operationally complete but still need payment or office closeout."],
+  "Hot Artwork": ["heading:Hot Artwork", "Manual entries from this form plus dated customer orders pulled automatically from promised pickup or ship dates."],
+  "Hot Today": ["heading:Today’s Management Priorities", "Work promoted by management to Hot Today; it remains here until completed or removed."],
+  "Production Control": ["heading:Board Controls", "Active customer work orders and outside-project workflow statuses."],
+  "Design Queue": ["heading:Design Queue", "Custom-artwork orders and work marked as requiring design or customer approval."],
+  "Whole-Shop Visibility": ["heading:Hot Artwork & Dated Orders", "Hot Artwork, customer-order dates, work orders, outside projects, schedules, materials, and lead updates."],
+  "Outside Project Index": ["heading:Outside Projects", "Each saved project plus its lead, workflow status, checklist, dates, and latest daily update."],
+  "Project Intake Assistant": ["heading:Project Intake Assistant", "The write-up or file you provide. It prepares editable draft fields and saves nothing until you create the project."],
+  "Project Checklist": ["text:Checklist", "Individual checklist items saved inside that project. New projects start with a blank checklist."],
+  "Daily Lead Update": ["text:No daily update", "The latest dated update entered by that project's assigned lead."],
+  "Complete & Package": ["text:Quick Actions", "The saved project record, checklist, updates, quote, materials, and attached files."],
+  "Prepare the Huddle": ["heading:Morning Huddle", "Live orders, Hot Artwork, Hot Today, production, projects, schedules, materials, and project-lead updates."],
+  "TV Huddle": ["text:TV Huddle", "The same live whole-shop information as the dashboard, arranged for the shop television."],
+  "Promised Dates & Leads": ["heading:Hot Artwork & Dated Orders", "Dates come from orders and project schedules; names come from each order or project's assigned lead."],
+  "Leadership Notes": ["heading:Leadership Notes for ChatGPT", "Current project-lead updates, blockers, needs, schedule changes, Hot Artwork, and shop priorities."],
+  "Main Navigation": ["data:nav-menu", "The Metal Worx OS page menu and your signed-in access."],
+  "Global Search": ["data:global-search", "Customer, order, project, work-order, and inventory records stored in Metal Worx OS."],
+  "Live Shop Status": ["data:shop-status", "The app's live connection and signed-in session."],
+  "Notifications": ["data:notifications", "Assignments, callbacks, dates, and status changes recorded throughout the OS."],
+};
+
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function findTourTarget(step) {
+  const configuredTarget = STEP_DETAILS[step.title]?.[0] || `data:${step.target}`;
+  const [kind, ...parts] = configuredTarget.split(":");
+  const value = parts.join(":");
+  if (kind === "data") return document.querySelector(`[data-tour="${value}"]`);
+  const wanted = normalizeText(value);
+  const selector = kind === "heading" ? "h1,h2,h3,h4,h5,h6" : "button,a,h1,h2,h3,h4,h5,h6,label,[role='button']";
+  return [...document.querySelectorAll(selector)].find((element) => {
+    const text = normalizeText(element.textContent);
+    return text === wanted || text.includes(wanted);
+  }) || null;
+}
+
 const WALKTHROUGH_STYLES = `
   .mw-tour-help{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:0 12px;border:1px solid #46515a;border-radius:9px;background:#151d22;color:#fff;font:800 13px Arial,sans-serif;cursor:pointer;white-space:nowrap}
   .mw-tour-help:hover{border-color:#e32232;color:#fff}.mw-tour-help svg{width:19px;height:19px;color:#ff3445}
@@ -83,6 +127,13 @@ const WALKTHROUGH_STYLES = `
   .mw-tour-picker{position:fixed!important;inset:0!important;z-index:2147483000!important;display:grid!important;place-items:center!important;width:100vw!important;height:100dvh!important;padding:14px!important;overflow:hidden!important;background:rgba(0,0,0,.86)!important}.mw-tour-picker-panel{position:relative!important;width:min(760px,100%)!important;max-height:calc(100dvh - 28px)!important;overflow-y:auto!important;overscroll-behavior:contain;padding:22px!important;border:1px solid #46515a!important;border-radius:18px!important;background:#0e1418!important;color:#fff!important;font-family:Arial,sans-serif!important}.mw-tour-picker-head{display:flex!important;justify-content:space-between!important;gap:12px!important}.mw-tour-picker h2{margin:0!important;color:#fff!important;background:transparent!important}.mw-tour-picker p{color:#aeb7bd!important;background:transparent!important}.mw-tour-options{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;margin-top:18px!important}.mw-tour-option{appearance:none!important;display:flex!important;align-items:flex-start!important;gap:13px!important;width:100%!important;min-height:112px!important;margin:0!important;padding:16px!important;border:1px solid #364148!important;border-radius:12px!important;background:#151c20!important;color:#fff!important;text-align:left!important;cursor:pointer!important;box-shadow:none!important}.mw-tour-option:hover{border-color:#e32232!important;transform:translateY(-1px)}.mw-tour-option svg{flex:0 0 auto!important;color:#ff3445!important;background:transparent!important}.mw-tour-option>span{display:block!important;min-width:0!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important}.mw-tour-option strong{display:block!important;margin:0!important;padding:0!important;color:#fff!important;background:transparent!important;font-size:17px!important;line-height:1.25!important}.mw-tour-option span span{display:block!important;margin-top:7px!important;padding:0!important;border:0!important;border-radius:0!important;color:#aeb7bd!important;background:transparent!important;font-size:14px!important;line-height:1.4!important}.mw-tour-picker .mw-tour-close{appearance:none!important;display:grid!important;place-items:center!important;flex:0 0 42px!important;width:42px!important;height:42px!important;padding:0!important;border:1px solid #3b454c!important;border-radius:9px!important;background:#171e22!important;color:#fff!important}
   @keyframes mw-tour-fade{from{opacity:0}to{opacity:1}}@keyframes mw-tour-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes mw-tour-pulse{50%{box-shadow:0 0 0 9999px rgba(0,0,0,.66),0 0 42px rgba(255,38,56,.95)}}
   @media(max-width:700px){.mw-tour-help span{display:none}.mw-tour-help{width:40px;padding:0}.mw-tour-picker{place-items:start center!important;padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px)!important}.mw-tour-picker-panel{max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px)!important;padding:18px!important}.mw-tour-options{grid-template-columns:1fr!important}.mw-tour-option{min-height:100px!important}.mw-tour-card{left:12px!important;right:12px!important;bottom:calc(env(safe-area-inset-bottom) + 12px)!important;top:auto!important;width:auto}.mw-tour-card h2{font-size:21px}.mw-tour-card p{font-size:15px}.mw-tour-spotlight{display:none}}
+`;
+
+const WALKTHROUGH_DETAIL_STYLES = `
+  .mw-tour-source{margin-top:14px;padding:11px 12px;border:1px solid #37434b;border-radius:10px;background:#0c1216}
+  .mw-tour-source strong{display:block;margin-bottom:4px;color:#ff4a58;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+  .mw-tour-source span{display:block;color:#e4e8eb;font-size:14px;line-height:1.38}
+  @media(max-width:700px){.mw-tour-card{max-height:52dvh;overflow-y:auto}.mw-tour-spotlight{display:block}}
 `;
 
 export default function AnimatedWalkthrough({ currentPage, navigate }) {
@@ -111,17 +162,21 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
       return undefined;
     }
     const update = () => {
-      const element = document.querySelector(`[data-tour="${step.target}"]`);
+      const element = findTourTarget(step);
       if (!element) { setRect(null); return; }
       element.scrollIntoView({ behavior: "smooth", block: "center" });
       window.setTimeout(() => {
         const bounds = element.getBoundingClientRect();
-        setRect({ left: Math.max(6, bounds.left - 7), top: Math.max(6, bounds.top - 7), width: Math.min(window.innerWidth - 12, bounds.width + 14), height: Math.min(window.innerHeight - 12, bounds.height + 14), right: bounds.right + 7, bottom: bounds.bottom + 7 });
-      }, 280);
+        const left = Math.max(6, bounds.left - 10);
+        const top = Math.max(6, bounds.top - 10);
+        const width = Math.min(window.innerWidth - left - 6, Math.max(70, bounds.width + 20));
+        const height = Math.min(window.innerHeight - top - 6, Math.max(52, bounds.height + 20));
+        setRect({ left, top, width, height, right: left + width, bottom: top + height });
+      }, 360);
     };
-    const timer = window.setTimeout(update, 180);
+    const timers = [180, 550, 1100, 1900].map((delay) => window.setTimeout(update, delay));
     window.addEventListener("resize", update);
-    return () => { window.clearTimeout(timer); window.removeEventListener("resize", update); };
+    return () => { timers.forEach(window.clearTimeout); window.removeEventListener("resize", update); };
   }, [currentPage, navigate, step]);
 
   function saveProgress(key, index) { sessionStorage.setItem("mw-active-tour", JSON.stringify({ tourKey: key, stepIndex: index })); }
@@ -158,6 +213,7 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
       <section className="mw-tour-card" style={cardPosition} role="dialog" aria-live="polite">
         <div className="mw-tour-card-top"><div><div className="mw-tour-eyebrow">{tour.label} · Step {stepIndex + 1} of {tour.steps.length}</div><h2>{step.title}</h2></div><button type="button" className="mw-tour-close" onClick={close} aria-label="Exit walkthrough"><IconX/></button></div>
         <p>{step.text}</p>
+        <div className="mw-tour-source"><strong>Information comes from</strong><span>{STEP_DETAILS[step.title]?.[1] || "The live records saved in Metal Worx OS."}</span></div>
         <div className="mw-tour-progress"><i style={{ width: `${((stepIndex + 1) / tour.steps.length) * 100}%` }}/></div>
         <div className="mw-tour-actions"><button type="button" onClick={previous} disabled={stepIndex === 0}><IconArrowLeft/> Back</button><button type="button" className="primary" onClick={next}>{stepIndex === tour.steps.length - 1 ? "Finish" : "Next"}<IconArrowRight/></button></div>
       </section>
@@ -165,7 +221,7 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
   </>;
 
   return <>
-    <style>{WALKTHROUGH_STYLES}</style>
+    <style>{WALKTHROUGH_STYLES + WALKTHROUGH_DETAIL_STYLES}</style>
     <button type="button" className="mw-tour-help" data-tour="help" onClick={() => setPickerOpen(true)} title="Guided walkthrough"><IconHelpCircle/><span>Help Tour</span></button>
     {createPortal(overlay, document.body)}
   </>;
