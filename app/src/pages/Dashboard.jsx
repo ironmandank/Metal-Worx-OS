@@ -70,12 +70,16 @@ const styles = `
     background-size: 32px 32px;
     mask-image: linear-gradient(90deg, transparent 28%, #000 60%, transparent);
   }
-  .mc-brand { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 18px; min-width: 0; width: 100%; }
+  .mc-brand {
+    position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr;
+    align-items: center; justify-content: center; min-width: 0; width: min(640px, 100%);
+    margin: 0 auto;
+  }
   .mc-logo {
-    width: 192px; height: 64px; padding-right: 18px; object-fit: contain;
+    width: 100%; height: 64px; padding: 0 26px; object-fit: contain; object-position: center;
     border-right: 1px solid #3c454d;
   }
-  .mc-title-block { min-width: 0; }
+  .mc-title-block { min-width: 0; padding: 0 26px; text-align: center; }
   .mc-title-block strong {
     display: block; color: var(--mc-red); font-size: clamp(1.15rem, 1.55vw, 1.55rem);
     letter-spacing: .045em; text-transform: uppercase; line-height: 1.05; white-space: nowrap;
@@ -350,8 +354,9 @@ const styles = `
     .mc-huddle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 760px) {
-    .mc-brand { justify-content: flex-start; }
-    .mc-logo { width: 110px; }
+    .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
+    .mc-logo { width: 100%; padding: 0 14px; }
+    .mc-title-block { padding: 0 14px; }
     .mc-title-block span { font-size: .84rem; }
     .mc-title-block strong, .mc-title-block span { white-space: normal; }
     .mc-top-actions { grid-template-columns: 1fr 1fr; width: 100%; }
@@ -364,8 +369,9 @@ const styles = `
     .mc-flow-context { text-align: left; }
   }
   @media (max-width: 500px) {
-    .mc-brand { align-items: flex-start; }
-    .mc-logo { width: 88px; height: 42px; }
+    .mc-brand { align-items: center; }
+    .mc-logo { width: 100%; height: 46px; padding: 0 10px; }
+    .mc-title-block { padding: 0 10px; }
     .mc-top-actions { grid-template-columns: 1fr; }
     .mc-clock { grid-column: auto; }
     .mc-kpi { min-height: 82px; }
