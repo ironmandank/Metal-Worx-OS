@@ -36,7 +36,7 @@ const styles = `
   .tv-kpi strong { display:block; margin-top:8px; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
   .tv-grid { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:12px; margin-top:14px; }
-  .tv-panel { min-height:260px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
+  .tv-panel { min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:13px 16px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(17px,1.25vw,24px); line-height:1.2; text-transform:uppercase; }
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
   .tv-list { list-style:none; padding:0; margin:0; }
@@ -47,9 +47,9 @@ const styles = `
   .tv-foot { margin-top:12px; color:#76828a; font-size:12px; text-align:center; text-transform:uppercase; letter-spacing:.15em; }
   @media(max-width:1200px){ .tv-kpis{grid-template-columns:repeat(4,1fr)} .tv-grid{grid-template-columns:1fr 1fr}.tv-panel:first-child{grid-column:1/-1} }
   @media(max-width:700px){
-    .tv-board{width:100%;padding:10px;overflow-x:hidden}
+    .tv-board{width:100%;padding:8px;overflow-x:hidden}
     .tv-head{align-items:stretch;flex-direction:column;padding:13px}
-    .tv-brand{align-items:center;gap:10px}.tv-brand img{width:105px;height:44px}.tv-brand h1{font-size:22px}.tv-brand p{font-size:14px}
+    .tv-brand{align-items:center;gap:10px}.tv-brand img{width:92px;height:40px}.tv-brand h1{font-size:20px;line-height:1.1}.tv-brand p{font-size:13px}
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
     .tv-summary{padding:14px}.tv-summary p{font-size:17px;line-height:1.42}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:92px;padding:12px}.tv-kpi span{font-size:12px}.tv-kpi strong{font-size:36px}
@@ -106,21 +106,18 @@ export default function MorningHuddleTV({ setPage }) {
 
   return <div className="tv-board"><style>{styles}</style>
     <header className="tv-head">
-      <div className="tv-brand"><img src={metalWorxLogo} alt="Metal Worx"/><div><h1>Monday Morning Huddle</h1><p>Live operations and leadership briefing</p></div></div>
+      <div className="tv-brand"><img src={metalWorxLogo} alt="Metal Worx"/><div><h1>Metal Worx Morning Huddle</h1><p>Whole-shop priorities, deadlines, and decisions</p></div></div>
       <div className="tv-actions"><div className="tv-clock"><strong>{now.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</strong><span>{now.toLocaleDateString([], {weekday:"long",month:"long",day:"numeric"})}</span></div><button className="tv-btn" onClick={load}><IconRefresh/> Refresh</button><button className="tv-btn" onClick={fullscreen}><IconArrowsMaximize/> Full Screen</button><button className="tv-btn red" onClick={() => setPage("dashboard")}><IconX/> Exit TV</button></div>
     </header>
     {error && <div className="tv-summary"><p>{error}</p></div>}
     <section className="tv-summary"><label>Executive Summary</label><p>{loading ? "Preparing today’s operating summary…" : executive}</p></section>
     <section className="tv-kpis">
-      <div className="tv-kpi danger"><span>Hot Items / Quick Turnaround</span><strong>{priorityItems.length}</strong></div>
-      <div className="tv-kpi warn"><span>Hot Artwork / Dated Orders</span><strong>{artHotItems.length}</strong></div>
+      <div className="tv-kpi danger"><span>Critical Today</span><strong>{priorityItems.length}</strong></div>
+      <div className="tv-kpi warn"><span>Hot Artwork & Dated Orders</span><strong>{artHotItems.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
       <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
-      <div className="tv-kpi"><span>Outside Project Leads</span><strong>{projectLeadCount}</strong></div>
-      <div className="tv-kpi danger"><span>Blockers</span><strong>{summary.blockers || blockers.length}</strong></div>
-      <div className="tv-kpi warn"><span>Overdue</span><strong>{summary.overdueActions || 0}</strong></div>
       <div className="tv-kpi good"><span>Field Today</span><strong>{summary.todayFieldWork || 0}</strong></div>
-      <div className="tv-kpi"><span>Due Today</span><strong>{summary.todayActions || 0}</strong></div>
+      <div className="tv-kpi danger"><span>Needs Attention</span><strong>{Number(summary.blockers || blockers.length) + Number(summary.overdueActions || 0)}</strong></div>
     </section>
     <section className="tv-grid">
       <div className="tv-panel"><h2><IconClipboardCheck/> Hot Items & Today’s Commitments</h2>{priorities.length ? <ul className="tv-list">{priorities.map((x,i)=><li key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><strong>{text(x.title,"Priority")}</strong><small>{text(x.owner)} · {text(x.department || x.category || x.nextAction,"Action required")} · {text(x.dueDisplay || x.dueDate,"No time set")}</small></li>)}</ul>:<div className="tv-empty">No Hot Today items or commitments recorded.</div>}</div>
