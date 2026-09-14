@@ -119,7 +119,26 @@ async function readIntakeFile(file) {
     if (!xml) throw new Error("The Word document did not contain readable text.");
     return xml.replace(/<w:tab\/?[^>]*>/g, "\t").replace(/<\/w:p>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   }
-  throw new Error("Use a Word (.docx), Excel (.xlsx/.xls), text, CSV, or Markdown file. PDF intake will be added with the secured AI service.");
+  if (extension === "pdf") {
+    const pdfjs = await import("pdfjs-dist");
+    const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+    pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
+    const document = await pdfjs.getDocument({
+      data: new Uint8Array(await file.arrayBuffer()),
+    }).promise;
+    const pages = [];
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => item.str || "").join(" "));
+    }
+    const text = pages.join("\n\n").trim();
+    if (!text) {
+      throw new Error("This PDF does not contain readable text. If it is a scan or photo, paste the project write-up into the text box instead.");
+    }
+    return text;
+  }
+  throw new Error("Use a PDF, Word (.docx), Excel (.xlsx/.xls), text, CSV, or Markdown file.");
 }
 
 async function createProjectMaterialRequests({
@@ -1228,8 +1247,8 @@ function NewProject({ setPage }) {
       >
         <MWSection title="Project Intake Assistant">
           <Stack>
-            <Alert color="blue" title="Review before creation">Paste a project email or write-up, or upload Word, Excel, text, CSV, or Markdown. The assistant prepares a draft; it does not save records until you click Create Project.</Alert>
-            <FileInput label="Project document" placeholder="Choose DOCX, XLSX, XLS, TXT, CSV, or MD" accept=".docx,.xlsx,.xls,.txt,.csv,.md" value={intakeFile} onChange={setIntakeFile} clearable />
+            <Alert color="blue" title="Review before creation">Paste a project email or write-up, or upload PDF, Word, Excel, text, CSV, or Markdown. The assistant prepares a draft locally; it does not save records until you click Create Project.</Alert>
+            <FileInput label="Project document" placeholder="Choose PDF, DOCX, XLSX, XLS, TXT, CSV, or MD" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md" value={intakeFile} onChange={setIntakeFile} clearable />
             <Textarea label="Project write-up" placeholder="Paste the customer request, scope, tasks, materials, pricing, dates, and project lead here…" minRows={7} autosize value={intakeText} onChange={(event) => setIntakeText(event.currentTarget.value)} />
             <Button color="blue" loading={preparingIntake} onClick={prepareProjectIntake}>Prepare Project Draft</Button>
             {intakeDraft && <Alert color="green" title="Draft prepared"><Text size="sm">Project: {intakeDraft.projectName || "Review required"}</Text><Text size="sm">Checklist items: {intakeChecklist.length} · Quote items: {intakeQuoteItems.length} · Materials: {intakeDraft.materials.length}</Text><Text size="xs" c="dimmed" mt="xs">Review and edit the regular project fields below before saving.</Text></Alert>}
