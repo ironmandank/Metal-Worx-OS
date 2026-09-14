@@ -1167,15 +1167,18 @@ function Procurement({
             )}
           </Group>
 
+          <Alert color="blue" icon={<IconMail size={20}/>} title="Email Vendors for Material Pricing">
+            Select the checkboxes for materials from one vendor, then choose <b>Prepare Vendor Quote Email</b>. Metal Worx OS will open a ready-to-review email listing quantities, dimensions, needed-by dates, freight, lead-time, and availability requirements.
+          </Alert>
           <Group justify="space-between" wrap="wrap">
             <Checkbox
-              label={filteredRequests.length && filteredRequests.every((request) => selectedRequestIds.includes(request.id)) ? "Clear displayed" : "Select displayed"}
+              label={filteredRequests.length && filteredRequests.every((request) => selectedRequestIds.includes(request.id)) ? "Clear displayed materials" : "Select all displayed materials"}
               checked={filteredRequests.length > 0 && filteredRequests.every((request) => selectedRequestIds.includes(request.id))}
               indeterminate={selectedRequestIds.length > 0 && !filteredRequests.every((request) => selectedRequestIds.includes(request.id))}
               onChange={toggleVisibleRfqRequests}
             />
-            <Button color="blue" leftSection={<IconMail size={18}/>} disabled={!selectedRequestIds.length} onClick={draftVendorRfq}>
-              Draft Vendor RFQ ({selectedRequestIds.length})
+            <Button color="blue" size="md" leftSection={<IconMail size={19}/>} disabled={!selectedRequestIds.length} onClick={draftVendorRfq}>
+              Prepare Vendor Quote Email ({selectedRequestIds.length})
             </Button>
           </Group>
 

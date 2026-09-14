@@ -643,6 +643,10 @@ function QuoteCenter({
         </Button>
       </Group>
 
+      <Alert color="blue" mb="lg" title="Job-Site Maps, Mileage & Field Estimates">
+        Open a quote with <b>Open Quote &amp; Mileage</b>. In <b>Job Site &amp; Travel</b>, enter the address, open the Google Maps route from 1122 Gillespie Street, record the mileage, and prepare the field-estimate email.
+      </Alert>
+
       {conversionPanel}
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md" mb="lg">
@@ -876,7 +880,7 @@ function QuoteCenter({
                     color="gray"
                     onClick={() => openQuote(quote, "quoteBuilder")}
                   >
-                    Edit
+                    Open Quote &amp; Mileage
                   </Button>
                   <Button
                     size="xs"
