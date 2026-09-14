@@ -11,6 +11,7 @@ import {
 } from "@tabler/icons-react";
 
 import { getDashboardData } from "../services/dashboardService";
+import { supabase } from "../lib/supabase";
 import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
 const styles = `
@@ -30,7 +31,7 @@ const styles = `
   .tv-summary { margin-top:14px; padding:18px 22px; border:2px solid #7d151d; border-radius:12px; background:linear-gradient(135deg,#241216,#11171b); }
   .tv-summary label { color:#ff5965; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
   .tv-summary p { margin:10px 0 0; font-size:clamp(18px,1.45vw,28px); line-height:1.42; font-weight:700; }
-  .tv-kpis { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin-top:14px; }
+  .tv-kpis { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin-top:14px; }
   .tv-kpi { min-height:108px; padding:15px; border:1px solid #354047; border-radius:10px; background:#11181c; }
   .tv-kpi span { display:block; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
   .tv-kpi strong { display:block; margin-top:8px; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
@@ -58,7 +59,7 @@ const styles = `
 `;
 
 const text = (value, fallback = "Not assigned") => String(value || fallback);
-const dateOnly = (value) => value ? new Date(value).toLocaleDateString() : "Date not set";
+const dateOnly = (value) => value ? new Date(String(value).length === 10 ? `${value}T12:00:00` : value).toLocaleDateString() : "Date not set";
 
 function buildExecutiveSummary(data) {
   const h = data?.morningHuddle || {};
@@ -79,9 +80,19 @@ export default function MorningHuddleTV({ setPage }) {
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [siteVisits, setSiteVisits] = useState([]);
 
   async function load() {
-    try { setError(""); setData(await getDashboardData()); }
+    try {
+      setError("");
+      const [dashboardData, siteVisitResult] = await Promise.all([
+        getDashboardData(),
+        supabase.from("prequote_site_visits").select("*").in("status", ["Open", "Scheduled"]).order("requested_visit_date", { ascending: true, nullsFirst: false }),
+      ]);
+      if (siteVisitResult.error) throw siteVisitResult.error;
+      setData(dashboardData);
+      setSiteVisits(siteVisitResult.data || []);
+    }
     catch (e) { setError(e?.message || "Huddle data could not load."); }
     finally { setLoading(false); }
   }
@@ -116,6 +127,7 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-kpi warn"><span>Hot Artwork & Dated Orders</span><strong>{artHotItems.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
       <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
+      <div className="tv-kpi warn"><span>Open Site Visits</span><strong>{siteVisits.length}</strong></div>
       <div className="tv-kpi good"><span>Field Today</span><strong>{summary.todayFieldWork || 0}</strong></div>
       <div className="tv-kpi danger"><span>Needs Attention</span><strong>{Number(summary.blockers || blockers.length) + Number(summary.overdueActions || 0)}</strong></div>
     </section>
@@ -124,6 +136,7 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-panel"><h2><IconClipboardCheck/> Hot Artwork & Dated Orders</h2>{artHotItems.length ? <ul className="tv-list">{artHotItems.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Artwork")}</strong><small>{text(x.customer,"Customer not entered")} · {text(x.fulfillmentMethod,"Pickup")} {text(x.dueDisplay,"Date not set")} · Lead: {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No hot artwork or approaching pickup/ship dates.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Art & Shop Production</h2>{shopWorkload.length ? <ul className="tv-list">{shopWorkload.map((item)=><li key={item.name}><strong>{item.name}: {item.count}</strong><small>Active work at this station</small></li>)}</ul>:<div className="tv-empty">No active shop production is recorded.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <ul className="tv-list">{field.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Field activity")}</strong><small>{dateOnly(x.start || x.date || x.dueDate)} · {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No field work scheduled today.</div>}</div>
+      <div className="tv-panel"><h2><IconCalendarEvent/> Pre-Quote Site Visits</h2>{siteVisits.length ? <ul className="tv-list">{siteVisits.slice(0,8).map((visit)=><li key={visit.id}><strong>{text(visit.customer_name,"Potential job")}</strong><small>{dateOnly(visit.requested_visit_date)} · {text(visit.assigned_estimator)} · {text(visit.job_site_address,"Address not entered")}</small></li>)}</ul>:<div className="tv-empty">No open pre-quote site visits.</div>}</div>
       <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <ul className="tv-list">{blockers.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></li>)}</ul>:<div className="tv-empty">No blockers recorded.</div>}</div>
       <div className="tv-panel"><h2><IconUsers/> Outside Project Leads</h2>{projects.length ? <ul className="tv-list">{projects.slice(0,12).map((p)=><li key={p.id}><strong>{text(p.title || p.projectName || p.project_name || p.project_number,"Project")}</strong><small>Lead: {text(p.owner || p.assigned_to)}</small></li>)}</ul>:<div className="tv-empty">No active outside projects.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><ul className="tv-list"><li><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></li><li><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></li><li><strong>Busiest shop station: {summary.busiestDepartment || "None"}</strong><small>{summary.busiestDepartmentCount || 0} active at this station</small></li></ul></div>

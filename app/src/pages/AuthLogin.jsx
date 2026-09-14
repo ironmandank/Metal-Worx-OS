@@ -55,7 +55,7 @@ function AuthLogin({
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [now, setNow] = useState(() => new Date());

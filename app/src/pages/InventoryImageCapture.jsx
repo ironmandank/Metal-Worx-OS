@@ -25,7 +25,7 @@ import {
   useState,
 } from "react";
 
-import metalWorxLogo from "../../assets/metal-worx-official-transparent.png";
+import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
 const OUTPUT_WIDTH = 1600;
 const OUTPUT_HEIGHT = 1200;

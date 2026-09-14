@@ -180,7 +180,7 @@ function InventoryLabelPrinting({ setPage, selectedInventoryItem, activeUser }) 
         header{height:.36in;background:#fff;border-top:.045in solid #c8102e;border-bottom:1px solid #d5d5d5;border-radius:4px;display:flex;align-items:center;justify-content:space-between;padding:.01in .07in}header img{width:.82in;height:.29in;object-fit:contain;object-position:left center}header span{color:#fff;background:#101010;border-radius:.12in;padding:.045in .11in;font-size:7.5pt;font-weight:900;letter-spacing:2px}
         h2{text-align:center;font-size:11pt;line-height:1.1;height:.38in;margin:.07in .05in .02in;overflow:hidden}.content{display:flex;align-items:center;gap:.12in}.qr{width:.76in;height:.76in}.right{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}.right small{width:100%;font-size:6.5pt;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.barcode{width:100%;height:.42in;margin-top:.03in}.right b{font-size:7pt;letter-spacing:1.2px}
         @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-      </style></head><body>${body}<script>window.onload=()=>setTimeout(()=>window.print(),350)<\/script></body></html>`);
+      </style></head><body>${body}<script>window.onload=()=>setTimeout(()=>window.print(),350)</script></body></html>`);
       printWindow.document.close();
 
       await Promise.all(prepared.map(({ label }) =>

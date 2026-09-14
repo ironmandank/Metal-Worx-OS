@@ -22,6 +22,8 @@ import {
   IconClipboardCheck,
   IconCircleCheck,
   IconCalendarEvent,
+  IconChevronLeft,
+  IconChevronRight,
   IconMapPin,
   IconPackage,
   IconPrinter,
@@ -38,6 +40,7 @@ import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
+import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../lib/calendar";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
 
 const CALENDAR_TYPES = [
@@ -51,28 +54,22 @@ const CALENDAR_TYPES = [
 
 const capacityCalendarStyles = `
   .mw-capacity-shell { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; background: #0b1014; }
-  .mw-capacity-grid { display: grid; grid-template-columns: 290px repeat(28, 48px); min-width: 1634px; }
-  .mw-capacity-project, .mw-capacity-corner { position: sticky; left: 0; z-index: 3; background: #11181d; border-right: 2px solid #35414a; }
-  .mw-capacity-corner { padding: 13px 16px; font-size: 11px; font-weight: 900; letter-spacing: .08em; color: #cbd2d7; }
-  .mw-capacity-date { display: grid; place-items: center; min-height: 54px; padding: 5px 2px; border-right: 1px solid #252d33; border-bottom: 1px solid #35414a; background: #11181d; }
-  .mw-capacity-date.weekend { background: #171419; }
-  .mw-capacity-date.today { background: #3a0a0f; box-shadow: inset 0 -3px #f21b2d; }
-  .mw-capacity-date small { color: #7f8a92; font-size: 9px; font-weight: 800; text-transform: uppercase; }
-  .mw-capacity-date strong { color: #f3f5f6; font-size: 12px; white-space: nowrap; }
-  .mw-capacity-project { min-height: 56px; padding: 8px 14px; border-bottom: 1px solid #252d33; cursor: pointer; }
-  .mw-capacity-project:hover { background: #182127; }
-  .mw-capacity-project strong, .mw-capacity-project span, .mw-capacity-project small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .mw-capacity-project strong { color:#fff; font-size: 13px; }
-  .mw-capacity-project span { color:#b7c0c6; font-size: 11px; margin-top:2px; }
-  .mw-capacity-project small { color:#7f8a92; font-size: 9px; margin-top:2px; text-transform:uppercase; letter-spacing:.05em; }
-  .mw-capacity-cell { min-height:56px; border-right:1px solid #20282e; border-bottom:1px solid #252d33; background:rgba(255,255,255,.018); padding:14px 0; }
-  .mw-capacity-cell.weekend { background:rgba(255,255,255,.035); }
-  .mw-capacity-cell.today { box-shadow: inset 2px 0 rgba(242,27,45,.65), inset -2px 0 rgba(242,27,45,.65); }
-  .mw-capacity-bar { height:28px; border-radius:0; box-shadow:0 4px 12px rgba(0,0,0,.3); }
-  .mw-capacity-bar.start { margin-left:4px; border-radius:7px 0 0 7px; }
-  .mw-capacity-bar.end { margin-right:4px; border-radius:0 7px 7px 0; }
-  .mw-capacity-bar.single { margin:0 4px; border-radius:7px; }
-  @media (max-width: 700px) { .mw-capacity-grid { grid-template-columns: 220px repeat(28, 46px); min-width:1508px; } .mw-capacity-project, .mw-capacity-corner { max-width:220px; } }
+  .mw-month-weekdays, .mw-month-grid { display:grid; grid-template-columns:repeat(7,minmax(130px,1fr)); min-width:910px; }
+  .mw-month-weekday { padding:10px; text-align:center; color:#99a4ab; background:#11181d; border-right:1px solid #2b343a; font-size:11px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+  .mw-month-day { min-height:132px; padding:8px; border-top:1px solid #2b343a; border-right:1px solid #252d33; background:#0e1418; }
+  .mw-month-day.weekend { background:#151318; }
+  .mw-month-day.outside { background:#090d10; opacity:.45; }
+  .mw-month-day.today { box-shadow:inset 0 0 0 2px #f21b2d; background:#1d1014; }
+  .mw-month-day-head { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:7px; }
+  .mw-month-day-number { color:#f4f6f7; font-size:15px; font-weight:900; }
+  .mw-month-load { color:#78858d; font-size:9px; font-weight:800; text-transform:uppercase; }
+  .mw-month-project { width:100%; margin-top:5px; padding:6px 7px; border:0; border-left:5px solid; border-radius:5px; color:#fff; background:#20282e; text-align:left; cursor:pointer; box-shadow:0 2px 7px rgba(0,0,0,.25); }
+  .mw-month-project:hover { filter:brightness(1.18); }
+  .mw-month-project strong, .mw-month-project span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mw-month-project strong { font-size:10px; }
+  .mw-month-project span { margin-top:2px; color:#c1c8cd; font-size:9px; }
+  .mw-month-project.rush { outline:1px solid #ff3445; }
+  @media (max-width:700px) { .mw-month-weekdays, .mw-month-grid { grid-template-columns:repeat(7,120px); min-width:840px; } .mw-month-day { min-height:112px; } }
 `;
 
 function getStatusColor(status) {
@@ -145,16 +142,6 @@ function getProjectIdentity(project, customer) {
   return `${getProjectPerson(project, customer)} — ${getProjectItem(project)}`;
 }
 
-function addDays(value, days) {
-  const date = new Date(`${value}T12:00:00`);
-  date.setDate(date.getDate() + days);
-  return date;
-}
-
-function dateKey(date) {
-  return date.toISOString().slice(0, 10);
-}
-
 function getCalendarType(project) {
   const words = [project.project_type, project.project_category, project.project_name, project.notes]
     .filter(Boolean)
@@ -173,6 +160,7 @@ function Projects({ setPage, setSelectedProject }) {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [trackingByProject, setTrackingByProject] = useState({});
+  const [calendarMonth, setCalendarMonth] = useState(() => firstOfMonth());
 
   const loadProjects = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -326,14 +314,25 @@ function Projects({ setPage, setSelectedProject }) {
     (project) => project.status === "On Hold"
   ).length;
 
-  const calendarDays = useMemo(() => {
-    const today = new Date();
-    today.setHours(12, 0, 0, 0);
-    return Array.from({ length: 28 }, (_, index) => addDays(dateKey(today), index));
-  }, []);
   const scheduledProjects = projects.filter(
     (project) => project.planned_start_date && project.planned_duration_days
   );
+  const calendarDays = useMemo(() => {
+    return buildMonthGrid(calendarMonth);
+  }, [calendarMonth]);
+  const scheduledProjectsByDay = useMemo(() => {
+    const result = {};
+    scheduledProjects.forEach((project) => {
+      const startDate = addDays(project.planned_start_date, 0);
+      const duration = Math.max(Number(project.planned_duration_days || 1), 1);
+      for (let index = 0; index < duration; index += 1) {
+        const key = dateKey(addDays(dateKey(startDate), index));
+        if (!result[key]) result[key] = [];
+        result[key].push(project);
+      }
+    });
+    return result;
+  }, [scheduledProjects]);
 
   function printDailyUpdateSheets(prefilled = true) {
     const printableProjects = prefilled ? projects : [null];
@@ -349,7 +348,7 @@ function Projects({ setPage, setSelectedProject }) {
       setErrorMessage("Allow pop-ups for Metal Worx OS, then try printing again.");
       return;
     }
-    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter portrait;margin:.25in}*{box-sizing:border-box}body{margin:0;background:#d9dde0;font:10px Arial,Helvetica,sans-serif;color:#111}.sheet{page-break-after:always;width:8in;min-height:10.5in;margin:16px auto;background:#fff;border:1px solid #20252a;padding:14px 16px 11px;position:relative;box-shadow:0 8px 28px rgba(0,0,0,.18)}.sheet:last-child{page-break-after:auto}header{height:72px;display:flex;align-items:center;justify-content:space-between;border-top:8px solid #b00012;border-bottom:2px solid #20252a;padding:7px 4px}.brand{display:flex;align-items:center;gap:16px}.brand img{width:130px;height:48px;object-fit:contain}.brand h1{margin:0;font-size:22px;letter-spacing:.055em}.brand p{margin:4px 0 0;color:#555;font-size:9px;font-weight:800;letter-spacing:.07em}.doc{text-align:right;border-left:1px solid #999;padding-left:12px}.doc b,.doc span{display:block}.doc b{color:#b00012;font-size:11px}.doc span{color:#666;font-size:8px;margin-top:3px}.instructions{padding:7px 9px;background:#f0f1f2;border-left:5px solid #b00012;margin:8px 0;line-height:1.35}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:38px;padding:6px 8px;border-right:1px solid #555;font-size:12px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:7px;letter-spacing:.1em;color:#596168;margin-bottom:5px}.status{display:flex;align-items:center;gap:16px;border:1px solid #555;padding:8px;font-size:10px}.status b{margin-right:4px;letter-spacing:.06em}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #c60018;padding:4px 7px;font-size:9px;letter-spacing:.045em}.field div{height:50px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 23px,#d7dadd 24px)}.field.large div{height:62px}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}.bottom{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;border:1px solid #555;margin-top:8px;padding:7px;gap:10px}.bottom span{border-right:1px solid #bbb;padding-right:6px}.bottom span:last-child{border:0}footer{display:flex;justify-content:space-between;align-items:center;margin-top:9px;border-top:3px solid #b00012;padding-top:5px;color:#555;font-size:7px;letter-spacing:.05em}footer b{color:#111}@media print{body{background:#fff}.sheet{margin:0;width:auto;min-height:10.45in;box-shadow:none}}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter portrait;margin:.25in}*{box-sizing:border-box}body{margin:0;background:#d9dde0;font:10px Arial,Helvetica,sans-serif;color:#111}.sheet{page-break-after:always;width:8in;min-height:10.5in;margin:16px auto;background:#fff;border:1px solid #20252a;padding:14px 16px 11px;position:relative;box-shadow:0 8px 28px rgba(0,0,0,.18)}.sheet:last-child{page-break-after:auto}header{height:72px;display:flex;align-items:center;justify-content:space-between;border-top:8px solid #b00012;border-bottom:2px solid #20252a;padding:7px 4px}.brand{display:flex;align-items:center;gap:16px}.brand img{width:130px;height:48px;object-fit:contain}.brand h1{margin:0;font-size:22px;letter-spacing:.055em}.brand p{margin:4px 0 0;color:#555;font-size:9px;font-weight:800;letter-spacing:.07em}.doc{text-align:right;border-left:1px solid #999;padding-left:12px}.doc b,.doc span{display:block}.doc b{color:#b00012;font-size:11px}.doc span{color:#666;font-size:8px;margin-top:3px}.instructions{padding:7px 9px;background:#f0f1f2;border-left:5px solid #b00012;margin:8px 0;line-height:1.35}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:38px;padding:6px 8px;border-right:1px solid #555;font-size:12px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:7px;letter-spacing:.1em;color:#596168;margin-bottom:5px}.status{display:flex;align-items:center;gap:16px;border:1px solid #555;padding:8px;font-size:10px}.status b{margin-right:4px;letter-spacing:.06em}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #c60018;padding:4px 7px;font-size:9px;letter-spacing:.045em}.field div{height:50px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 23px,#d7dadd 24px)}.field.large div{height:62px}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}.bottom{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;border:1px solid #555;margin-top:8px;padding:7px;gap:10px}.bottom span{border-right:1px solid #bbb;padding-right:6px}.bottom span:last-child{border:0}footer{display:flex;justify-content:space-between;align-items:center;margin-top:9px;border-top:3px solid #b00012;padding-top:5px;color:#555;font-size:7px;letter-spacing:.05em}footer b{color:#111}@media print{body{background:#fff}.sheet{margin:0;width:auto;min-height:10.45in;box-shadow:none}}</style></head><body>${pages}<script>window.onload=()=>window.print()</script></body></html>`);
     popup.document.close();
   }
 
@@ -510,47 +509,47 @@ function Projects({ setPage, setSelectedProject }) {
 
       <MWPanel
         title="Project Capacity Calendar"
-        subtitle="Four-week view of planned work. Open Edit Project to set the planned start date and estimated workdays."
+        subtitle="Full-month workload view. Open Edit Project to set the planned start date and estimated workdays."
         icon={IconCalendarEvent}
         rightSection={<Group gap="xs"><Button size="xs" variant="light" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(false)}>Print Blank Sheet</Button><Button size="xs" color="red" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(true)}>Print Active Projects</Button></Group>}
       >
+        <Group justify="space-between" align="center" mb="md" wrap="wrap">
+          <Group gap="xs">
+            <Button variant="default" size="xs" aria-label="Previous month" onClick={() => setCalendarMonth((value) => moveMonth(value, -1))}><IconChevronLeft size={17}/></Button>
+            <Button variant="light" size="xs" onClick={() => setCalendarMonth(firstOfMonth())}>Today</Button>
+            <Button variant="default" size="xs" aria-label="Next month" onClick={() => setCalendarMonth((value) => moveMonth(value, 1))}><IconChevronRight size={17}/></Button>
+          </Group>
+          <Title order={3} ta="center">{calendarMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}</Title>
+          <Text size="xs" c="dimmed">Click a project to open it</Text>
+        </Group>
         <Group gap="md" mb="md" wrap="wrap">
           {CALENDAR_TYPES.map((type) => <Group key={type.label} gap={6}><Box w={14} h={14} style={{background:type.color,borderRadius:3}}/><Text size="xs" fw={700}>{type.label}</Text></Group>)}
           <Group gap={6}><Box w={14} h={14} style={{background:"transparent",border:"2px solid #ff3445",borderRadius:3}}/><Text size="xs" fw={700}>Rush Priority</Text></Group>
         </Group>
-        {scheduledProjects.length ? (
-          <ScrollArea type="auto">
+        <ScrollArea type="auto">
             <div className="mw-capacity-shell">
-              <div className="mw-capacity-grid">
-                <div className="mw-capacity-corner">PROJECT • LEAD • WORK WINDOW</div>
+              <div className="mw-month-weekdays">
+                {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((weekday) => <div key={weekday} className="mw-month-weekday">{weekday}</div>)}
+              </div>
+              <div className="mw-month-grid">
                 {calendarDays.map((day) => {
-                  const today = dateKey(day) === dateKey(new Date());
+                  const key = dateKey(day);
+                  const dayProjects = scheduledProjectsByDay[key] || [];
+                  const today = key === dateKey(new Date());
                   const weekend = day.getDay() === 0 || day.getDay() === 6;
-                  return <div key={dateKey(day)} className={`mw-capacity-date ${weekend ? "weekend" : ""} ${today ? "today" : ""}`}><small>{day.toLocaleDateString("en-US", { weekday:"short" })}</small><strong>{day.toLocaleDateString("en-US", { month:"short", day:"numeric" })}</strong></div>;
-                })}
-                {scheduledProjects.map((project) => {
-                  const calendarType = getCalendarType(project);
-                  const startDate = addDays(project.planned_start_date, 0);
-                  const duration = Number(project.planned_duration_days || 1);
-                  const endDate = addDays(project.planned_start_date, duration - 1);
-                  return <Box key={project.id} style={{ display:"contents" }}>
-                    <div className="mw-capacity-project" onClick={() => openProject(project)}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span><small>{formatDate(project.planned_start_date)} — {duration} workday{duration === 1 ? "" : "s"} • {calendarType.label}</small></div>
-                    {calendarDays.map((day) => {
-                      const dayStamp = new Date(`${dateKey(day)}T12:00:00`).getTime();
-                      const active = dayStamp >= startDate.getTime() && dayStamp <= endDate.getTime();
-                      const isStart = active && dayStamp === startDate.getTime();
-                      const isEnd = active && dayStamp === endDate.getTime();
-                      const today = dateKey(day) === dateKey(new Date());
-                      const weekend = day.getDay() === 0 || day.getDay() === 6;
-                      const barClass = isStart && isEnd ? "single" : `${isStart ? "start" : ""} ${isEnd ? "end" : ""}`;
-                      return <div key={`${project.id}-${dateKey(day)}`} className={`mw-capacity-cell ${weekend ? "weekend" : ""} ${today ? "today" : ""}`} title={active ? `${calendarType.label} — ${project.project_name || project.project_number}` : ""}>{active && <div className={`mw-capacity-bar ${barClass}`} style={{background:calendarType.color,border:project.priority === "Rush" ? "2px solid #ff3445" : "none"}}/>}</div>;
+                  const outside = day.getMonth() !== calendarMonth.getMonth();
+                  return <div key={key} className={`mw-month-day ${weekend ? "weekend" : ""} ${today ? "today" : ""} ${outside ? "outside" : ""}`}>
+                    <div className="mw-month-day-head"><span className="mw-month-day-number">{day.getDate()}</span><span className="mw-month-load">{dayProjects.length ? `${dayProjects.length} project${dayProjects.length === 1 ? "" : "s"}` : "Open"}</span></div>
+                    {dayProjects.map((project) => {
+                      const calendarType = getCalendarType(project);
+                      return <button key={project.id} type="button" className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`} onClick={() => openProject(project)}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></button>;
                     })}
-                  </Box>;
+                  </div>;
                 })}
               </div>
             </div>
           </ScrollArea>
-        ) : <Alert color="blue">No projects are scheduled yet. Add a planned start date and estimated workdays in Edit Project.</Alert>}
+        {!scheduledProjects.length && <Alert color="blue" mt="md">No projects are scheduled yet. Every day is currently open. Add a planned start date and estimated workdays in Edit Project.</Alert>}
       </MWPanel>
 
       {errorMessage && (

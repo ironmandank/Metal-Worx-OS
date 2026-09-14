@@ -82,7 +82,7 @@ function money(value) {
 
 function formatDate(value) {
   if (!value) return "Not set";
-  const date = new Date(value);
+  const date = new Date(String(value).length === 10 ? `${value}T12:00:00` : value);
   return Number.isNaN(date.getTime())
     ? String(value)
     : date.toLocaleDateString("en-US");
@@ -119,6 +119,7 @@ function QuoteCenter({
   const [quotes, setQuotes] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [siteVisits, setSiteVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -203,12 +204,65 @@ function QuoteCenter({
       siteEstimateSummary(),
     ].join("\n");
 
-    await navigator.clipboard.writeText(completeEmail);
-    notifications.show({
-      title: "Complete Email Copied",
-      message: "Open Gmail, start a new message, and paste the recipients, subject, and site-visit details.",
-      color: "green",
-    });
+    try {
+      const { data: savedVisit, error } = await supabase
+        .from("prequote_site_visits")
+        .insert({
+          customer_name: siteEstimate.customer.trim() || siteEstimate.destination.trim(),
+          contact_name: siteEstimate.contact.trim() || null,
+          contact_phone: siteEstimate.phone.trim() || null,
+          job_site_address: siteEstimate.destination.trim(),
+          requested_visit_date: siteEstimate.visitDate || null,
+          assigned_estimator: siteEstimate.assignedTo.trim() || null,
+          one_way_miles: Number(siteEstimate.oneWayMiles || 0),
+          rate_per_mile: Number(siteEstimate.ratePerMile || 0),
+          notes: siteEstimate.notes.trim() || null,
+          status: siteEstimate.visitDate ? "Scheduled" : "Open",
+          created_by: activeUserName,
+          email_copied_at: new Date().toISOString(),
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+
+      await navigator.clipboard.writeText(completeEmail);
+      setSiteVisits((current) => [savedVisit, ...current]);
+      window.localStorage.removeItem(PREQUOTE_STORAGE_KEY);
+      setSiteEstimate(loadSavedSiteEstimate());
+      notifications.show({
+        title: "Email Copied & Site Visit Saved",
+        message: "The worksheet was cleared. Paste the complete information into Gmail when ready.",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Site Visit Was Not Cleared",
+        message: error.message || "The email could not be copied and saved. Your worksheet information is still available.",
+        color: "red",
+      });
+    }
+  }
+
+  async function updateSiteVisitStatus(visit, status) {
+    const timestamp = new Date().toISOString();
+    const updates = {
+      status,
+      updated_at: timestamp,
+      completed_at: status === "Completed" ? timestamp : visit.completed_at,
+      converted_at: status === "Converted to Quote" ? timestamp : visit.converted_at,
+    };
+    const { data, error } = await supabase
+      .from("prequote_site_visits")
+      .update(updates)
+      .eq("id", visit.id)
+      .select("*")
+      .single();
+    if (error) {
+      notifications.show({ title: "Site Visit Could Not Update", message: error.message, color: "red" });
+      return;
+    }
+    setSiteVisits((current) => current.map((item) => item.id === visit.id ? data : item));
+    notifications.show({ title: "Site Visit Updated", message: `${visit.customer_name} is now ${status}.`, color: "green" });
   }
 
   function clearSiteEstimate() {
@@ -220,7 +274,7 @@ function QuoteCenter({
   async function loadCenter() {
     setLoading(true);
     try {
-      const [quoteResult, customerResult, templateResult] = await Promise.all([
+      const [quoteResult, customerResult, templateResult, siteVisitResult] = await Promise.all([
         supabase
           .from("project_quotes")
           .select("*")
@@ -234,15 +288,21 @@ function QuoteCenter({
           .select("*")
           .eq("is_active", true)
           .order("template_name", { ascending: true }),
+        supabase
+          .from("prequote_site_visits")
+          .select("*")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (quoteResult.error) throw quoteResult.error;
       if (customerResult.error) throw customerResult.error;
       if (templateResult.error) throw templateResult.error;
+      if (siteVisitResult.error) throw siteVisitResult.error;
 
       setQuotes(quoteResult.data || []);
       setCustomers(customerResult.data || []);
       setTemplates(templateResult.data || []);
+      setSiteVisits(siteVisitResult.data || []);
     } catch (error) {
       notifications.show({
         title: "Quote Center Could Not Load",
@@ -778,6 +838,40 @@ function QuoteCenter({
           </Stack>
         </MWSection>
       )}
+
+      <MWSection
+        title="Pre-Quote Site Visit Tracker"
+        subtitle="Saved visits stay here until they are completed, converted to a quote, or cancelled."
+      >
+        <Stack gap="sm">
+          {siteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)).length ? (
+            siteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)).map((visit) => (
+              <Card key={visit.id} withBorder radius="md" p="md">
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                  <Stack gap={3} style={{ flex: 1, minWidth: 260 }}>
+                    <Group gap="xs"><Text fw={900}>{visit.customer_name}</Text><Badge color={visit.status === "Scheduled" ? "blue" : "orange"}>{visit.status}</Badge></Group>
+                    <Text size="sm">{visit.job_site_address}</Text>
+                    <Text size="xs" c="dimmed">Visit: {formatDate(visit.requested_visit_date)} · Estimator: {visit.assigned_estimator || "Not assigned"} · Contact: {visit.contact_name || "Not entered"}{visit.contact_phone ? ` (${visit.contact_phone})` : ""}</Text>
+                    {visit.notes && <Text size="sm" mt={4}>{visit.notes}</Text>}
+                  </Stack>
+                  <Group gap="xs">
+                    <Button size="xs" color="green" onClick={() => updateSiteVisitStatus(visit, "Completed")}>Mark Complete</Button>
+                    <Button size="xs" color="blue" onClick={() => updateSiteVisitStatus(visit, "Converted to Quote")}>Converted to Quote</Button>
+                    <Button size="xs" variant="subtle" color="gray" onClick={() => updateSiteVisitStatus(visit, "Cancelled")}>Cancel</Button>
+                  </Group>
+                </Group>
+              </Card>
+            ))
+          ) : (
+            <Alert color="blue">No open pre-quote site visits. New visits will appear here after the email information is copied.</Alert>
+          )}
+          {siteVisits.some((visit) => !["Open", "Scheduled"].includes(visit.status)) && (
+            <Text size="xs" c="dimmed" ta="center">
+              {siteVisits.filter((visit) => !["Open", "Scheduled"].includes(visit.status)).length} completed, converted, or cancelled visit{siteVisits.filter((visit) => !["Open", "Scheduled"].includes(visit.status)).length === 1 ? "" : "s"} retained in history.
+            </Text>
+          )}
+        </Stack>
+      </MWSection>
 
       {conversionPanel}
 

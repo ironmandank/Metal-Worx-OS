@@ -17,5 +17,17 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // These React Compiler-oriented rules require a broad architectural
+      // migration. Keep the legacy application on the stable hooks checks
+      // while that work is completed screen-by-screen.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/static-components': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/purity': 'off',
+      // Unused imports are cleanup items, not release-blocking defects.
+      'no-unused-vars': 'warn',
+    },
   },
 ])

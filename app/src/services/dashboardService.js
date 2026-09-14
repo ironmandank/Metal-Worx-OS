@@ -25,7 +25,7 @@ function normalizeDepartment(value) {
     .trim()
     .toLowerCase()
     .replace(/&/g, " and ")
-    .replace(/[\/_-]+/g, " ")
+    .replace(/[/_-]+/g, " ")
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();

@@ -3,9 +3,11 @@ import {
 } from "@supabase/supabase-js";
 
 const supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL ||
   "https://xpjvpcreljzavelbtjxj.supabase.co";
 
 const supabaseKey =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_ODr-ZjEuq14IRSwBBrhVgA_-aj0dOh9";
 
 const MW_SESSION_EXPIRATION_KEY =
@@ -40,7 +42,7 @@ function browserStorageAvailable() {
 }
 
 export function startMetalWorxSession(
-  keepSignedIn = true
+  keepSignedIn = false
 ) {
   if (!browserStorageAvailable()) {
     return;

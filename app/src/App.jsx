@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useState } from "react";
 
 import AppLayout from "./components/layout/AppLayout";
 import SplashScreen from "./components/SplashScreen";
 import AuthLogin from "./pages/AuthLogin";
-import EmployeeLoginManagement from "./pages/EmployeeLoginManagement";
 import {
   clearMetalWorxSession,
   getMetalWorxSessionStatus,
@@ -11,61 +10,93 @@ import {
   supabase,
 } from "./lib/supabase";
 
-import Dashboard from "./pages/Dashboard";
-import MorningHuddleTV from "./pages/MorningHuddleTV";
-import ActionCenter from "./pages/ActionCenter";
-import Callbacks from "./pages/Callbacks";
-import InternalChat from "./pages/InternalChat";
-import Reports from "./pages/Reports";
-import Procurement from "./pages/Procurement";
-
-import InventoryDashboard from "./pages/InventoryDashboard";
-import InventoryItems from "./pages/InventoryItems";
-import NewInventoryItem from "./pages/NewInventoryItem";
-import InventoryScanner from "./pages/InventoryScanner";
-import InventoryItemDetails from "./pages/InventoryItemDetails";
-import InventoryQuantityAdjustment from "./pages/InventoryQuantityAdjustment";
-import InventoryReceiving from "./pages/InventoryReceiving";
-import InventoryStorageLocations from "./pages/InventoryStorageLocations";
-import InventoryLabelPrinting from "./pages/InventoryLabelPrinting";
-import InventoryHistory from "./pages/InventoryHistory";
-import InventoryCountMode from "./pages/InventoryCountMode";
-import InventoryImportWizard from "./pages/InventoryImportWizard";
-import ShowSales from "./pages/ShowSales";
-import QuickTurnaroundDashboard from "./pages/QuickTurnaroundDashboard";
-
-import NewJob from "./pages/NewJob";
-import JobQueue from "./pages/JobQueue";
-import ProductionBoard from "./pages/ProductionBoard";
-import ProductionControlCenter from "./pages/ProductionControlCenter";
-import ProductionJobs from "./pages/ProductionJobs";
-import ProductionJobDetails from "./pages/ProductionJobDetails";
-import DepartmentQueue from "./pages/DepartmentQueue";
-import JobDetails from "./pages/JobDetails";
-
-import ProductTemplates from "./pages/ProductTemplates";
-import NewProductTemplate from "./pages/NewProductTemplate";
-import WorkflowTemplates from "./pages/WorkflowTemplates";
-
-import Customers from "./pages/Customers";
-import CustomerOrders from "./pages/CustomerOrders";
-import OrderBuilder from "./pages/OrderBuilder";
-import CustomerDetails from "./pages/CustomerDetails";
-import CustomerOrderDetails from "./pages/CustomerOrderDetails";
-import DesignQueue from "./pages/DesignQueue";
-
-import Projects from "./pages/Projects";
-import NewProject from "./pages/NewProject";
-import ProjectDetails from "./pages/ProjectDetails";
-import EditProject from "./pages/EditProject";
-import FieldSchedule from "./pages/FieldSchedule";
-import QuoteBuilder from "./pages/QuoteBuilder";
-import QuotePreview from "./pages/QuotePreview";
-import QuoteCenter from "./pages/QuoteCenter";
-import PilotFeedback from "./pages/PilotFeedback";
-import KnowledgeCenter from "./pages/KnowledgeCenter";
+const pageModules = import.meta.glob(["./pages/*.jsx", "!./pages/AuthLogin.jsx"]);
+const page = (name) => lazy(pageModules[`./pages/${name}.jsx`]);
+const Dashboard = page("Dashboard");
+const MorningHuddleTV = page("MorningHuddleTV");
+const ActionCenter = page("ActionCenter");
+const Callbacks = page("Callbacks");
+const InternalChat = page("InternalChat");
+const Reports = page("Reports");
+const Procurement = page("Procurement");
+const InventoryDashboard = page("InventoryDashboard");
+const InventoryItems = page("InventoryItems");
+const NewInventoryItem = page("NewInventoryItem");
+const InventoryScanner = page("InventoryScanner");
+const InventoryItemDetails = page("InventoryItemDetails");
+const InventoryQuantityAdjustment = page("InventoryQuantityAdjustment");
+const InventoryReceiving = page("InventoryReceiving");
+const InventoryStorageLocations = page("InventoryStorageLocations");
+const InventoryLabelPrinting = page("InventoryLabelPrinting");
+const InventoryHistory = page("InventoryHistory");
+const InventoryCountMode = page("InventoryCountMode");
+const InventoryImportWizard = page("InventoryImportWizard");
+const ShowSales = page("ShowSales");
+const QuickTurnaroundDashboard = page("QuickTurnaroundDashboard");
+const NewJob = page("NewJob");
+const JobQueue = page("JobQueue");
+const ProductionBoard = page("ProductionBoard");
+const ProductionControlCenter = page("ProductionControlCenter");
+const ProductionJobs = page("ProductionJobs");
+const ProductionJobDetails = page("ProductionJobDetails");
+const DepartmentQueue = page("DepartmentQueue");
+const JobDetails = page("JobDetails");
+const ProductTemplates = page("ProductTemplates");
+const NewProductTemplate = page("NewProductTemplate");
+const WorkflowTemplates = page("WorkflowTemplates");
+const Customers = page("Customers");
+const CustomerOrders = page("CustomerOrders");
+const OrderBuilder = page("OrderBuilder");
+const CustomerDetails = page("CustomerDetails");
+const CustomerOrderDetails = page("CustomerOrderDetails");
+const DesignQueue = page("DesignQueue");
+const Projects = page("Projects");
+const NewProject = page("NewProject");
+const ProjectDetails = page("ProjectDetails");
+const EditProject = page("EditProject");
+const FieldSchedule = page("FieldSchedule");
+const QuoteBuilder = page("QuoteBuilder");
+const QuotePreview = page("QuotePreview");
+const QuoteCenter = page("QuoteCenter");
+const PilotFeedback = page("PilotFeedback");
+const KnowledgeCenter = page("KnowledgeCenter");
+const EmployeeLoginManagement = page("EmployeeLoginManagement");
 
 import "./App.css";
+
+function PageLoading() {
+  return (
+    <div style={{ minHeight: 240, display: "grid", placeItems: "center", color: "#b8c0c5", fontWeight: 800 }}>
+      Loading Metal Worx workspace...
+    </div>
+  );
+}
+
+class WorkspaceErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error, details) {
+    console.error("Metal Worx workspace failed to render", error, details);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div style={{ margin: 24, padding: 28, border: "1px solid #8f2631", borderRadius: 14, background: "#171013", color: "#fff", textAlign: "center" }}>
+        <h2 style={{ marginTop: 0 }}>This workspace could not be displayed.</h2>
+        <p>Your information has not been cleared. Reload the page and try again.</p>
+        <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 18px", border: 0, borderRadius: 8, background: "#d20a20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Reload Metal Worx OS</button>
+      </div>
+    );
+  }
+}
 
 function App() {
   const [authLoading, setAuthLoading] = useState(true);
@@ -749,7 +780,7 @@ function App() {
   }
 
   if (page === "morningHuddleTV") {
-    return <MorningHuddleTV setPage={setPage} />;
+    return <WorkspaceErrorBoundary><Suspense fallback={<PageLoading />}><MorningHuddleTV setPage={setPage} /></Suspense></WorkspaceErrorBoundary>;
   }
 
   return (
@@ -767,7 +798,7 @@ function App() {
       openInventoryItem={openInventoryItem}
       openInventoryBin={openInventoryBin}
     >
-      {renderPage()}
+      <WorkspaceErrorBoundary><Suspense fallback={<PageLoading />}>{renderPage()}</Suspense></WorkspaceErrorBoundary>
     </AppLayout>
   );
 }
