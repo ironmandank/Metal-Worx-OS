@@ -164,7 +164,11 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
     const update = () => {
       const element = findTourTarget(step);
       if (!element) { setRect(null); return; }
-      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      const isMobile = window.innerWidth <= 700;
+      element.scrollIntoView({ behavior: "smooth", block: isMobile ? "start" : "center" });
+      if (isMobile) {
+        window.setTimeout(() => window.scrollBy({ top: -120, behavior: "smooth" }), 80);
+      }
       window.setTimeout(() => {
         const bounds = element.getBoundingClientRect();
         const left = Math.max(6, bounds.left - 10);
