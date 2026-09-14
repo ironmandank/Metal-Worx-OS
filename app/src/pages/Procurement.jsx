@@ -31,6 +31,7 @@ import {
   IconMail,
   IconPackage,
   IconShoppingCart,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
@@ -873,6 +874,56 @@ function Procurement({
     await loadRequests();
   }
 
+  async function markShopStockOrdered(request) {
+    const { error } = await supabase
+      .from("project_material_requests")
+      .update({
+        status: "Ordered",
+        ordered: true,
+        ordered_at: new Date().toISOString(),
+      })
+      .eq("id", request.id);
+
+    if (error) {
+      notifications.show({ title: "Shop Order Failed", message: error.message, color: "red" });
+      return;
+    }
+
+    notifications.show({
+      title: "Shop Stock Ordered",
+      message: `${request.item_name || "The item"} moved to Ordered / Receiving.`,
+      color: "green",
+    });
+    setSelectedRequestIds((current) => current.filter((id) => id !== request.id));
+    await loadRequests();
+  }
+
+  async function clearShopStockRequest(request, received = false) {
+    const action = received ? "mark this stock received and clear it" : "remove this request from the active center";
+    if (!window.confirm(`Do you want to ${action}?`)) return;
+
+    const { error } = await supabase
+      .from("project_material_requests")
+      .update({
+        status: received ? "Received" : "Cancelled",
+        received_at: received ? new Date().toISOString() : null,
+      })
+      .eq("id", request.id);
+
+    if (error) {
+      notifications.show({ title: "Request Update Failed", message: error.message, color: "red" });
+      return;
+    }
+
+    notifications.show({
+      title: received ? "Stock Received" : "Request Removed",
+      message: "The item has been cleared from the active procurement center.",
+      color: "green",
+    });
+    setSelectedRequestIds((current) => current.filter((id) => id !== request.id));
+    await loadRequests();
+  }
+
   const quotedTotalPreview =
     Number(selectedRequest?.quantity || 0) *
       Number(pricingForm.unitCost || 0) +
@@ -1363,7 +1414,39 @@ function Procurement({
                           </Table.Td>
 
                           <Table.Td>
-                            {requestQueue ===
+                            {request.request_scope === "Shop Stock" ? (
+                              <Stack gap={6}>
+                                {requestQueue !== "ordered" && requestQueue !== "received" && (
+                                  <Button
+                                    size="xs"
+                                    color="green"
+                                    leftSection={<IconShoppingCart size={14} />}
+                                    onClick={() => markShopStockOrdered(request)}
+                                  >
+                                    Mark Ordered
+                                  </Button>
+                                )}
+                                {requestQueue === "ordered" && (
+                                  <Button
+                                    size="xs"
+                                    color="blue"
+                                    leftSection={<IconPackage size={14} />}
+                                    onClick={() => clearShopStockRequest(request, true)}
+                                  >
+                                    Received & Clear
+                                  </Button>
+                                )}
+                                <Button
+                                  size="xs"
+                                  variant="subtle"
+                                  color="red"
+                                  leftSection={<IconTrash size={14} />}
+                                  onClick={() => clearShopStockRequest(request, false)}
+                                >
+                                  Remove
+                                </Button>
+                              </Stack>
+                            ) : requestQueue ===
                               "pricing" && (
                               <Button
                                 size="xs"
@@ -1378,7 +1461,7 @@ function Procurement({
                               </Button>
                             )}
 
-                            {requestQueue ===
+                            {request.request_scope !== "Shop Stock" && requestQueue ===
                               "approval" &&
                               (!request.customer_quote_sent ? (
                                 <Button
@@ -1406,7 +1489,7 @@ function Procurement({
                                 </Button>
                               ))}
 
-                            {requestQueue ===
+                            {request.request_scope !== "Shop Stock" && requestQueue ===
                               "ready" && (
                               <Button
                                 size="xs"
@@ -1421,7 +1504,7 @@ function Procurement({
                               </Button>
                             )}
 
-                            {requestQueue ===
+                            {request.request_scope !== "Shop Stock" && requestQueue ===
                               "ordered" && (
                               <Button
                                 size="xs"
