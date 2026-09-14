@@ -96,6 +96,14 @@ function ProjectTrackingWorkspace({
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [taskForm, setTaskForm] = useState(EMPTY_TASK);
   const [dailyForm, setDailyForm] = useState(EMPTY_UPDATE);
+
+  function updateTaskForm(field, value) {
+    setTaskForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateDailyForm(field, value) {
+    setDailyForm((current) => ({ ...current, [field]: value }));
+  }
   const [selectedTemplate, setSelectedTemplate] = useState("General Outside Project");
 
   async function loadTracking() {
@@ -464,15 +472,16 @@ function ProjectTrackingWorkspace({
                   <TextInput
                     label="Assigned To"
                     value={task.assigned_to || ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setTasks((current) =>
                         current.map((item) =>
                           item.id === task.id
-                            ? { ...item, assigned_to: event.currentTarget.value }
+                            ? { ...item, assigned_to: value }
                             : item,
                         ),
-                      )
-                    }
+                      );
+                    }}
                     onBlur={(event) =>
                       updateTask(task, {
                         assigned_to: event.currentTarget.value.trim() || null,
@@ -526,15 +535,16 @@ function ProjectTrackingWorkspace({
                       : "Task notes, needs, or status details"
                   }
                   value={task.blocker || task.notes || ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
                     setTasks((current) =>
                       current.map((item) =>
                         item.id === task.id
-                          ? { ...item, blocker: event.currentTarget.value }
+                          ? { ...item, blocker: value }
                           : item,
                       ),
-                    )
-                  }
+                    );
+                  }}
                   onBlur={(event) =>
                     updateTask(task, {
                       blocker: event.currentTarget.value.trim() || null,
@@ -557,29 +567,24 @@ function ProjectTrackingWorkspace({
             label="Update Date"
             required
             value={dailyForm.update_date}
-            onChange={(event) =>
-              setDailyForm((current) => ({
-                ...current,
-                update_date: event.currentTarget.value,
-              }))
-            }
+            onChange={(event) => updateDailyForm("update_date", event.currentTarget.value)}
           />
-          <Select label="Overall Status" allowDeselect={false} value={dailyForm.status} data={["On Track", "At Risk", "Blocked", "Complete"]} onChange={(value) => setDailyForm((current) => ({ ...current, status: value || "On Track" }))} />
+          <Select label="Overall Status" allowDeselect={false} value={dailyForm.status} data={["On Track", "At Risk", "Blocked", "Complete"]} onChange={(value) => updateDailyForm("status", value || "On Track")} />
           <TextInput
             label="Updated By"
             value={project.assigned_to || activeUser || "Project Lead"}
             readOnly
           />
-          <Checkbox mt={30} label="Leadership attention required" checked={dailyForm.leadership_attention_required} onChange={(event) => setDailyForm((current) => ({ ...current, leadership_attention_required: event.currentTarget.checked }))} />
-          <Textarea label="Completed Today" minRows={3} value={dailyForm.work_completed} onChange={(event) => setDailyForm((current) => ({ ...current, work_completed: event.currentTarget.value }))} />
-          <Textarea label="Currently In Progress" minRows={3} value={dailyForm.work_in_progress} onChange={(event) => setDailyForm((current) => ({ ...current, work_in_progress: event.currentTarget.value }))} />
-          <Textarea label="Next Steps" minRows={3} value={dailyForm.next_steps} onChange={(event) => setDailyForm((current) => ({ ...current, next_steps: event.currentTarget.value }))} />
-          <Textarea label="Project Stoppers / Blockers" minRows={3} value={dailyForm.blockers} onChange={(event) => setDailyForm((current) => ({ ...current, blockers: event.currentTarget.value }))} />
-          <Textarea label="Materials Needed" minRows={2} value={dailyForm.materials_needed} onChange={(event) => setDailyForm((current) => ({ ...current, materials_needed: event.currentTarget.value }))} />
-          <Textarea label="Labor / Help Needed" minRows={2} value={dailyForm.labor_needed} onChange={(event) => setDailyForm((current) => ({ ...current, labor_needed: event.currentTarget.value }))} />
-          <Textarea label="Leadership Decisions Needed" minRows={2} value={dailyForm.decisions_needed} onChange={(event) => setDailyForm((current) => ({ ...current, decisions_needed: event.currentTarget.value }))} />
-          <Textarea label="Schedule Changes" minRows={2} value={dailyForm.schedule_change} onChange={(event) => setDailyForm((current) => ({ ...current, schedule_change: event.currentTarget.value }))} />
-          <Textarea label="Budget Changes" minRows={2} value={dailyForm.budget_change} onChange={(event) => setDailyForm((current) => ({ ...current, budget_change: event.currentTarget.value }))} />
+          <Checkbox mt={30} label="Leadership attention required" checked={dailyForm.leadership_attention_required} onChange={(event) => updateDailyForm("leadership_attention_required", event.currentTarget.checked)} />
+          <Textarea label="Completed Today" minRows={3} value={dailyForm.work_completed} onChange={(event) => updateDailyForm("work_completed", event.currentTarget.value)} />
+          <Textarea label="Currently In Progress" minRows={3} value={dailyForm.work_in_progress} onChange={(event) => updateDailyForm("work_in_progress", event.currentTarget.value)} />
+          <Textarea label="Next Steps" minRows={3} value={dailyForm.next_steps} onChange={(event) => updateDailyForm("next_steps", event.currentTarget.value)} />
+          <Textarea label="Project Stoppers / Blockers" minRows={3} value={dailyForm.blockers} onChange={(event) => updateDailyForm("blockers", event.currentTarget.value)} />
+          <Textarea label="Materials Needed" minRows={2} value={dailyForm.materials_needed} onChange={(event) => updateDailyForm("materials_needed", event.currentTarget.value)} />
+          <Textarea label="Labor / Help Needed" minRows={2} value={dailyForm.labor_needed} onChange={(event) => updateDailyForm("labor_needed", event.currentTarget.value)} />
+          <Textarea label="Leadership Decisions Needed" minRows={2} value={dailyForm.decisions_needed} onChange={(event) => updateDailyForm("decisions_needed", event.currentTarget.value)} />
+          <Textarea label="Schedule Changes" minRows={2} value={dailyForm.schedule_change} onChange={(event) => updateDailyForm("schedule_change", event.currentTarget.value)} />
+          <Textarea label="Budget Changes" minRows={2} value={dailyForm.budget_change} onChange={(event) => updateDailyForm("budget_change", event.currentTarget.value)} />
         </SimpleGrid>
 
         <Group justify="flex-end" mt="lg">
@@ -619,18 +624,18 @@ function ProjectTrackingWorkspace({
       <Modal opened={taskModalOpen} onClose={() => setTaskModalOpen(false)} title="Add Project Checklist Item" centered size="lg">
         <Stack>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <TextInput label="Phase / Section" placeholder="Planning, Fabrication, Install..." value={taskForm.phase} onChange={(event) => setTaskForm((current) => ({ ...current, phase: event.currentTarget.value }))} />
-            <TextInput label="Assigned To" value={taskForm.assigned_to} onChange={(event) => setTaskForm((current) => ({ ...current, assigned_to: event.currentTarget.value }))} />
+            <TextInput label="Phase / Section" placeholder="Planning, Fabrication, Install..." value={taskForm.phase} onChange={(event) => updateTaskForm("phase", event.currentTarget.value)} />
+            <TextInput label="Assigned To" value={taskForm.assigned_to} onChange={(event) => updateTaskForm("assigned_to", event.currentTarget.value)} />
           </SimpleGrid>
-          <TextInput label="Task" required placeholder="What must be completed?" value={taskForm.task_title} onChange={(event) => setTaskForm((current) => ({ ...current, task_title: event.currentTarget.value }))} />
-          <Textarea label="Description" minRows={2} value={taskForm.task_description} onChange={(event) => setTaskForm((current) => ({ ...current, task_description: event.currentTarget.value }))} />
+          <TextInput label="Task" required placeholder="What must be completed?" value={taskForm.task_title} onChange={(event) => updateTaskForm("task_title", event.currentTarget.value)} />
+          <Textarea label="Description" minRows={2} value={taskForm.task_description} onChange={(event) => updateTaskForm("task_description", event.currentTarget.value)} />
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Select label="Priority" allowDeselect={false} value={taskForm.priority} data={["Low", "Normal", "High", "Urgent"]} onChange={(value) => setTaskForm((current) => ({ ...current, priority: value || "Normal" }))} />
             <Select label="Status" allowDeselect={false} value={taskForm.status} data={["Not Started", "In Progress", "Blocked", "Complete", "Not Applicable"]} onChange={(value) => setTaskForm((current) => ({ ...current, status: value || "Not Started" }))} />
-            <TextInput type="date" label="Target Date" value={taskForm.target_date} onChange={(event) => setTaskForm((current) => ({ ...current, target_date: event.currentTarget.value }))} />
+            <TextInput type="date" label="Target Date" value={taskForm.target_date} onChange={(event) => updateTaskForm("target_date", event.currentTarget.value)} />
           </SimpleGrid>
-          <Textarea label="Blocker / Project Stopper" minRows={2} value={taskForm.blocker} onChange={(event) => setTaskForm((current) => ({ ...current, blocker: event.currentTarget.value }))} />
-          <Textarea label="Notes" minRows={2} value={taskForm.notes} onChange={(event) => setTaskForm((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <Textarea label="Blocker / Project Stopper" minRows={2} value={taskForm.blocker} onChange={(event) => updateTaskForm("blocker", event.currentTarget.value)} />
+          <Textarea label="Notes" minRows={2} value={taskForm.notes} onChange={(event) => updateTaskForm("notes", event.currentTarget.value)} />
           <Group justify="flex-end"><Button variant="light" color="gray" onClick={() => setTaskModalOpen(false)}>Cancel</Button><Button color="red" loading={savingTask} onClick={addTask}>Add Task</Button></Group>
         </Stack>
       </Modal>
