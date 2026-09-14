@@ -330,8 +330,18 @@ const styles = `
     font-size: .58rem; font-weight: 800; letter-spacing: .16em; text-align: center; text-transform: uppercase;
   }
 
+  @media (max-width: 1500px) {
+    .mc-topbar { grid-template-columns: 1fr; overflow: visible; }
+    .mc-brand { width: 100%; }
+    .mc-top-actions {
+      width: 100%;
+      grid-template-columns: minmax(138px, .8fr) minmax(150px, 1fr) minmax(185px, 1.25fr) minmax(88px, .65fr);
+      justify-content: stretch;
+    }
+    .mc-top-actions > * { min-width: 0; width: 100%; }
+    .mc-top-actions .mc-button { white-space: normal; line-height: 1.15; }
+  }
   @media (max-width: 1180px) {
-    .mc-topbar { grid-template-columns: 1fr; }
     .mc-top-actions { justify-content: start; }
     .mc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .mc-three { grid-template-columns: 1fr; }
