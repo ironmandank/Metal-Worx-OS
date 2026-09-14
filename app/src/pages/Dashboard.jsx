@@ -72,7 +72,7 @@ const styles = `
   }
   .mc-brand {
     position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr;
-    align-items: center; justify-content: center; min-width: 0; width: min(640px, 100%);
+    align-items: center; justify-content: center; min-width: 0; width: 100%;
     margin: 0 auto;
   }
   .mc-logo {
