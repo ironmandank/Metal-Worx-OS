@@ -30,6 +30,7 @@ import {
   IconQrcode,
   IconRefresh,
   IconSearch,
+  IconShoppingCart,
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
@@ -749,6 +750,65 @@ function InventoryItems({
     }
   }
 
+  async function requestSelectedForProcurement() {
+    if (!selectedIds.length) return;
+    const selectedItems = items.filter((item) => selectedIds.includes(item.inventory_item_id));
+    const stockItems = selectedItems.filter((item) => !isShowroomItem(item));
+    if (!stockItems.length) {
+      notifications.show({
+        title: "Select Shop Inventory",
+        message: "Procurement requests are for fabrication consumables and raw materials, not showroom products.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setBulkWorking(true);
+    try {
+      const itemIds = stockItems.map((item) => item.inventory_item_id);
+      const { data: existing, error: existingError } = await supabase
+        .from("project_material_requests")
+        .select("inventory_item_id")
+        .in("inventory_item_id", itemIds)
+        .not("status", "in", '("Received","Cancelled")');
+      if (existingError) throw existingError;
+      const alreadyRequested = new Set((existing || []).map((row) => row.inventory_item_id));
+      const newItems = stockItems.filter((item) => !alreadyRequested.has(item.inventory_item_id));
+
+      if (newItems.length) {
+        const stamp = Date.now();
+        const rows = newItems.map((item, index) => ({
+          project_id: null,
+          inventory_item_id: item.inventory_item_id,
+          request_scope: "Shop Stock",
+          request_number: `STOCK-${stamp}-${index + 1}`,
+          priority: item.stock_status === "Out of Stock" ? "High" : "Normal",
+          quantity: Math.max(1, Number(item.reorder_quantity || item.minimum_stock || 1)),
+          item_name: item.name || item.item_number || "Shop inventory item",
+          dimensions: item.dimensions || "",
+          description: `Restock shop inventory. On hand: ${Number(item.quantity_on_hand || 0)}; reorder point: ${Number(item.reorder_point || 0)}.`,
+          vendor_name: item.default_vendor_name || "",
+          vendor_source: "Inventory",
+          assigned_to: "Lori",
+          status: "Pricing Needed",
+        }));
+        const { error } = await supabase.from("project_material_requests").insert(rows);
+        if (error) throw error;
+      }
+
+      notifications.show({
+        title: "Procurement Queue Updated",
+        message: `${newItems.length} request(s) created${alreadyRequested.size ? `; ${alreadyRequested.size} already had an open request` : ""}.`,
+        color: "green",
+      });
+      setSelectedIds([]);
+    } catch (error) {
+      notifications.show({ title: "Procurement Request Failed", message: error.message || "Unable to create requests.", color: "red" });
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
   const showroomCount = useMemo(
     () =>
       items.filter(
@@ -829,7 +889,7 @@ function InventoryItems({
     },
     {
       key: "showroom",
-      label: "Showroom Items",
+      label: "Art & Showroom",
       value: formatNumber(
         showroomCount,
         0
@@ -845,7 +905,7 @@ function InventoryItems({
     },
     {
       key: "consumables",
-      label: "Consumables",
+      label: "Shop Consumables",
       value: formatNumber(
         consumableCount,
         0
@@ -1051,15 +1111,15 @@ function InventoryItems({
                   },
                   {
                     value: "showroom",
-                    label: "Showroom Items",
+                    label: "Art & Showroom Products",
                   },
                   {
                     value: "consumable",
-                    label: "Consumables",
+                    label: "Fabrication Consumables",
                   },
                   {
                     value: "material",
-                    label: "Materials",
+                    label: "Raw Materials / Other",
                   },
                 ]}
                 allowDeselect={false}
@@ -1249,6 +1309,16 @@ function InventoryItems({
                   onClick={changeSelectedBin}
                 >
                   Apply Bin
+                </Button>
+                <Button
+                  color="orange"
+                  variant="light"
+                  leftSection={<IconShoppingCart size={16} />}
+                  disabled={!selectedIds.length || bulkWorking}
+                  loading={bulkWorking}
+                  onClick={requestSelectedForProcurement}
+                >
+                  Request Procurement
                 </Button>
                 <Button
                   color="red"

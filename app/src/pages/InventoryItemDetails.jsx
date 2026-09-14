@@ -200,6 +200,9 @@ function InventoryItemDetails({
   const [categories, setCategories] = useState([]);
   const [bins, setBins] = useState([]);
   const [editForm, setEditForm] = useState({});
+  function updateEditForm(field, value) {
+    setEditForm((current) => ({ ...current, [field]: value }));
+  }
 
   const itemId = getItemId(selectedInventoryItem || item);
 
@@ -1438,11 +1441,11 @@ function InventoryItemDetails({
       >
         <Stack>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <TextInput label="Item Number" required value={editForm.item_number || ""} onChange={(event) => setEditForm((current) => ({ ...current, item_number: event.currentTarget.value }))} />
-            <TextInput label="SKU" value={editForm.sku || ""} onChange={(event) => setEditForm((current) => ({ ...current, sku: event.currentTarget.value }))} />
+            <TextInput label="Item Number" required value={editForm.item_number || ""} onChange={(event) => updateEditForm("item_number", event.currentTarget.value)} />
+            <TextInput label="SKU" value={editForm.sku || ""} onChange={(event) => updateEditForm("sku", event.currentTarget.value)} />
           </SimpleGrid>
-          <TextInput label="Item Name" required value={editForm.name || ""} onChange={(event) => setEditForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-          <Textarea label="Description" minRows={2} value={editForm.description || ""} onChange={(event) => setEditForm((current) => ({ ...current, description: event.currentTarget.value }))} />
+          <TextInput label="Item Name" required value={editForm.name || ""} onChange={(event) => updateEditForm("name", event.currentTarget.value)} />
+          <Textarea label="Description" minRows={2} value={editForm.description || ""} onChange={(event) => updateEditForm("description", event.currentTarget.value)} />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Select label="Category" clearable searchable data={categories.map((category) => ({ value: category.id, label: category.name }))} value={editForm.category_id || null} onChange={(value) => setEditForm((current) => ({ ...current, category_id: value || "" }))} />
             <Select label="Default Bin / Storage" clearable searchable data={bins.map((bin) => ({ value: bin.id, label: [bin.code, bin.name, bin.zone].filter(Boolean).join(" · ") }))} value={editForm.default_bin_id || null} onChange={(value) => setEditForm((current) => ({ ...current, default_bin_id: value || "" }))} />
@@ -1453,7 +1456,7 @@ function InventoryItemDetails({
             <NumberInput label="Reorder Point" min={0} value={editForm.reorder_point || 0} onChange={(value) => setEditForm((current) => ({ ...current, reorder_point: value }))} />
             <NumberInput label="Reorder Quantity" min={0} value={editForm.reorder_quantity || 0} onChange={(value) => setEditForm((current) => ({ ...current, reorder_quantity: value }))} />
           </SimpleGrid>
-          <Textarea label="Internal Notes" minRows={2} value={editForm.notes || ""} onChange={(event) => setEditForm((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <Textarea label="Internal Notes" minRows={2} value={editForm.notes || ""} onChange={(event) => updateEditForm("notes", event.currentTarget.value)} />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setEditOpened(false)}>Cancel</Button>
             <Button color="red" loading={savingItem} onClick={saveItemChanges}>Save Changes</Button>

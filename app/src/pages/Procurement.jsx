@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Divider,
   Drawer,
   Group,
@@ -27,6 +28,7 @@ import {
   IconClock,
   IconCurrencyDollar,
   IconListDetails,
+  IconMail,
   IconPackage,
   IconShoppingCart,
 } from "@tabler/icons-react";
@@ -181,6 +183,7 @@ function getProjectItem(project) {
 }
 
 function getProjectIdentity(project, customer) {
+  if (!project) return "Shop Stock / Fabrication Consumables";
   return `${getProjectPerson(project, customer)} — ${getProjectItem(project)}`;
 }
 
@@ -247,6 +250,7 @@ function Procurement({
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedRequestIds, setSelectedRequestIds] = useState([]);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -826,6 +830,49 @@ function Procurement({
     customers,
   ]);
 
+  const selectedForRfq = useMemo(
+    () => requests.filter((request) => selectedRequestIds.includes(request.id)),
+    [requests, selectedRequestIds]
+  );
+
+  function toggleRfqRequest(requestId) {
+    setSelectedRequestIds((current) => current.includes(requestId)
+      ? current.filter((id) => id !== requestId)
+      : [...current, requestId]);
+  }
+
+  function toggleVisibleRfqRequests() {
+    const visibleIds = filteredRequests.map((request) => request.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedRequestIds.includes(id));
+    setSelectedRequestIds((current) => allSelected
+      ? current.filter((id) => !visibleIds.includes(id))
+      : Array.from(new Set([...current, ...visibleIds])));
+  }
+
+  async function draftVendorRfq() {
+    if (!selectedForRfq.length) return;
+    const vendorNames = Array.from(new Set(selectedForRfq.map((request) => String(request.vendor_name || "").trim()).filter(Boolean)));
+    if (vendorNames.length !== 1) {
+      notifications.show({ title: "Select One Vendor", message: "Filter by vendor and select materials for only one vendor per quote request email.", color: "orange" });
+      return;
+    }
+    const vendorName = vendorNames[0];
+    const vendorEmail = selectedForRfq.find((request) => request.vendor_email)?.vendor_email || "";
+    const projectNumbers = Array.from(new Set(selectedForRfq.map((request) => request.projects?.project_number).filter(Boolean)));
+    const lines = selectedForRfq.map((request, index) => `${index + 1}. ${request.quantity || 0} × ${request.item_name || "Material"}${request.dimensions ? ` — ${request.dimensions}` : ""}${request.description ? `\n   ${request.description}` : ""}${request.needed_by ? `\n   Needed by: ${formatDate(request.needed_by)}` : ""}`);
+    const subject = `Request for Material Quote — ${projectNumbers.join(", ") || "Metal Worx Shop Stock"}`;
+    const body = [`Hello ${selectedForRfq[0]?.vendor_contact || vendorName},`, "", "Metal Worx Inc. is requesting current pricing and availability for the following materials:", "", ...lines, "", "Please include unit pricing, freight, lead time, quote expiration, and earliest availability.", "", "Thank you,", "Metal Worx Inc.", "1122 Gillespie St.", "Fayetteville, NC 28306", "(910) 438-9353", "info@metalworxinc.net"].join("\n");
+    const { error } = await supabase.from("project_material_requests").update({ quote_requested: true, quote_requested_at: new Date().toISOString() }).in("id", selectedForRfq.map((request) => request.id));
+    if (error) {
+      notifications.show({ title: "RFQ Draft Failed", message: error.message, color: "red" });
+      return;
+    }
+    window.location.href = `mailto:${encodeURIComponent(vendorEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    notifications.show({ title: "Vendor RFQ Prepared", message: `Review the ${vendorName} email and press Send in your email program.`, color: "green" });
+    setSelectedRequestIds([]);
+    await loadRequests();
+  }
+
   const quotedTotalPreview =
     Number(selectedRequest?.quantity || 0) *
       Number(pricingForm.unitCost || 0) +
@@ -843,7 +890,7 @@ function Procurement({
     <>
       <MWPageHeader
         title="Procurement Center"
-        subtitle="Vendor pricing, customer approval, ordering, and receiving for every Metal Worx project."
+        subtitle="Vendor pricing, quote requests, ordering, and receiving for projects and shop stock."
         setPage={setPage}
         showBack={true}
         backPage="dashboard"
@@ -1069,6 +1116,18 @@ function Procurement({
             )}
           </Group>
 
+          <Group justify="space-between" wrap="wrap">
+            <Checkbox
+              label={filteredRequests.length && filteredRequests.every((request) => selectedRequestIds.includes(request.id)) ? "Clear displayed" : "Select displayed"}
+              checked={filteredRequests.length > 0 && filteredRequests.every((request) => selectedRequestIds.includes(request.id))}
+              indeterminate={selectedRequestIds.length > 0 && !filteredRequests.every((request) => selectedRequestIds.includes(request.id))}
+              onChange={toggleVisibleRfqRequests}
+            />
+            <Button color="blue" leftSection={<IconMail size={18}/>} disabled={!selectedRequestIds.length} onClick={draftVendorRfq}>
+              Draft Vendor RFQ ({selectedRequestIds.length})
+            </Button>
+          </Group>
+
           {loading ? (
             <Card
               withBorder
@@ -1136,6 +1195,7 @@ function Procurement({
               >
                 <Table.Thead>
                   <Table.Tr>
+                    <Table.Th style={{ width: 44 }}>Select</Table.Th>
                     <Table.Th>
                       Customer / Project
                     </Table.Th>
@@ -1183,6 +1243,9 @@ function Procurement({
                         <Table.Tr
                           key={request.id}
                         >
+                          <Table.Td>
+                            <Checkbox aria-label={`Select ${request.item_name || "material"} for vendor RFQ`} checked={selectedRequestIds.includes(request.id)} onChange={() => toggleRfqRequest(request.id)} />
+                          </Table.Td>
                           <Table.Td>
                             <Stack gap={2}>
                               <Button

@@ -96,7 +96,9 @@ function InventoryStorageLocations({
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [positionModalOpen, setPositionModalOpen] = useState(false);
   const [locationForm, setLocationForm] = useState(EMPTY_LOCATION);
+  const updateLocationForm = (field, value) => setLocationForm((current) => ({ ...current, [field]: value }));
   const [positionForm, setPositionForm] = useState(EMPTY_POSITION);
+  const updatePositionForm = (field, value) => setPositionForm((current) => ({ ...current, [field]: value }));
   const [editingLocationId, setEditingLocationId] = useState(null);
   const [editingPositionId, setEditingPositionId] = useState(null);
   const scanInputRef = useRef(null);
@@ -499,12 +501,12 @@ function InventoryStorageLocations({
 
       <Modal opened={locationModalOpen} onClose={() => setLocationModalOpen(false)} title={editingLocationId ? "Edit Storage Area" : "Create Storage Area"} centered>
         <Stack>
-          <TextInput label="Area Name" placeholder="Example: Showroom" required value={locationForm.name} onChange={(event) => setLocationForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-          <TextInput label="Area Code" placeholder="Example: SHOWROOM" required value={locationForm.code} onChange={(event) => setLocationForm((current) => ({ ...current, code: cleanCode(event.currentTarget.value) }))} />
+          <TextInput label="Area Name" placeholder="Example: Showroom" required value={locationForm.name} onChange={(event) => updateLocationForm("name", event.currentTarget.value)} />
+          <TextInput label="Area Code" placeholder="Example: SHOWROOM" required value={locationForm.code} onChange={(event) => updateLocationForm("code", cleanCode(event.currentTarget.value))} />
           <Select label="Area Type" data={["shop", "showroom", "production", "storage", "office", "other"]} value={locationForm.location_type} onChange={(value) => setLocationForm((current) => ({ ...current, location_type: value || "shop" }))} />
-          <Textarea label="Description" value={locationForm.description} onChange={(event) => setLocationForm((current) => ({ ...current, description: event.currentTarget.value }))} />
-          <Checkbox label="Primary inventory area" checked={locationForm.is_primary} onChange={(event) => setLocationForm((current) => ({ ...current, is_primary: event.currentTarget.checked }))} />
-          <Checkbox label="Area is active" checked={locationForm.is_active} onChange={(event) => setLocationForm((current) => ({ ...current, is_active: event.currentTarget.checked }))} />
+          <Textarea label="Description" value={locationForm.description} onChange={(event) => updateLocationForm("description", event.currentTarget.value)} />
+          <Checkbox label="Primary inventory area" checked={locationForm.is_primary} onChange={(event) => updateLocationForm("is_primary", event.currentTarget.checked)} />
+          <Checkbox label="Area is active" checked={locationForm.is_active} onChange={(event) => updateLocationForm("is_active", event.currentTarget.checked)} />
           <Button color="red" fullWidth loading={saving} disabled={!locationForm.name.trim() || !cleanCode(locationForm.code)} onClick={saveLocation}>Save Storage Area</Button>
         </Stack>
       </Modal>
@@ -513,19 +515,19 @@ function InventoryStorageLocations({
         <Stack>
           <Select label="Storage Area" data={locationOptions} value={positionForm.location_id} onChange={(value) => setPositionForm((current) => ({ ...current, location_id: value || "" }))} searchable required />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <TextInput label="Position Name" placeholder="Example: Tree Display Rack" required value={positionForm.name} onChange={(event) => setPositionForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-            <TextInput label="Position Code" placeholder="Example: SHW-TREES" required value={positionForm.code} onChange={(event) => setPositionForm((current) => ({ ...current, code: cleanCode(event.currentTarget.value) }))} />
-            <TextInput label="Zone" placeholder="Example: Showroom" value={positionForm.zone} onChange={(event) => setPositionForm((current) => ({ ...current, zone: event.currentTarget.value }))} />
-            <TextInput label="Aisle" placeholder="Optional" value={positionForm.aisle} onChange={(event) => setPositionForm((current) => ({ ...current, aisle: event.currentTarget.value }))} />
-            <TextInput label="Rack" placeholder="Optional" value={positionForm.rack} onChange={(event) => setPositionForm((current) => ({ ...current, rack: event.currentTarget.value }))} />
-            <TextInput label="Shelf" placeholder="Optional" value={positionForm.shelf} onChange={(event) => setPositionForm((current) => ({ ...current, shelf: event.currentTarget.value }))} />
+            <TextInput label="Position Name" placeholder="Example: Tree Display Rack" required value={positionForm.name} onChange={(event) => updatePositionForm("name", event.currentTarget.value)} />
+            <TextInput label="Position Code" placeholder="Example: SHW-TREES" required value={positionForm.code} onChange={(event) => updatePositionForm("code", cleanCode(event.currentTarget.value))} />
+            <TextInput label="Zone" placeholder="Example: Showroom" value={positionForm.zone} onChange={(event) => updatePositionForm("zone", event.currentTarget.value)} />
+            <TextInput label="Aisle" placeholder="Optional" value={positionForm.aisle} onChange={(event) => updatePositionForm("aisle", event.currentTarget.value)} />
+            <TextInput label="Rack" placeholder="Optional" value={positionForm.rack} onChange={(event) => updatePositionForm("rack", event.currentTarget.value)} />
+            <TextInput label="Shelf" placeholder="Optional" value={positionForm.shelf} onChange={(event) => updatePositionForm("shelf", event.currentTarget.value)} />
           </SimpleGrid>
-          <Textarea label="Description" placeholder="What belongs in this position?" value={positionForm.description} onChange={(event) => setPositionForm((current) => ({ ...current, description: event.currentTarget.value }))} />
+          <Textarea label="Description" placeholder="What belongs in this position?" value={positionForm.description} onChange={(event) => updatePositionForm("description", event.currentTarget.value)} />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <Checkbox label="Receiving position" checked={positionForm.is_receiving_bin} onChange={(event) => setPositionForm((current) => ({ ...current, is_receiving_bin: event.currentTarget.checked }))} />
-            <Checkbox label="Quarantine position" checked={positionForm.is_quarantine_bin} onChange={(event) => setPositionForm((current) => ({ ...current, is_quarantine_bin: event.currentTarget.checked }))} />
-            <Checkbox label="Scrap position" checked={positionForm.is_scrap_bin} onChange={(event) => setPositionForm((current) => ({ ...current, is_scrap_bin: event.currentTarget.checked }))} />
-            <Checkbox label="Position is active" checked={positionForm.is_active} onChange={(event) => setPositionForm((current) => ({ ...current, is_active: event.currentTarget.checked }))} />
+            <Checkbox label="Receiving position" checked={positionForm.is_receiving_bin} onChange={(event) => updatePositionForm("is_receiving_bin", event.currentTarget.checked)} />
+            <Checkbox label="Quarantine position" checked={positionForm.is_quarantine_bin} onChange={(event) => updatePositionForm("is_quarantine_bin", event.currentTarget.checked)} />
+            <Checkbox label="Scrap position" checked={positionForm.is_scrap_bin} onChange={(event) => updatePositionForm("is_scrap_bin", event.currentTarget.checked)} />
+            <Checkbox label="Position is active" checked={positionForm.is_active} onChange={(event) => updatePositionForm("is_active", event.currentTarget.checked)} />
           </SimpleGrid>
           <Alert color="blue" icon={<IconQrcode size={19} />}>The QR and barcode value will be generated automatically as MW-BIN-{cleanCode(positionForm.code) || "CODE"}.</Alert>
           <Button color="red" fullWidth loading={saving} disabled={!positionForm.location_id || !positionForm.name.trim() || !cleanCode(positionForm.code)} onClick={savePosition}>Save Storage Position</Button>

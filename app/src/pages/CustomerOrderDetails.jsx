@@ -1460,12 +1460,13 @@ function CustomerOrderDetails({
               required
               styles={{ input: { colorScheme: "dark" } }}
               value={paymentForm.paymentDate}
-              onChange={(event) =>
+              onChange={(event) => {
+                const value = event.currentTarget.value;
                 setPaymentForm((current) => ({
                   ...current,
-                  paymentDate: event.currentTarget.value,
-                }))
-              }
+                  paymentDate: value,
+                }));
+              }}
             />
           </SimpleGrid>
 
@@ -1473,12 +1474,13 @@ function CustomerOrderDetails({
             label="Reference / Check Number"
             placeholder="Optional receipt, transaction, or check number"
             value={paymentForm.referenceNumber}
-            onChange={(event) =>
+            onChange={(event) => {
+              const value = event.currentTarget.value;
               setPaymentForm((current) => ({
                 ...current,
-                referenceNumber: event.currentTarget.value,
-              }))
-            }
+                referenceNumber: value,
+              }));
+            }}
           />
 
           <Textarea
@@ -1487,12 +1489,13 @@ function CustomerOrderDetails({
             minRows={3}
             autosize
             value={paymentForm.notes}
-            onChange={(event) =>
+            onChange={(event) => {
+              const value = event.currentTarget.value;
               setPaymentForm((current) => ({
                 ...current,
-                notes: event.currentTarget.value,
-              }))
-            }
+                notes: value,
+              }));
+            }}
           />
 
           <Group justify="flex-end">

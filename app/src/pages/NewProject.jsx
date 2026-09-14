@@ -260,6 +260,8 @@ function NewProject({ setPage }) {
       site_visit_date: null,
       install_date: null,
       due_date: null,
+      planned_start_date: null,
+      planned_duration_days: null,
 
       is_quick_turnaround: false,
       quick_turnaround_required_by: null,
@@ -823,8 +825,15 @@ function NewProject({ setPage }) {
           null,
 
         due_date:
-          formData.due_date ||
-          null,
+          normalizeDateValue(formData.due_date),
+
+        planned_start_date:
+          normalizeDateValue(formData.planned_start_date),
+
+        planned_duration_days:
+          formData.planned_duration_days
+            ? Number(formData.planned_duration_days)
+            : null,
 
         material_status:
           hasMaterialRequests &&
@@ -1596,6 +1605,24 @@ function NewProject({ setPage }) {
                 )
               }
             />
+
+            <Group grow align="flex-start">
+              <DateInput
+                label="Planned Shop Start"
+                description="Places this project on the capacity calendar"
+                value={formData.planned_start_date}
+                onChange={(value) => updateField("planned_start_date", value)}
+                clearable
+              />
+              <NumberInput
+                label="Estimated Workdays"
+                description="How many working days it should occupy"
+                min={1}
+                max={365}
+                value={formData.planned_duration_days || ""}
+                onChange={(value) => updateField("planned_duration_days", value)}
+              />
+            </Group>
           </Stack>
         </MWSection>
 

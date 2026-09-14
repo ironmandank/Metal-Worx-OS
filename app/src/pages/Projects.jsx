@@ -9,6 +9,7 @@ import {
   Progress,
   SegmentedControl,
   SimpleGrid,
+  ScrollArea,
   Stack,
   Text,
   TextInput,
@@ -20,8 +21,10 @@ import {
   IconArrowRight,
   IconClipboardCheck,
   IconCircleCheck,
+  IconCalendarEvent,
   IconMapPin,
   IconPackage,
+  IconPrinter,
   IconRefresh,
   IconRotateClockwise,
   IconSearch,
@@ -104,6 +107,16 @@ function getProjectItem(project) {
 
 function getProjectIdentity(project, customer) {
   return `${getProjectPerson(project, customer)} — ${getProjectItem(project)}`;
+}
+
+function addDays(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function dateKey(date) {
+  return date.toISOString().slice(0, 10);
 }
 
 function Projects({ setPage, setSelectedProject }) {
@@ -269,6 +282,34 @@ function Projects({ setPage, setSelectedProject }) {
     (project) => project.status === "On Hold"
   ).length;
 
+  const calendarDays = useMemo(() => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    return Array.from({ length: 28 }, (_, index) => addDays(dateKey(today), index));
+  }, []);
+  const scheduledProjects = projects.filter(
+    (project) => project.planned_start_date && project.planned_duration_days
+  );
+
+  function printDailyUpdateSheets(prefilled = true) {
+    const printableProjects = prefilled ? projects : [null];
+    const pages = printableProjects.map((project) => {
+      const customer = project ? customers[project.customer_id] : null;
+      const identity = project ? getProjectIdentity(project, customer) : "";
+      const lead = project ? project.assigned_to || project.intake_owner || "" : "";
+      return `<section class="sheet"><header><h1>METAL WORX — DAILY PROJECT UPDATE</h1><p>Complete before the daily cutoff and return this sheet to Operations.</p></header><div class="top"><b>Date:</b> ____________________ <b>Lead:</b> ${lead || "____________________"}</div><div class="top"><b>Project:</b> ${identity || "____________________________________________"}</div><div class="top"><b>Project Number:</b> ${project?.project_number || "____________________"} <b>Estimated Completion:</b> ____________________</div>${[
+        "Work Completed Today", "Work Currently In Progress", "Next Steps", "Problems / Blockers", "Materials Needed", "Labor / Help Needed", "Schedule Changes", "Leadership Decision Needed"
+      ].map((label) => `<div class="field"><b>${label}</b><div></div></div>`).join("")}<footer>Lead initials: ____________________ &nbsp;&nbsp; Leadership attention required: ☐ Yes ☐ No</footer></section>`;
+    }).join("");
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      setErrorMessage("Allow pop-ups for Metal Worx OS, then try printing again.");
+      return;
+    }
+    popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter;margin:.35in}*{box-sizing:border-box}body{margin:0;font:12px Arial;color:#111}.sheet{page-break-after:always;min-height:10.2in;border:2px solid #111;padding:18px}.sheet:last-child{page-break-after:auto}header{border-bottom:5px solid #b00012;margin-bottom:12px}h1{margin:0;font-size:22px}header p{margin:5px 0 10px}.top{display:flex;gap:28px;border-bottom:1px solid #777;padding:8px 3px;font-size:13px}.field{margin-top:9px}.field b{display:block;background:#eee;border:1px solid #777;padding:5px}.field div{height:48px;border:1px solid #777;border-top:0}footer{margin-top:12px;font-weight:bold}</style></head><body>${pages}<script>window.onload=()=>window.print()<\/script></body></html>`);
+    popup.document.close();
+  }
+
   function openProject(project) {
     setSelectedProject({ ...project, initialTab: "overview" });
     setPage("projectDetails");
@@ -422,6 +463,36 @@ function Projects({ setPage, setSelectedProject }) {
           },
         ]}
       />
+
+      <MWPanel
+        title="Project Capacity Calendar"
+        subtitle="Four-week view of planned work. Open Edit Project to set the planned start date and estimated workdays."
+        icon={IconCalendarEvent}
+        rightSection={<Group gap="xs"><Button size="xs" variant="light" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(false)}>Print Blank Sheet</Button><Button size="xs" color="red" leftSection={<IconPrinter size={15}/>} onClick={() => printDailyUpdateSheets(true)}>Print Active Projects</Button></Group>}
+      >
+        {scheduledProjects.length ? (
+          <ScrollArea type="auto">
+            <Box miw={1050}>
+              <Box style={{ display:"grid", gridTemplateColumns:"220px repeat(28, 34px)", gap:2 }}>
+                <Text size="xs" fw={800}>PROJECT / LEAD</Text>
+                {calendarDays.map((day) => <Text key={dateKey(day)} size="xs" ta="center" c={day.getDay() === 0 || day.getDay() === 6 ? "red.4" : "dimmed"}>{day.getDate()}</Text>)}
+                {scheduledProjects.map((project) => {
+                  const start = dateKey(addDays(project.planned_start_date, 0));
+                  const startIndex = calendarDays.findIndex((day) => dateKey(day) === start);
+                  const duration = Number(project.planned_duration_days || 1);
+                  return <Box key={project.id} style={{ display:"contents" }}>
+                    <Button variant="subtle" color="gray" size="compact-xs" justify="flex-start" onClick={() => openProject(project)} style={{overflow:"hidden"}}>{project.project_name || project.project_number} · {project.assigned_to || "Unassigned"}</Button>
+                    {calendarDays.map((day, index) => {
+                      const active = startIndex >= 0 && index >= startIndex && index < startIndex + duration;
+                      return <Box key={`${project.id}-${dateKey(day)}`} h={28} style={{ background: active ? (project.priority === "Rush" ? "#c40018" : "#1769aa") : "rgba(255,255,255,.035)", borderRadius:3 }} title={active ? `${project.project_name}: day ${index-startIndex+1} of ${duration}` : ""}/>;
+                    })}
+                  </Box>;
+                })}
+              </Box>
+            </Box>
+          </ScrollArea>
+        ) : <Alert color="blue">No projects are scheduled yet. Add a planned start date and estimated workdays in Edit Project.</Alert>}
+      </MWPanel>
 
       {errorMessage && (
         <Alert

@@ -379,6 +379,12 @@ function EditProject({ selectedProject, setPage }) {
 
       due_date: form.due_date || null,
 
+      planned_start_date: form.planned_start_date || null,
+
+      planned_duration_days: form.planned_duration_days
+        ? Number(form.planned_duration_days)
+        : null,
+
       priority: form.priority || "Normal",
 
       is_quick_turnaround: Boolean(form.is_quick_turnaround),
@@ -678,14 +684,29 @@ function EditProject({ selectedProject, setPage }) {
               />
             </SimpleGrid>
 
-            <TextInput
-              type="date"
-              label="Due Date"
-              value={form.due_date || ""}
-              onChange={(event) =>
-                updateField("due_date", event.currentTarget.value)
-              }
-            />
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <TextInput
+                type="date"
+                label="Due Date"
+                value={form.due_date || ""}
+                onChange={(event) => updateField("due_date", event.currentTarget.value)}
+              />
+              <TextInput
+                type="date"
+                label="Planned Shop Start"
+                description="Controls the capacity calendar"
+                value={form.planned_start_date || ""}
+                onChange={(event) => updateField("planned_start_date", event.currentTarget.value)}
+              />
+              <NumberInput
+                label="Estimated Workdays"
+                description="Days this project occupies"
+                min={1}
+                max={365}
+                value={form.planned_duration_days || ""}
+                onChange={(value) => updateField("planned_duration_days", value)}
+              />
+            </SimpleGrid>
           </Stack>
         </MWSection>
 

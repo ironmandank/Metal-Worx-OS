@@ -1633,9 +1633,10 @@ function NewInventoryItem({
                           required
                           value={newCrate.name}
                           onChange={(event) => {
+                            const value = event.currentTarget.value;
                             setNewCrate((current) => ({
                               ...current,
-                              name: event.currentTarget.value,
+                              name: value,
                             }));
                             setValidationErrors((current) => ({ ...current, newCrateName: null }));
                           }}
