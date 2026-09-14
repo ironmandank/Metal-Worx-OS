@@ -194,20 +194,11 @@ function QuoteCenter({
     ].join("\n");
   }
 
-  function emailSiteEstimate() {
-    if (!siteEstimate.destination.trim()) {
-      notifications.show({
-        title: "Job-Site Address Required",
-        message: "Enter the potential job address before preparing the email.",
-        color: "orange",
-      });
-      return;
-    }
-    const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
-    const emailUrl = `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
+  function siteEstimateEmailUrl() {
+    const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination || "Potential Job"}`;
+    return `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
       subject,
     )}&body=${encodeURIComponent(siteEstimateSummary())}`;
-    window.location.href = emailUrl;
   }
 
   async function copySiteEstimate() {
@@ -779,7 +770,7 @@ function QuoteCenter({
               <Button variant="subtle" color="red" onClick={clearSiteEstimate}>Clear Worksheet</Button>
               <Group wrap="wrap">
                 <Button variant="light" color="gray" onClick={copySiteEstimate}>Copy Estimate Summary</Button>
-                <Button color="blue" disabled={!siteEstimate.destination.trim()} onClick={emailSiteEstimate}>Prepare Site-Visit Email</Button>
+                <Button component="a" color="blue" disabled={!siteEstimate.destination.trim()} href={siteEstimateEmailUrl()}>Prepare Site-Visit Email</Button>
               </Group>
             </Group>
           </Stack>
