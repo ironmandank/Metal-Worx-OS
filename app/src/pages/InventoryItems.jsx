@@ -667,9 +667,25 @@ function InventoryItems({
 
   async function removeSelectedItems() {
     if (!selectedIds.length) return;
-    if (!window.confirm(`Delete/archive ${selectedIds.length} selected inventory item(s)? Items tied to business history will be archived.`)) return;
     setBulkWorking(true);
     try {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      const userId = authData?.user?.id;
+      const { data: profile, error: profileError } = userId
+        ? await supabase
+            .from("employee_profiles")
+            .select("access_level")
+            .eq("auth_user_id", userId)
+            .maybeSingle()
+        : { data: null, error: null };
+      if (profileError) throw profileError;
+      const isAdministrator = profile?.access_level === "Administrator";
+      const actionDescription = isAdministrator
+        ? "Items without business history can be permanently deleted. Linked items will be archived."
+        : "Selected items will be archived and hidden. Permanent deletion is restricted to administrators.";
+      if (!window.confirm(`Remove ${selectedIds.length} selected inventory item(s)?\n\n${actionDescription}`)) return;
+
       const linkedResults = await Promise.all([
         supabase.from("inventory_movements").select("inventory_item_id").in("inventory_item_id", selectedIds),
         supabase.from("material_request_items").select("inventory_item_id").in("inventory_item_id", selectedIds),
@@ -683,8 +699,12 @@ function InventoryItems({
           (result.data || []).map((row) => row.inventory_item_id)
         )
       );
-      const deletableIds = selectedIds.filter((id) => !linkedIds.has(id));
-      const archiveIds = selectedIds.filter((id) => linkedIds.has(id));
+      const deletableIds = isAdministrator
+        ? selectedIds.filter((id) => !linkedIds.has(id))
+        : [];
+      const archiveIds = isAdministrator
+        ? selectedIds.filter((id) => linkedIds.has(id))
+        : [...selectedIds];
       let deletedCount = 0;
 
       if (deletableIds.length) {
@@ -711,7 +731,9 @@ function InventoryItems({
 
       notifications.show({
         title: "Inventory Updated",
-        message: `${deletedCount} deleted; ${uniqueArchiveIds.length} archived.`,
+        message: deletedCount
+          ? `${deletedCount} permanently deleted; ${uniqueArchiveIds.length} archived.`
+          : `${uniqueArchiveIds.length} item(s) archived.`,
         color: "green",
       });
       setSelectedIds([]);
