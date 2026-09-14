@@ -179,7 +179,7 @@ function QuoteCenter({
       `Contact: ${siteEstimate.contact || "Not entered"}`,
       `Phone: ${siteEstimate.phone || "Not entered"}`,
       `Job-Site Address: ${siteEstimate.destination || "Not entered"}`,
-      `Requested Site Visit: ${siteEstimate.visitDate || "Not scheduled"}`,
+      `Requested Site Visit: ${formatDate(siteEstimate.visitDate)}`,
       `Assigned To: ${siteEstimate.assignedTo || "Not assigned"}`,
       `Google Maps Route: ${googleMapsDirectionsUrl(siteEstimate.destination)}`,
       `Estimated Mileage: ${oneWay || "Confirm"} one way / ${roundTrip || "Confirm"} round trip`,
@@ -199,7 +199,7 @@ function QuoteCenter({
       return;
     }
     const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(siteEstimateSummary())}`;
+    const gmailUrl = `https://mail.google.com/mail/u/${encodeURIComponent(\n      "info@metalworxinc.net",\n    )}/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(\n      siteEstimateSummary(),\n    )}`;\n    window.open(gmailUrl, "_blank", "noopener,noreferrer");
   }
 
   async function copySiteEstimate() {
