@@ -1404,6 +1404,63 @@ function QuoteBuilder({
     }
   }
 
+  function emailFieldEstimateRequest() {
+    const destination = String(quote.job_site_address || "").trim();
+
+    if (!destination) {
+      notifications.show({
+        title: "Job-Site Address Required",
+        message: "Enter the potential job address before preparing the email.",
+        color: "orange",
+      });
+      return;
+    }
+
+    const projectName =
+      quote.project_name ||
+      quote.quote_title ||
+      selectedProject?.project_name ||
+      "Potential Metal Worx Job";
+    const customerName =
+      quote.customer_name || selectedProject?.contact_name || "Not recorded";
+    const contactPhone =
+      quote.contact_phone || selectedProject?.contact_phone || "Not recorded";
+    const assignedLead =
+      quote.assigned_to || selectedProject?.assigned_to || "To be assigned";
+    const routeUrl = googleMapsDirectionsUrl(destination);
+    const oneWayMiles = Number(quote.travel_one_way_miles || 0);
+
+    const subject = `Field Estimate Request - ${projectName}`;
+    const body = [
+      "METAL WORX - POTENTIAL JOB / FIELD ESTIMATE REQUEST",
+      "",
+      `Project: ${projectName}`,
+      `Customer / Requestor: ${customerName}`,
+      `Contact Phone: ${contactPhone}`,
+      `Assigned Estimator / Lead: ${assignedLead}`,
+      `Job-Site Address: ${destination}`,
+      `Google Maps Route: ${routeUrl}`,
+      `Estimated One-Way Mileage: ${oneWayMiles || "Confirm in Google Maps"}`,
+      "",
+      "Preliminary Scope / Customer Request:",
+      quote.scope_of_work || "To be confirmed during the field estimate.",
+      "",
+      "FIELD ESTIMATOR - PLEASE RETURN:",
+      "- Measurements and site conditions",
+      "- Recommended materials and fabrication approach",
+      "- Estimated labor hours",
+      "- Equipment, subcontractor, permit, or installation needs",
+      "- Photos and any risks or exclusions",
+      "- Confirmed driving mileage",
+      "",
+      "This is a potential job estimate request and is not a customer-approved quote.",
+    ].join("\n");
+
+    window.location.href = `mailto:?subject=${encodeURIComponent(
+      subject,
+    )}&body=${encodeURIComponent(body)}`;
+  }
+
   async function addOrUpdateMileage() {
     const destination = String(quote.job_site_address || "").trim();
     const oneWayMiles = Number(quote.travel_one_way_miles || 0);
@@ -2227,6 +2284,15 @@ function QuoteBuilder({
               }
             >
               Open Route in Google Maps
+            </Button>
+
+            <Button
+              variant="light"
+              color="orange"
+              disabled={!String(quote.job_site_address || "").trim()}
+              onClick={emailFieldEstimateRequest}
+            >
+              Email Field Estimate Request
             </Button>
 
             <NumberInput
