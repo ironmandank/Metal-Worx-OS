@@ -1508,7 +1508,7 @@ function ProjectDetails({
         <html>
           <head>
             <meta charset="utf-8" />
-            <title>${escapeHtml(project.project_number || "Project")} - Outside Project Record</title>
+            <title>${escapeHtml(project.project_number || "Project")} - Internal Project Record</title>
             <style>
               * { box-sizing: border-box; }
               body { margin: 0; color: #151515; background: #fff; font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; line-height: 1.35; }
@@ -1517,6 +1517,7 @@ function ProjectDetails({
               .logo { width: 160px; max-height: 72px; object-fit: contain; }
               h1 { margin: 0; font-size: 24px; }
               .eyebrow { color: #c90018; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+              .internal-note { margin: 2px 0 5px; color: #555; font-size: 9px; font-weight: 700; text-transform: uppercase; }
               .number { text-align: right; }
               .number strong { display: block; font-size: 17px; }
               .status { display: inline-block; margin-top: 5px; padding: 4px 9px; border-radius: 999px; background: #222; color: #fff; font-weight: 800; }
@@ -1550,7 +1551,7 @@ function ProjectDetails({
             <main class="record">
               <header class="header">
                 <img class="logo" src="/metal_worx_header_logo_transparent(1).png" alt="Metal Worx" />
-                <div><div class="eyebrow">Outside Project Record</div><h1>${escapeHtml(project.project_name || "Outside Project")}</h1></div>
+                <div><div class="eyebrow">Internal Project Record</div><div class="internal-note">Operations copy — not a customer quote</div><h1>${escapeHtml(project.project_name || "Outside Project")}</h1></div>
                 <div class="number"><span class="label">Project Number</span><strong>${escapeHtml(project.project_number || project.id)}</strong><span class="status">${escapeHtml(project.status || "Unknown")}</span></div>
               </header>
 
@@ -1595,7 +1596,7 @@ function ProjectDetails({
               <section><h2>Payment History</h2><table><thead><tr><th>Date</th><th>Type</th><th>Method</th><th>Reference</th><th>Recorded By</th><th class="money">Amount</th></tr></thead><tbody>${paymentRows}</tbody></table></section>
               <section><h2>Project Notes</h2><div class="box"><div class="notes">${escapeHtml(project.notes || "No project notes.")}</div></div></section>
               <section><h2>Project Images</h2><div class="images">${imageCards}</div></section>
-              <footer><span>Metal Worx OS · Outside Project Record</span><span>Generated ${escapeHtml(generatedAt)}</span></footer>
+              <footer><span>Metal Worx OS · Internal Project Record</span><span>Generated ${escapeHtml(generatedAt)}</span></footer>
             </main>
             <script>window.addEventListener("load",function(){window.setTimeout(function(){window.print();},500);});</script>
           </body>
@@ -1613,20 +1614,20 @@ function ProjectDetails({
 
   const actionItems = [
     {
-      key: "recordPdf",
-      label: "Export Record PDF",
-      color: "gray",
-      variant: "light",
-      icon: <IconPrinter size={18} />,
-      onClick: printOutsideProjectRecord,
-    },
-    {
       key: "quote",
-      label: "Open Quote",
+      label: "Customer Quote / Export",
       color: "red",
       variant: "filled",
       icon: <IconFileDollar size={18} />,
       onClick: () => setPage("quoteBuilder"),
+    },
+    {
+      key: "recordPdf",
+      label: "Internal Project File",
+      color: "gray",
+      variant: "light",
+      icon: <IconPrinter size={18} />,
+      onClick: printOutsideProjectRecord,
     },
     {
       key: "procurement",
