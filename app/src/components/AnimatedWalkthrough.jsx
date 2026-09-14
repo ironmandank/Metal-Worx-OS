@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   IconArrowLeft,
   IconArrowRight,
@@ -79,9 +80,9 @@ const WALKTHROUGH_STYLES = `
   .mw-tour-spotlight{position:fixed;z-index:10001;border:3px solid #ff2638;border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.66),0 0 28px rgba(255,38,56,.75);pointer-events:none;transition:all .38s cubic-bezier(.2,.8,.2,1);animation:mw-tour-pulse 1.7s ease-in-out infinite}
   .mw-tour-card{position:fixed;z-index:10002;width:min(420px,calc(100vw - 24px));padding:20px;border:1px solid #56616a;border-radius:16px;background:linear-gradient(145deg,#161d21,#0a0e11);box-shadow:0 24px 70px rgba(0,0,0,.7);color:#f7f8f9;font-family:Arial,sans-serif;animation:mw-tour-rise .3s ease both}
   .mw-tour-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.mw-tour-eyebrow{color:#ff4a58;font-size:12px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}.mw-tour-card h2{margin:6px 0 8px;color:#fff!important;font-size:25px;line-height:1.08}.mw-tour-card p{margin:0;color:#c9d0d5;font-size:16px;line-height:1.5}.mw-tour-close{border:0;background:transparent;color:#aeb7bd;cursor:pointer}.mw-tour-progress{height:6px;margin:18px 0 14px;border-radius:999px;background:#283036;overflow:hidden}.mw-tour-progress i{display:block;height:100%;background:linear-gradient(90deg,#a9000d,#ff3042);transition:width .3s ease}.mw-tour-actions{display:flex;justify-content:space-between;gap:10px}.mw-tour-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px;padding:0 14px;border:1px solid #46515a;border-radius:9px;background:#151d22;color:#fff;font-weight:850;cursor:pointer}.mw-tour-actions button.primary{border-color:#d91525;background:#a9000d}.mw-tour-actions button:disabled{opacity:.35;cursor:not-allowed}
-  .mw-tour-picker{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:14px;background:rgba(0,0,0,.78)}.mw-tour-picker-panel{width:min(760px,100%);max-height:calc(100dvh - 28px);overflow:auto;padding:22px;border:1px solid #46515a;border-radius:18px;background:#0e1418;color:#fff;font-family:Arial,sans-serif}.mw-tour-picker-head{display:flex;justify-content:space-between;gap:12px}.mw-tour-picker h2{margin:0;color:#fff!important}.mw-tour-picker p{color:#aeb7bd}.mw-tour-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.mw-tour-option{display:flex;align-items:flex-start;gap:13px;padding:16px;border:1px solid #364148;border-radius:12px;background:#151c20;color:#fff;text-align:left;cursor:pointer}.mw-tour-option:hover{border-color:#e32232;transform:translateY(-1px)}.mw-tour-option svg{flex:0 0 auto;color:#ff3445}.mw-tour-option strong,.mw-tour-option span{display:block}.mw-tour-option span{margin-top:5px;color:#9eabb3;line-height:1.35}
+  .mw-tour-picker{position:fixed!important;inset:0!important;z-index:2147483000!important;display:grid!important;place-items:center!important;width:100vw!important;height:100dvh!important;padding:14px!important;overflow:hidden!important;background:rgba(0,0,0,.86)!important}.mw-tour-picker-panel{position:relative!important;width:min(760px,100%)!important;max-height:calc(100dvh - 28px)!important;overflow-y:auto!important;overscroll-behavior:contain;padding:22px!important;border:1px solid #46515a!important;border-radius:18px!important;background:#0e1418!important;color:#fff!important;font-family:Arial,sans-serif!important}.mw-tour-picker-head{display:flex!important;justify-content:space-between!important;gap:12px!important}.mw-tour-picker h2{margin:0!important;color:#fff!important;background:transparent!important}.mw-tour-picker p{color:#aeb7bd!important;background:transparent!important}.mw-tour-options{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;margin-top:18px!important}.mw-tour-option{appearance:none!important;display:flex!important;align-items:flex-start!important;gap:13px!important;width:100%!important;min-height:112px!important;margin:0!important;padding:16px!important;border:1px solid #364148!important;border-radius:12px!important;background:#151c20!important;color:#fff!important;text-align:left!important;cursor:pointer!important;box-shadow:none!important}.mw-tour-option:hover{border-color:#e32232!important;transform:translateY(-1px)}.mw-tour-option svg{flex:0 0 auto!important;color:#ff3445!important;background:transparent!important}.mw-tour-option>span{display:block!important;min-width:0!important;margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important}.mw-tour-option strong{display:block!important;margin:0!important;padding:0!important;color:#fff!important;background:transparent!important;font-size:17px!important;line-height:1.25!important}.mw-tour-option span span{display:block!important;margin-top:7px!important;padding:0!important;border:0!important;border-radius:0!important;color:#aeb7bd!important;background:transparent!important;font-size:14px!important;line-height:1.4!important}.mw-tour-picker .mw-tour-close{appearance:none!important;display:grid!important;place-items:center!important;flex:0 0 42px!important;width:42px!important;height:42px!important;padding:0!important;border:1px solid #3b454c!important;border-radius:9px!important;background:#171e22!important;color:#fff!important}
   @keyframes mw-tour-fade{from{opacity:0}to{opacity:1}}@keyframes mw-tour-rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes mw-tour-pulse{50%{box-shadow:0 0 0 9999px rgba(0,0,0,.66),0 0 42px rgba(255,38,56,.95)}}
-  @media(max-width:700px){.mw-tour-help span{display:none}.mw-tour-help{width:40px;padding:0}.mw-tour-options{grid-template-columns:1fr}.mw-tour-card{left:12px!important;right:12px!important;bottom:12px!important;top:auto!important;width:auto}.mw-tour-card h2{font-size:21px}.mw-tour-card p{font-size:15px}.mw-tour-spotlight{display:none}}
+  @media(max-width:700px){.mw-tour-help span{display:none}.mw-tour-help{width:40px;padding:0}.mw-tour-picker{place-items:start center!important;padding:calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px)!important}.mw-tour-picker-panel{max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px)!important;padding:18px!important}.mw-tour-options{grid-template-columns:1fr!important}.mw-tour-option{min-height:100px!important}.mw-tour-card{left:12px!important;right:12px!important;bottom:calc(env(safe-area-inset-bottom) + 12px)!important;top:auto!important;width:auto}.mw-tour-card h2{font-size:21px}.mw-tour-card p{font-size:15px}.mw-tour-spotlight{display:none}}
 `;
 
 export default function AnimatedWalkthrough({ currentPage, navigate }) {
@@ -126,12 +127,10 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
     setRect(null); setStepIndex((value) => value + 1);
   }
 
-  return <>
-    <style>{WALKTHROUGH_STYLES}</style>
-    <button type="button" className="mw-tour-help" data-tour="help" onClick={() => setPickerOpen(true)} title="Guided walkthrough"><IconHelpCircle/><span>Help Tour</span></button>
+  const overlay = <>
     {pickerOpen && <div className="mw-tour-picker" role="dialog" aria-modal="true" aria-label="Choose a guided walkthrough">
       <div className="mw-tour-picker-panel">
-        <div className="mw-tour-picker-head"><div><h2>Metal Worx OS Guided Walkthrough</h2><p>Choose the part of the system you want to learn. You can stop or replay a tour at any time.</p></div><button className="mw-tour-close" onClick={() => setPickerOpen(false)} aria-label="Close"><IconX/></button></div>
+        <div className="mw-tour-picker-head"><div><h2>Metal Worx OS Guided Walkthrough</h2><p>Choose the part of the system you want to learn. You can stop or replay a tour at any time.</p></div><button type="button" className="mw-tour-close" onClick={() => setPickerOpen(false)} aria-label="Close"><IconX/></button></div>
         <div className="mw-tour-options">{Object.entries(TOURS).map(([key, option]) => { const TourIcon = option.icon; return <button type="button" className="mw-tour-option" key={key} onClick={() => start(key)}><TourIcon/><span><strong>{option.label}</strong><span>{option.description}</span></span></button>; })}</div>
       </div>
     </div>}
@@ -139,11 +138,17 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
       <div className="mw-tour-backdrop"/>
       {rect && <div className="mw-tour-spotlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}/>} 
       <section className="mw-tour-card" style={cardPosition} role="dialog" aria-live="polite">
-        <div className="mw-tour-card-top"><div><div className="mw-tour-eyebrow">{tour.label} · Step {stepIndex + 1} of {tour.steps.length}</div><h2>{step.title}</h2></div><button className="mw-tour-close" onClick={close} aria-label="Exit walkthrough"><IconX/></button></div>
+        <div className="mw-tour-card-top"><div><div className="mw-tour-eyebrow">{tour.label} · Step {stepIndex + 1} of {tour.steps.length}</div><h2>{step.title}</h2></div><button type="button" className="mw-tour-close" onClick={close} aria-label="Exit walkthrough"><IconX/></button></div>
         <p>{step.text}</p>
         <div className="mw-tour-progress"><i style={{ width: `${((stepIndex + 1) / tour.steps.length) * 100}%` }}/></div>
         <div className="mw-tour-actions"><button type="button" onClick={() => setStepIndex((value) => Math.max(0, value - 1))} disabled={stepIndex === 0}><IconArrowLeft/> Back</button><button type="button" className="primary" onClick={next}>{stepIndex === tour.steps.length - 1 ? "Finish" : "Next"}<IconArrowRight/></button></div>
       </section>
     </>}
+  </>;
+
+  return <>
+    <style>{WALKTHROUGH_STYLES}</style>
+    <button type="button" className="mw-tour-help" data-tour="help" onClick={() => setPickerOpen(true)} title="Guided walkthrough"><IconHelpCircle/><span>Help Tour</span></button>
+    {createPortal(overlay, document.body)}
   </>;
 }
