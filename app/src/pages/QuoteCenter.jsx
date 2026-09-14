@@ -56,6 +56,7 @@ function loadSavedSiteEstimate() {
     customer: "",
     contact: "",
     phone: "",
+    email: "",
     destination: "",
     visitDate: "",
     assignedTo: "",
@@ -178,6 +179,7 @@ function QuoteCenter({
       `Potential Customer / Job: ${siteEstimate.customer || "Not entered"}`,
       `Contact: ${siteEstimate.contact || "Not entered"}`,
       `Phone: ${siteEstimate.phone || "Not entered"}`,
+      `Email: ${siteEstimate.email || "Not entered"}`,
       `Job-Site Address: ${siteEstimate.destination || "Not entered"}`,
       `Requested Site Visit: ${formatDate(siteEstimate.visitDate)}`,
       `Assigned To: ${siteEstimate.assignedTo || "Not assigned"}`,
@@ -752,6 +754,7 @@ function QuoteCenter({
               <TextInput label="Job-Site Address" placeholder="Street, city, state, ZIP" required value={siteEstimate.destination} onChange={(event) => updateSiteEstimate("destination", event.currentTarget.value)} />
               <TextInput label="Contact Name" value={siteEstimate.contact} onChange={(event) => updateSiteEstimate("contact", event.currentTarget.value)} />
               <TextInput label="Contact Phone" value={siteEstimate.phone} onChange={(event) => updateSiteEstimate("phone", event.currentTarget.value)} />
+              <TextInput type="email" label="Customer Email" placeholder="customer@example.com" required value={siteEstimate.email} onChange={(event) => updateSiteEstimate("email", event.currentTarget.value)} />
               <TextInput type="date" label="Requested Site-Visit Date" value={siteEstimate.visitDate} onChange={(event) => updateSiteEstimate("visitDate", event.currentTarget.value)} />
               <TextInput label="Assigned Estimator" placeholder="Chad, Kory, etc." value={siteEstimate.assignedTo} onChange={(event) => updateSiteEstimate("assignedTo", event.currentTarget.value)} />
             </SimpleGrid>
@@ -769,7 +772,7 @@ function QuoteCenter({
               <Button variant="subtle" color="red" onClick={clearSiteEstimate}>Clear Worksheet</Button>
               <Group wrap="wrap">
                 <Button variant="light" color="gray" onClick={copySiteEstimate}>Copy Estimate Summary</Button>
-                <Button color="blue" disabled={!siteEstimate.destination.trim()} onClick={emailSiteEstimate}>Prepare Site-Visit Email</Button>
+                <Button color="blue" disabled={!siteEstimate.destination.trim() || !siteEstimate.email.trim()} onClick={emailSiteEstimate}>Prepare Site-Visit Email</Button>
               </Group>
             </Group>
           </Stack>
