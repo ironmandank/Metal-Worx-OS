@@ -52,7 +52,7 @@ function googleMapsDirectionsUrl(destination) {
 }
 
 function loadSavedSiteEstimate() {
-  return {
+  const empty = {
     customer: "",
     contact: "",
     phone: "",
@@ -63,6 +63,14 @@ function loadSavedSiteEstimate() {
     ratePerMile: 0,
     notes: "",
   };
+  try {
+    return {
+      ...empty,
+      ...JSON.parse(window.localStorage.getItem(PREQUOTE_STORAGE_KEY) || "{}"),
+    };
+  } catch {
+    return empty;
+  }
 }
 
 function money(value) {
@@ -149,6 +157,13 @@ function QuoteCenter({
     loadCenter();
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem(
+      PREQUOTE_STORAGE_KEY,
+      JSON.stringify(siteEstimate),
+    );
+  }, [siteEstimate]);
+
 
   function updateSiteEstimate(field, value) {
     setSiteEstimate((current) => ({ ...current, [field]: value }));
@@ -192,13 +207,7 @@ function QuoteCenter({
     const emailUrl = `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
       subject,
     )}&body=${encodeURIComponent(siteEstimateSummary())}`;
-    const emailLink = document.createElement("a");
-    emailLink.href = emailUrl;
-    emailLink.target = "_blank";
-    emailLink.rel = "noopener noreferrer";
-    document.body.appendChild(emailLink);
-    emailLink.click();
-    emailLink.remove();
+    window.location.href = emailUrl;
   }
 
   async function copySiteEstimate() {
@@ -208,6 +217,7 @@ function QuoteCenter({
 
   function clearSiteEstimate() {
     if (!window.confirm("Clear this pre-quote site estimate?")) return;
+    window.localStorage.removeItem(PREQUOTE_STORAGE_KEY);
     setSiteEstimate(loadSavedSiteEstimate());
   }
 
