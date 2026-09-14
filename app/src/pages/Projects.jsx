@@ -524,7 +524,7 @@ function Projects({ setPage, setSelectedProject }) {
             <Button variant="default" size="xs" aria-label="Next month" onClick={() => setCalendarMonth((value) => moveMonth(value, 1))}><IconChevronRight size={17}/></Button>
           </Group>
           <Title order={3} ta="center">{calendarMonth.toLocaleDateString("en-US", { month:"long", year:"numeric" })}</Title>
-          <Text size="xs" c="dimmed">Click a project to open it</Text>
+          <Text size="xs" c="dimmed">Click any day to view its full schedule</Text>
         </Group>
         <Group gap="md" mb="md" wrap="wrap">
           {CALENDAR_TYPES.map((type) => <Group key={type.label} gap={6}><Box w={14} h={14} style={{background:type.color,borderRadius:3}}/><Text size="xs" fw={700}>{type.label}</Text></Group>)}
@@ -546,7 +546,7 @@ function Projects({ setPage, setSelectedProject }) {
                     <div className="mw-month-day-head"><span className="mw-month-day-number">{day.getDate()}</span><span className="mw-month-load">{dayProjects.length ? `${dayProjects.length} project${dayProjects.length === 1 ? "" : "s"}` : "Open"}</span></div>
                     {dayProjects.map((project) => {
                       const calendarType = getCalendarType(project);
-                      return <button key={project.id} type="button" className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`} onClick={(event) => { event.stopPropagation(); openProject(project); }}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></button>;
+                      return <div key={project.id} className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></div>;
                     })}
                   </div>;
                 })}
@@ -568,14 +568,11 @@ function Projects({ setPage, setSelectedProject }) {
             (scheduledProjectsByDay[dateKey(selectedCalendarDay)] || []).map((project) => {
               const calendarType = getCalendarType(project);
               return <Card key={project.id} withBorder radius="md" p="md" style={{ borderLeft:`6px solid ${calendarType.color}` }}>
-                <Group justify="space-between" align="flex-start" wrap="wrap">
-                  <Stack gap={3} style={{ flex:1 }}>
-                    <Group gap="xs"><Text fw={900}>{project.project_name || project.project_number}</Text>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
-                    <Text size="sm">Lead: {project.assigned_to || "Unassigned"}</Text>
-                    <Text size="xs" c="dimmed">{calendarType.label} · Starts {formatDate(project.planned_start_date)} · {Number(project.planned_duration_days || 1)} workday{Number(project.planned_duration_days || 1) === 1 ? "" : "s"}</Text>
-                  </Stack>
-                  <Button size="xs" onClick={() => openProject(project)}>Open Project</Button>
-                </Group>
+                <Stack gap={3}>
+                  <Group gap="xs"><Text fw={900}>{project.project_name || project.project_number}</Text>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
+                  <Text size="sm">Lead: {project.assigned_to || "Unassigned"}</Text>
+                  <Text size="xs" c="dimmed">{calendarType.label} · Starts {formatDate(project.planned_start_date)} · {Number(project.planned_duration_days || 1)} workday{Number(project.planned_duration_days || 1) === 1 ? "" : "s"}</Text>
+                </Stack>
               </Card>;
             })
           ) : (

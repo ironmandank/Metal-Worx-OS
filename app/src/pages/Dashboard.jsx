@@ -159,6 +159,22 @@ const styles = `
     cursor: pointer; white-space: nowrap;
   }
   .mc-link:hover { color: var(--mc-red); }
+  .mc-leadership-updates { max-height: 560px; overflow-y: auto; padding: 10px; display: grid; gap: 9px; }
+  .mc-update-card {
+    display: grid; gap: 9px; padding: 12px; border: 1px solid #354149; border-left: 5px solid #4d5961;
+    border-radius: 7px; background: linear-gradient(145deg, #151d22, #10161a);
+  }
+  .mc-update-card.attention { border-left-color: var(--mc-red); background: linear-gradient(145deg, #211518, #11171b); }
+  .mc-update-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .mc-update-head strong { display: block; font-size: .84rem; }
+  .mc-update-head small { display: block; margin-top: 3px; color: var(--mc-muted); font-size: .65rem; }
+  .mc-update-status { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; color: #fff; background: #334049; font-size: .58rem; font-weight: 900; text-transform: uppercase; }
+  .mc-update-card.attention .mc-update-status { background: #a20814; }
+  .mc-update-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .mc-update-detail { padding: 8px 9px; border: 1px solid #303a41; border-radius: 6px; background: #0b1115; }
+  .mc-update-detail.alert { border-color: #7b2028; background: #190d10; }
+  .mc-update-detail span { display: block; margin-bottom: 3px; color: #84919a; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
+  .mc-update-detail p { margin: 0; color: #e6eaed; font-size: .7rem; line-height: 1.4; white-space: pre-wrap; }
 
   .mc-flow-toolbar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -367,6 +383,7 @@ const styles = `
     .mc-closeout-open { justify-self: start; }
     .mc-flow-toolbar { align-items: stretch; flex-direction: column; }
     .mc-flow-context { text-align: left; }
+    .mc-update-details { grid-template-columns: 1fr; }
   }
   @media (max-width: 500px) {
     .mc-brand { align-items: center; }
@@ -890,6 +907,24 @@ function Dashboard({
       (item) => item.tag === "Overdue" || item.priority === "Critical",
     ),
   ].slice(0, 5);
+
+  const leadershipUpdates = useMemo(() => {
+    const updates = safeArray(huddle.dailyUpdates);
+    const latestByProject = new Map();
+    updates.forEach((update) => {
+      const key = String(update.project_id);
+      if (!latestByProject.has(key)) latestByProject.set(key, update);
+    });
+
+    return outsideProjects.map((project) => ({
+      project,
+      update: latestByProject.get(String(project.id)) || null,
+    })).sort((left, right) => {
+      if (!left.update) return 1;
+      if (!right.update) return -1;
+      return String(right.update.created_at || right.update.update_date || "").localeCompare(String(left.update.created_at || left.update.update_date || ""));
+    });
+  }, [huddle.dailyUpdates, outsideProjects]);
 
   async function prepareLeadershipNotes() {
     setBriefOpen(true);
@@ -1778,6 +1813,58 @@ function Dashboard({
             </div>
           </div>
         </section>
+      </section>
+
+      <section className="mc-panel">
+        <PanelHead
+          icon={IconFileDescription}
+          title="Leadership Project Updates"
+          subtitle="Latest update from every active outside project in one place"
+          action="View Projects"
+          onAction={() => goToPage("projects")}
+        />
+        <div className="mc-leadership-updates">
+          {leadershipUpdates.length === 0 ? (
+            <Empty text="No active outside projects are available." />
+          ) : leadershipUpdates.map(({ project, update }) => {
+            const details = update ? [
+              ["Completed", update.work_completed, false],
+              ["In Progress", update.work_in_progress, false],
+              ["Next Steps", update.next_steps, false],
+              ["Blockers", update.blockers, true],
+              ["Materials Needed", update.materials_needed, true],
+              ["Labor / Help Needed", update.labor_needed, true],
+              ["Leadership Decision", update.decisions_needed, true],
+              ["Schedule Change", update.schedule_change, true],
+              ["Budget Change", update.budget_change, true],
+            ].filter(([, value]) => String(value || "").trim()) : [];
+            const needsAttention = Boolean(update?.leadership_attention_required || update?.blockers || update?.decisions_needed || update?.schedule_change || update?.budget_change);
+            const updateDate = update?.update_date
+              ? new Date(`${update.update_date}T12:00:00`).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })
+              : "No update submitted";
+            return (
+              <article key={project.id} className={`mc-update-card ${needsAttention ? "attention" : ""}`}>
+                <div className="mc-update-head">
+                  <div>
+                    <strong>{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
+                    <small>{updateDate} · Lead: {update?.project_lead || project.assigned_to || "Unassigned"} · Stage: {project.workflowStage || project.status || "Not recorded"}</small>
+                  </div>
+                  <span className="mc-update-status">{needsAttention ? "Needs Leadership" : update?.status || "No Update"}</span>
+                </div>
+                {details.length ? (
+                  <div className="mc-update-details">
+                    {details.map(([label, value, alert]) => (
+                      <div className={`mc-update-detail ${alert ? "alert" : ""}`} key={label}>
+                        <span>{label}</span>
+                        <p>{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <small className="mc-flow-context">{update ? "No detailed notes were entered for this update." : "This project has not received a daily update yet."}</small>}
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       <section className="mc-panel">
