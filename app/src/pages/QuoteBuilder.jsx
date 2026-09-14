@@ -32,6 +32,27 @@ import { generateNumber } from "../lib/generateNumber";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
 
+const SHOP_ADDRESS = "1122 Gillespie Street, Fayetteville, NC 28306";
+
+function googleMapsDirectionsUrl(destination) {
+  const params = new URLSearchParams({
+    api: "1",
+    origin: SHOP_ADDRESS,
+    destination: destination || "",
+    travelmode: "driving",
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function projectJobSiteAddress(project) {
+  return [
+    project?.job_address,
+    [project?.city, project?.state, project?.zip_code].filter(Boolean).join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 function money(value) {
   return Number(value || 0).toLocaleString("en-US", {
     style: "currency",
@@ -366,6 +387,10 @@ function QuoteBuilder({
             acceptance_terms:
               "By signing below, the customer accepts this quote, including its scope, price, assumptions, exclusions, payment schedule, and stated terms. Work outside the approved scope requires customer authorization.",
             quote_layout: "Detailed Fabrication",
+            job_site_address: projectJobSiteAddress(selectedProject),
+            travel_one_way_miles: 0,
+            travel_round_trip_miles: 0,
+            travel_rate_per_mile: 0,
             status: "Draft",
           },
         ])
@@ -1108,6 +1133,14 @@ function QuoteBuilder({
 
         quote_layout: quote.quote_layout || "Detailed Fabrication",
 
+        job_site_address: quote.job_site_address || "",
+
+        travel_one_way_miles: Number(quote.travel_one_way_miles || 0),
+
+        travel_round_trip_miles: Number(quote.travel_round_trip_miles || 0),
+
+        travel_rate_per_mile: Number(quote.travel_rate_per_mile || 0),
+
         valid_until: quote.valid_until || null,
 
         source_template_id: quote.source_template_id || null,
@@ -1364,6 +1397,153 @@ function QuoteBuilder({
 
         message: error.message || "Unable to approve the project.",
 
+        color: "red",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function emailFieldEstimateRequest() {
+    const destination = String(quote.job_site_address || "").trim();
+
+    if (!destination) {
+      notifications.show({
+        title: "Job-Site Address Required",
+        message: "Enter the potential job address before preparing the email.",
+        color: "orange",
+      });
+      return;
+    }
+
+    const projectName =
+      quote.project_name ||
+      quote.quote_title ||
+      selectedProject?.project_name ||
+      "Potential Metal Worx Job";
+    const customerName =
+      quote.customer_name || selectedProject?.contact_name || "Not recorded";
+    const contactPhone =
+      quote.contact_phone || selectedProject?.contact_phone || "Not recorded";
+    const assignedLead =
+      quote.assigned_to || selectedProject?.assigned_to || "To be assigned";
+    const routeUrl = googleMapsDirectionsUrl(destination);
+    const oneWayMiles = Number(quote.travel_one_way_miles || 0);
+
+    const subject = `Field Estimate Request - ${projectName}`;
+    const body = [
+      "METAL WORX - POTENTIAL JOB / FIELD ESTIMATE REQUEST",
+      "",
+      `Project: ${projectName}`,
+      `Customer / Requestor: ${customerName}`,
+      `Contact Phone: ${contactPhone}`,
+      `Assigned Estimator / Lead: ${assignedLead}`,
+      `Job-Site Address: ${destination}`,
+      `Google Maps Route: ${routeUrl}`,
+      `Estimated One-Way Mileage: ${oneWayMiles || "Confirm in Google Maps"}`,
+      "",
+      "Preliminary Scope / Customer Request:",
+      quote.scope_of_work || "To be confirmed during the field estimate.",
+      "",
+      "FIELD ESTIMATOR - PLEASE RETURN:",
+      "- Measurements and site conditions",
+      "- Recommended materials and fabrication approach",
+      "- Estimated labor hours",
+      "- Equipment, subcontractor, permit, or installation needs",
+      "- Photos and any risks or exclusions",
+      "- Confirmed driving mileage",
+      "",
+      "This is a potential job estimate request and is not a customer-approved quote.",
+    ].join("\n");
+
+    window.location.href = `mailto:?subject=${encodeURIComponent(
+      subject,
+    )}&body=${encodeURIComponent(body)}`;
+  }
+
+  async function addOrUpdateMileage() {
+    const destination = String(quote.job_site_address || "").trim();
+    const oneWayMiles = Number(quote.travel_one_way_miles || 0);
+    const roundTripMiles = Number(
+      quote.travel_round_trip_miles || oneWayMiles * 2,
+    );
+    const rate = Number(quote.travel_rate_per_mile || 0);
+
+    if (!destination) {
+      notifications.show({
+        title: "Job-Site Address Required",
+        message: "Enter the destination address before adding mileage.",
+        color: "orange",
+      });
+      return;
+    }
+
+    if (roundTripMiles <= 0) {
+      notifications.show({
+        title: "Mileage Required",
+        message: "Open the Google Maps route and enter the one-way mileage shown.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const quoteUpdates = {
+        job_site_address: destination,
+        travel_one_way_miles: oneWayMiles,
+        travel_round_trip_miles: roundTripMiles,
+        travel_rate_per_mile: rate,
+      };
+
+      const { error: quoteError } = await supabase
+        .from("project_quotes")
+        .update(quoteUpdates)
+        .eq("id", quote.id);
+
+      if (quoteError) throw quoteError;
+
+      const existingMileage = items.find(
+        (item) =>
+          item.item_type === "Mileage" &&
+          String(item.title || "").trim() === "Travel / Mileage",
+      );
+      const mileagePayload = {
+        quote_id: quote.id,
+        item_type: "Mileage",
+        title: "Travel / Mileage",
+        description: `Round trip from ${SHOP_ADDRESS} to ${destination}`,
+        quantity: roundTripMiles,
+        unit_price: rate,
+        line_total: roundTripMiles * rate,
+        is_optional: false,
+        is_selected: true,
+        show_on_pdf: true,
+        sort_order: existingMileage?.sort_order || items.length + 1,
+      };
+
+      const mileageQuery = existingMileage
+        ? supabase
+            .from("project_quote_items")
+            .update(mileagePayload)
+            .eq("id", existingMileage.id)
+        : supabase.from("project_quote_items").insert([mileagePayload]);
+
+      const { error: mileageError } = await mileageQuery;
+      if (mileageError) throw mileageError;
+
+      setQuote((current) => ({ ...current, ...quoteUpdates }));
+      await loadItems(quote.id);
+      notifications.show({
+        title: existingMileage ? "Mileage Updated" : "Mileage Added",
+        message: `${roundTripMiles} round-trip miles were added to the quote.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Mileage Could Not Be Saved",
+        message: error.message || "Unable to add the mileage line.",
         color: "red",
       });
     } finally {
@@ -2070,6 +2250,102 @@ function QuoteBuilder({
             }
           />
         </SimpleGrid>
+      </MWSection>
+
+      <MWSection title="Job Site & Travel" mt="lg">
+        <Stack gap="md">
+          <Alert color="blue" variant="light">
+            Start address is fixed at <strong>{SHOP_ADDRESS}</strong>. Open the
+            driving route, enter the one-way mileage Google Maps shows, then add
+            it to the quote. Round-trip mileage is calculated automatically.
+          </Alert>
+
+          <TextInput
+            label="Job-Site Address"
+            description="The destination for the quote, site visit, or installation."
+            placeholder="Street, city, state, ZIP"
+            value={quote.job_site_address || ""}
+            onChange={(event) =>
+              updateQuoteField("job_site_address", event.currentTarget.value)
+            }
+          />
+
+          <Group align="flex-end" grow>
+            <Button
+              variant="light"
+              color="blue"
+              disabled={!String(quote.job_site_address || "").trim()}
+              onClick={() =>
+                window.open(
+                  googleMapsDirectionsUrl(quote.job_site_address),
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+            >
+              Open Route in Google Maps
+            </Button>
+
+            <Button
+              variant="light"
+              color="orange"
+              disabled={!String(quote.job_site_address || "").trim()}
+              onClick={emailFieldEstimateRequest}
+            >
+              Email Field Estimate Request
+            </Button>
+
+            <NumberInput
+              label="One-Way Miles"
+              description="Enter the driving mileage shown in Google Maps."
+              min={0}
+              decimalScale={1}
+              value={Number(quote.travel_one_way_miles || 0)}
+              onChange={(value) => {
+                const oneWay = Number(value || 0);
+                setQuote((current) => ({
+                  ...current,
+                  travel_one_way_miles: oneWay,
+                  travel_round_trip_miles: oneWay * 2,
+                }));
+              }}
+            />
+
+            <NumberInput
+              label="Round-Trip Miles"
+              min={0}
+              decimalScale={1}
+              value={Number(quote.travel_round_trip_miles || 0)}
+              onChange={(value) =>
+                updateQuoteField("travel_round_trip_miles", Number(value || 0))
+              }
+            />
+
+            <NumberInput
+              label="Charge Per Mile"
+              prefix="$"
+              min={0}
+              decimalScale={2}
+              value={Number(quote.travel_rate_per_mile || 0)}
+              onChange={(value) =>
+                updateQuoteField("travel_rate_per_mile", Number(value || 0))
+              }
+            />
+          </Group>
+
+          <Group justify="space-between" align="center">
+            <Text fw={700}>
+              Travel charge:{" "}
+              {money(
+                Number(quote.travel_round_trip_miles || 0) *
+                  Number(quote.travel_rate_per_mile || 0),
+              )}
+            </Text>
+            <Button color="red" loading={saving} onClick={addOrUpdateMileage}>
+              Add / Update Mileage on Quote
+            </Button>
+          </Group>
+        </Stack>
       </MWSection>
 
       <SimpleGrid
