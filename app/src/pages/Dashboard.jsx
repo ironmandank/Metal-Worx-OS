@@ -772,7 +772,7 @@ function Dashboard({
       stats.siteVisits || 0,
       "Field checks",
       IconMapPin,
-      () => goToPage("fieldSchedule"),
+      () => goToPage("quoteCenter"),
     ],
     [
       "Installs",
@@ -1640,7 +1640,7 @@ function Dashboard({
                 <button
                   className="mc-row"
                   key={item.id || index}
-                  onClick={() => openProjectById(item.projectId)}
+                  onClick={() => item.sourceType === "prequoteSiteVisit" ? goToPage("quoteCenter") : openProjectById(item.projectId)}
                 >
                   <span className="mc-row-main">
                     <strong>

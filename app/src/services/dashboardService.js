@@ -1344,6 +1344,7 @@ export async function getDashboardData() {
     quickCommitmentsResult,
     dailyUpdatesResult,
     checklistItemsResult,
+    prequoteSiteVisitsResult,
   ] = await Promise.all([
     supabase
       .from("customer_orders")
@@ -1389,6 +1390,12 @@ export async function getDashboardData() {
     supabase
       .from("project_checklist_items")
       .select("project_id,status,blocker,target_date"),
+
+    supabase
+      .from("prequote_site_visits")
+      .select("*")
+      .in("status", ["Open", "Scheduled"])
+      .order("requested_visit_date", { ascending: true, nullsFirst: false }),
   ]);
 
   if (customerOrdersResult.error) {
@@ -1411,6 +1418,10 @@ export async function getDashboardData() {
     throw customersResult.error;
   }
 
+  if (prequoteSiteVisitsResult.error) {
+    throw prequoteSiteVisitsResult.error;
+  }
+
   const customerOrders =
     customerOrdersResult.data || [];
 
@@ -1422,6 +1433,9 @@ export async function getDashboardData() {
 
   const productionJobs =
     productionJobsResult.data || [];
+
+  const prequoteSiteVisits =
+    prequoteSiteVisitsResult.data || [];
 
   const customers =
     customersResult.data || [];
@@ -1786,6 +1800,31 @@ export async function getDashboardData() {
           ),
       });
     }
+  });
+
+  prequoteSiteVisits.forEach((visit) => {
+    const scheduledDate = visit.requested_visit_date
+      ? `${visit.requested_visit_date}T12:00:00`
+      : null;
+    const formatted = scheduledDate
+      ? formatDateTime(scheduledDate)
+      : { day: "Not scheduled", date: "Date not set", time: "Site Visit" };
+    outsideSchedule.push({
+      id: `prequote-site-${visit.id}`,
+      sourceType: "prequoteSiteVisit",
+      siteVisitId: visit.id,
+      projectId: null,
+      sortDate: scheduledDate ? new Date(scheduledDate).getTime() : Number.MAX_SAFE_INTEGER,
+      day: formatted.day,
+      date: formatted.date,
+      time: scheduledDate ? formatted.time : "Open",
+      owner: visit.assigned_estimator || "Unassigned",
+      customer: visit.customer_name || "Potential Job",
+      job: "Pre-Quote Site Visit",
+      location: visit.job_site_address || "Address not entered",
+      status: visit.status,
+      isToday: scheduledDate ? isToday(scheduledDate) : false,
+    });
   });
 
   outsideSchedule.sort(
@@ -2182,7 +2221,7 @@ export async function getDashboardData() {
             normalizeStatus(
               project.site_visit_status
             ) !== "completed"
-        ).length,
+        ).length + prequoteSiteVisits.length,
 
       installs:
         openProjects.filter(
@@ -2243,6 +2282,7 @@ export async function getDashboardData() {
     },
 
     outsideProjects,
+    prequoteSiteVisits,
     dailyAttention,
     outsideSchedule,
     shopFlow,

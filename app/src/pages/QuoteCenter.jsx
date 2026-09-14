@@ -43,7 +43,9 @@ const TEMPLATE_FIELDS = [
 ];
 
 const SHOP_ADDRESS = "1122 Gillespie Street, Fayetteville, NC 28306";
-const PREQUOTE_STORAGE_KEY = "metal-worx-prequote-site-estimate";
+// Versioned key intentionally retires worksheets left behind by the former
+// copy-only workflow. New worksheets clear after a successful tracked copy.
+const PREQUOTE_STORAGE_KEY = "metal-worx-prequote-site-estimate-v2";
 
 function googleMapsDirectionsUrl(destination) {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(

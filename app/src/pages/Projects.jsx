@@ -3,8 +3,10 @@ import {
   Badge,
   Box,
   Button,
+  Card,
   Group,
   Loader,
+  Modal,
   Paper,
   Progress,
   SegmentedControl,
@@ -56,7 +58,8 @@ const capacityCalendarStyles = `
   .mw-capacity-shell { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; background: #0b1014; }
   .mw-month-weekdays, .mw-month-grid { display:grid; grid-template-columns:repeat(7,minmax(130px,1fr)); min-width:910px; }
   .mw-month-weekday { padding:10px; text-align:center; color:#99a4ab; background:#11181d; border-right:1px solid #2b343a; font-size:11px; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
-  .mw-month-day { min-height:132px; padding:8px; border-top:1px solid #2b343a; border-right:1px solid #252d33; background:#0e1418; }
+  .mw-month-day { min-height:132px; padding:8px; border-top:1px solid #2b343a; border-right:1px solid #252d33; background:#0e1418; cursor:pointer; }
+  .mw-month-day:hover { background:#172127; }
   .mw-month-day.weekend { background:#151318; }
   .mw-month-day.outside { background:#090d10; opacity:.45; }
   .mw-month-day.today { box-shadow:inset 0 0 0 2px #f21b2d; background:#1d1014; }
@@ -161,6 +164,7 @@ function Projects({ setPage, setSelectedProject }) {
   const [errorMessage, setErrorMessage] = useState("");
   const [trackingByProject, setTrackingByProject] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(() => firstOfMonth());
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
 
   const loadProjects = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -538,11 +542,11 @@ function Projects({ setPage, setSelectedProject }) {
                   const today = key === dateKey(new Date());
                   const weekend = day.getDay() === 0 || day.getDay() === 6;
                   const outside = day.getMonth() !== calendarMonth.getMonth();
-                  return <div key={key} className={`mw-month-day ${weekend ? "weekend" : ""} ${today ? "today" : ""} ${outside ? "outside" : ""}`}>
+                  return <div key={key} role="button" tabIndex={0} className={`mw-month-day ${weekend ? "weekend" : ""} ${today ? "today" : ""} ${outside ? "outside" : ""}`} onClick={() => setSelectedCalendarDay(day)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedCalendarDay(day); }}>
                     <div className="mw-month-day-head"><span className="mw-month-day-number">{day.getDate()}</span><span className="mw-month-load">{dayProjects.length ? `${dayProjects.length} project${dayProjects.length === 1 ? "" : "s"}` : "Open"}</span></div>
                     {dayProjects.map((project) => {
                       const calendarType = getCalendarType(project);
-                      return <button key={project.id} type="button" className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`} onClick={() => openProject(project)}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></button>;
+                      return <button key={project.id} type="button" className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`} onClick={(event) => { event.stopPropagation(); openProject(project); }}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></button>;
                     })}
                   </div>;
                 })}
@@ -551,6 +555,34 @@ function Projects({ setPage, setSelectedProject }) {
           </ScrollArea>
         {!scheduledProjects.length && <Alert color="blue" mt="md">No projects are scheduled yet. Every day is currently open. Add a planned start date and estimated workdays in Edit Project.</Alert>}
       </MWPanel>
+
+      <Modal
+        opened={Boolean(selectedCalendarDay)}
+        onClose={() => setSelectedCalendarDay(null)}
+        title={selectedCalendarDay ? selectedCalendarDay.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" }) : "Scheduled Work"}
+        size="lg"
+        centered
+      >
+        <Stack gap="sm">
+          {selectedCalendarDay && (scheduledProjectsByDay[dateKey(selectedCalendarDay)] || []).length ? (
+            (scheduledProjectsByDay[dateKey(selectedCalendarDay)] || []).map((project) => {
+              const calendarType = getCalendarType(project);
+              return <Card key={project.id} withBorder radius="md" p="md" style={{ borderLeft:`6px solid ${calendarType.color}` }}>
+                <Group justify="space-between" align="flex-start" wrap="wrap">
+                  <Stack gap={3} style={{ flex:1 }}>
+                    <Group gap="xs"><Text fw={900}>{project.project_name || project.project_number}</Text>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
+                    <Text size="sm">Lead: {project.assigned_to || "Unassigned"}</Text>
+                    <Text size="xs" c="dimmed">{calendarType.label} · Starts {formatDate(project.planned_start_date)} · {Number(project.planned_duration_days || 1)} workday{Number(project.planned_duration_days || 1) === 1 ? "" : "s"}</Text>
+                  </Stack>
+                  <Button size="xs" onClick={() => openProject(project)}>Open Project</Button>
+                </Group>
+              </Card>;
+            })
+          ) : (
+            <Alert color="green" title="Available Day">No projects are scheduled on this date.</Alert>
+          )}
+        </Stack>
+      </Modal>
 
       {errorMessage && (
         <Alert
