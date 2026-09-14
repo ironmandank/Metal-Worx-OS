@@ -2,7 +2,6 @@ import {
   Alert, Badge, Button, Group, Loader, Modal, Paper, Select, SimpleGrid,
   Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
-import { DateTimePicker } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle, IconBolt, IconCheck, IconClock, IconPackage,
@@ -17,7 +16,7 @@ import MWPanel from "../components/ui/MWPanel";
 
 const EMPTY_FORM = {
   title: "", customerName: "", description: "", priority: "Urgent",
-  requiredBy: null, assignedTo: "", department: "", materialsStatus: "Not Required",
+  requiredBy: "", assignedTo: "", department: "", materialsStatus: "Not Required",
   reason: "", notes: "",
 };
 
@@ -93,7 +92,7 @@ function QuickTurnaroundDashboard({ setPage, activeUser }) {
         p_id: null, p_source_type: "Manual", p_source_id: null, p_source_number: null,
         p_title: form.title.trim(), p_customer_name: form.customerName.trim() || null,
         p_description: form.description.trim() || null, p_priority: form.priority,
-        p_status: "Open", p_required_by: form.requiredBy.toISOString(),
+        p_status: "Open", p_required_by: new Date(form.requiredBy).toISOString(),
         p_assigned_to: form.assignedTo || null, p_department: form.department || null,
         p_materials_required: materialsRequired, p_materials_status: form.materialsStatus,
         p_reason: form.reason.trim() || null, p_notes: form.notes.trim() || null,
@@ -143,7 +142,7 @@ function QuickTurnaroundDashboard({ setPage, activeUser }) {
 
     <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="New Quick Turnaround Commitment" centered size="lg"><Stack>
       <TextInput label="Commitment Title" placeholder="Example: Same-day retirement plaque" required value={form.title} onChange={(event) => updateForm("title", event.currentTarget.value)}/>
-      <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label="Customer / Requestor" value={form.customerName} onChange={(event) => updateForm("customerName", event.currentTarget.value)}/><Select label="Priority" data={["Critical", "Urgent", "High"]} value={form.priority} onChange={(value) => updateForm("priority", value || "Urgent")}/><DateTimePicker label="Required Completion" required value={form.requiredBy} onChange={(value) => updateForm("requiredBy", value)} minDate={new Date()}/><Select label="Assigned To" searchable clearable data={profiles.map((profile) => profile.display_name)} value={form.assignedTo} onChange={(value) => updateForm("assignedTo", value || "")}/><Select label="Department" clearable data={["Design", "Laser", "Prep", "Welding", "Paint", "Powder", "Assembly", "QC", "Showroom", "Office"]} value={form.department} onChange={(value) => updateForm("department", value || "")}/><Select label="Material Readiness" data={["Not Required", "Needs Pricing", "Needs Ordering", "Ordered", "Partially Received", "Ready", "Blocked"]} value={form.materialsStatus} onChange={(value) => updateForm("materialsStatus", value || "Not Required")}/></SimpleGrid>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label="Customer / Requestor" value={form.customerName} onChange={(event) => updateForm("customerName", event.currentTarget.value)}/><Select label="Priority" data={["Critical", "Urgent", "High"]} value={form.priority} onChange={(value) => updateForm("priority", value || "Urgent")}/><TextInput label="Required Completion" type="datetime-local" required value={form.requiredBy} min={new Date().toISOString().slice(0, 16)} onChange={(event) => updateForm("requiredBy", event.currentTarget.value)}/><Select label="Assigned To" searchable clearable data={profiles.map((profile) => profile.display_name)} value={form.assignedTo} onChange={(value) => updateForm("assignedTo", value || "")}/><Select label="Department" clearable data={["Design", "Laser", "Prep", "Welding", "Paint", "Powder", "Assembly", "QC", "Showroom", "Office"]} value={form.department} onChange={(value) => updateForm("department", value || "")}/><Select label="Material Readiness" data={["Not Required", "Needs Pricing", "Needs Ordering", "Ordered", "Partially Received", "Ready", "Blocked"]} value={form.materialsStatus} onChange={(value) => updateForm("materialsStatus", value || "Not Required")}/></SimpleGrid>
       <Textarea label="Description" minRows={2} value={form.description} onChange={(event) => updateForm("description", event.currentTarget.value)}/><TextInput label="Reason for Quick Turnaround" placeholder="Why is this commitment urgent?" value={form.reason} onChange={(event) => updateForm("reason", event.currentTarget.value)}/><Textarea label="Operations Notes" minRows={2} value={form.notes} onChange={(event) => updateForm("notes", event.currentTarget.value)}/>
       <Button h={52} color="red" fullWidth disabled={!form.title.trim() || !form.requiredBy || saving} leftSection={saving ? <Loader size={18} color="white"/> : <IconBolt size={19}/>} onClick={saveCommitment}>Create Quick Commitment</Button>
     </Stack></Modal>
