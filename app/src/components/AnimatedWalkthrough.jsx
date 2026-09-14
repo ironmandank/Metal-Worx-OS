@@ -133,7 +133,7 @@ const WALKTHROUGH_DETAIL_STYLES = `
   .mw-tour-source{margin-top:14px;padding:11px 12px;border:1px solid #37434b;border-radius:10px;background:#0c1216}
   .mw-tour-source strong{display:block;margin-bottom:4px;color:#ff4a58;font-size:12px;letter-spacing:.04em;text-transform:uppercase}
   .mw-tour-source span{display:block;color:#e4e8eb;font-size:14px;line-height:1.38}
-  @media(max-width:700px){.mw-tour-card{max-height:52dvh;overflow-y:auto}.mw-tour-spotlight{display:block}}
+  @media(max-width:700px){.mw-tour-card{max-height:44dvh;overflow-y:auto;padding:14px}.mw-tour-card h2{font-size:20px;margin:3px 0 5px}.mw-tour-card p{font-size:14px;line-height:1.35}.mw-tour-source{margin-top:9px;padding:8px 10px}.mw-tour-source strong{font-size:10px}.mw-tour-source span{font-size:12px;line-height:1.3}.mw-tour-progress{margin:10px 0}.mw-tour-actions button{min-height:42px!important;padding:0 13px!important}.mw-tour-spotlight{display:block}}
 `;
 
 export default function AnimatedWalkthrough({ currentPage, navigate }) {
@@ -165,9 +165,9 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
       const element = findTourTarget(step);
       if (!element) { setRect(null); return; }
       const isMobile = window.innerWidth <= 700;
-      element.scrollIntoView({ behavior: "smooth", block: isMobile ? "start" : "center" });
+      element.scrollIntoView({ behavior: isMobile ? "auto" : "smooth", block: isMobile ? "start" : "center" });
       if (isMobile) {
-        window.setTimeout(() => window.scrollBy({ top: -120, behavior: "smooth" }), 80);
+        window.scrollBy({ top: -145, behavior: "auto" });
       }
       window.setTimeout(() => {
         const bounds = element.getBoundingClientRect();
@@ -212,7 +212,7 @@ export default function AnimatedWalkthrough({ currentPage, navigate }) {
       </div>
     </div>}
     {step && <>
-      <div className="mw-tour-backdrop"/>
+      {!rect && <div className="mw-tour-backdrop"/>}
       {rect && <div className="mw-tour-spotlight" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}/>} 
       <section className="mw-tour-card" style={cardPosition} role="dialog" aria-live="polite">
         <div className="mw-tour-card-top"><div><div className="mw-tour-eyebrow">{tour.label} · Step {stepIndex + 1} of {tour.steps.length}</div><h2>{step.title}</h2></div><button type="button" className="mw-tour-close" onClick={close} aria-label="Exit walkthrough"><IconX/></button></div>
