@@ -194,16 +194,21 @@ function QuoteCenter({
     ].join("\n");
   }
 
-  function siteEstimateEmailUrl() {
-    const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination || "Potential Job"}`;
-    return `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
-      subject,
-    )}&body=${encodeURIComponent(siteEstimateSummary())}`;
-  }
-
   async function copySiteEstimate() {
-    await navigator.clipboard.writeText(siteEstimateSummary());
-    notifications.show({ title: "Estimate Summary Copied", message: "Paste it into email, text, or the project notes when ready.", color: "green" });
+    const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination || "Potential Job"}`;
+    const completeEmail = [
+      "TO: info@metalworxinc.net; kory@metalworxinc.net",
+      `SUBJECT: ${subject}`,
+      "",
+      siteEstimateSummary(),
+    ].join("\n");
+
+    await navigator.clipboard.writeText(completeEmail);
+    notifications.show({
+      title: "Complete Email Copied",
+      message: "Open Gmail, start a new message, and paste the recipients, subject, and site-visit details.",
+      color: "green",
+    });
   }
 
   function clearSiteEstimate() {
@@ -768,10 +773,7 @@ function QuoteCenter({
             <Textarea label="Site Notes / Estimate Needed" description="Measurements, photos, access, labor, materials, equipment, installation, or customer requests." minRows={4} autosize value={siteEstimate.notes} onChange={(event) => updateSiteEstimate("notes", event.currentTarget.value)} />
             <Group justify="space-between" wrap="wrap">
               <Button variant="subtle" color="red" onClick={clearSiteEstimate}>Clear Worksheet</Button>
-              <Group wrap="wrap">
-                <Button variant="light" color="gray" onClick={copySiteEstimate}>Copy Estimate Summary</Button>
-                <Button component="a" color="blue" disabled={!siteEstimate.destination.trim()} href={siteEstimateEmailUrl()}>Prepare Site-Visit Email</Button>
-              </Group>
+              <Button color="blue" disabled={!siteEstimate.destination.trim()} onClick={copySiteEstimate}>Copy Complete Email</Button>
             </Group>
           </Stack>
         </MWSection>
