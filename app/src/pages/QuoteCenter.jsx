@@ -197,11 +197,27 @@ function QuoteCenter({
 
   function emailSiteEstimate() {
     if (!siteEstimate.destination.trim()) {
-      notifications.show({ title: "Job-Site Address Required", message: "Enter the potential job address before preparing the email.", color: "orange" });
+      notifications.show({
+        title: "Job-Site Address Required",
+        message: "Enter the potential job address before preparing the email.",
+        color: "orange",
+      });
+      return;
+    }
+    if (!siteEstimate.email.trim()) {
+      notifications.show({
+        title: "Customer Email Required",
+        message: "Enter the customer's email address before preparing the message.",
+        color: "orange",
+      });
       return;
     }
     const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(\n      subject,\n    )}&body=${encodeURIComponent(siteEstimateSummary())}`;
+    window.location.href = `mailto:${encodeURIComponent(
+      siteEstimate.email.trim(),
+    )}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
+      siteEstimateSummary(),
+    )}`;
   }
 
   async function copySiteEstimate() {
