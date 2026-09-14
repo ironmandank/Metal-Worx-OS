@@ -52,7 +52,7 @@ function googleMapsDirectionsUrl(destination) {
 }
 
 function loadSavedSiteEstimate() {
-  const empty = {
+  return {
     customer: "",
     contact: "",
     phone: "",
@@ -63,14 +63,6 @@ function loadSavedSiteEstimate() {
     ratePerMile: 0,
     notes: "",
   };
-  try {
-    return {
-      ...empty,
-      ...JSON.parse(window.localStorage.getItem(PREQUOTE_STORAGE_KEY) || "{}"),
-    };
-  } catch {
-    return empty;
-  }
 }
 
 function money(value) {
@@ -157,12 +149,6 @@ function QuoteCenter({
     loadCenter();
   }, []);
 
-  useEffect(() => {
-    window.localStorage.setItem(
-      PREQUOTE_STORAGE_KEY,
-      JSON.stringify(siteEstimate),
-    );
-  }, [siteEstimate]);
 
   function updateSiteEstimate(field, value) {
     setSiteEstimate((current) => ({ ...current, [field]: value }));
@@ -203,9 +189,11 @@ function QuoteCenter({
       return;
     }
     const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
-    window.location.href = `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
+    const emailUrl = `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
       subject,
     )}&body=${encodeURIComponent(siteEstimateSummary())}`;
+    setSiteEstimate(loadSavedSiteEstimate());
+    window.location.href = emailUrl;
   }
 
   async function copySiteEstimate() {
@@ -215,7 +203,6 @@ function QuoteCenter({
 
   function clearSiteEstimate() {
     if (!window.confirm("Clear this pre-quote site estimate?")) return;
-    window.localStorage.removeItem(PREQUOTE_STORAGE_KEY);
     setSiteEstimate(loadSavedSiteEstimate());
   }
 
@@ -737,7 +724,9 @@ function QuoteCenter({
           color="blue"
           onClick={() => setShowSiteEstimate((current) => !current)}
         >
-          {showSiteEstimate\n            ? "Close Site Visit & Mileage"\n            : "Plan Site Visit & Mileage"}
+          {showSiteEstimate
+            ? "Close Site Visit & Mileage"
+            : "Plan Site Visit & Mileage"}
         </Button>
         <Button
           color="red"
