@@ -140,6 +140,15 @@ const EMPTY_FORM = {
   blocker: "",
 };
 
+const EMPTY_ART_FORM = {
+  title: "",
+  customerName: "",
+  fulfillmentMethod: "Pickup",
+  promisedDate: "",
+  assignedTo: "",
+  notes: "",
+};
+
 function firstValue(record, keys, fallback = "") {
   for (const key of keys) {
     const value = record?.[key];
@@ -413,6 +422,9 @@ function normalizeEmployee(record) {
 
 export default function HotToday() {
   const [items, setItems] = useState([]);
+  const [artItems, setArtItems] = useState([]);
+  const [artForm, setArtForm] = useState(EMPTY_ART_FORM);
+  const [artSaving, setArtSaving] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [sourceRecords, setSourceRecords] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -512,8 +524,18 @@ export default function HotToday() {
     try {
       setLoading(true);
       await expireHotTodayItems();
-      const data = await getTodaysHotTodayItems();
+      const [data, artResult] = await Promise.all([
+        getTodaysHotTodayItems(),
+        supabase
+          .from("art_hot_items")
+          .select("*")
+          .eq("status", "Active")
+          .order("promised_date", { ascending: true, nullsFirst: false })
+          .limit(10),
+      ]);
+      if (artResult.error) throw artResult.error;
       setItems(data);
+      setArtItems(artResult.data || []);
     } catch (error) {
       setMessage({
         color: "red",
@@ -523,6 +545,57 @@ export default function HotToday() {
       setLoading(false);
     }
   }, []);
+
+  function updateArtForm(field, value) {
+    setArtForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function addArtHotItem() {
+    if (!artForm.title.trim()) {
+      setMessage({ color: "red", text: "Enter the artwork or order description." });
+      return;
+    }
+    if (artItems.length >= 10) {
+      setMessage({ color: "orange", text: "Complete or remove an item before adding more than 10 active Hot Artwork items." });
+      return;
+    }
+    try {
+      setArtSaving(true);
+      const { error } = await supabase.from("art_hot_items").insert({
+        title: artForm.title.trim(),
+        customer_name: artForm.customerName.trim() || null,
+        fulfillment_method: artForm.fulfillmentMethod,
+        promised_date: artForm.promisedDate || null,
+        assigned_to: artForm.assignedTo.trim() || null,
+        notes: artForm.notes.trim() || null,
+      });
+      if (error) throw error;
+      setArtForm(EMPTY_ART_FORM);
+      await loadHotToday();
+      setMessage({ color: "green", text: "Hot Artwork item added to the shop and huddle boards." });
+    } catch (error) {
+      setMessage({ color: "red", text: error.message || "Unable to add the Hot Artwork item." });
+    } finally {
+      setArtSaving(false);
+    }
+  }
+
+  async function closeArtHotItem(item, status) {
+    const { error } = await supabase
+      .from("art_hot_items")
+      .update({
+        status,
+        completed_at: status === "Completed" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", item.id);
+    if (error) {
+      setMessage({ color: "red", text: error.message || "Unable to update the Hot Artwork item." });
+      return;
+    }
+    await loadHotToday();
+    setMessage({ color: "green", text: status === "Completed" ? "Artwork marked complete." : "Artwork removed from the active list." });
+  }
 
   const loadEmployees = useCallback(async () => {
     const { data, error } = await supabase
@@ -1014,6 +1087,51 @@ export default function HotToday() {
           </Group>
         </Card>
       </SimpleGrid>
+
+      <Card withBorder radius="lg" p="lg">
+        <Group justify="space-between" mb="md" wrap="wrap">
+          <Box>
+            <Title order={3}>Hot Artwork</Title>
+            <Text size="sm" c="dimmed">
+              Up to 10 manual art priorities. Dated customer orders are added automatically to the Morning Huddle as their pickup or ship dates approach.
+            </Text>
+          </Box>
+          <Badge color="red" size="lg">{artItems.length}/10 manual items</Badge>
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} mb="md">
+          <TextInput label="Artwork / Order" placeholder="Example: Purple Heart flag" value={artForm.title} onChange={(event) => updateArtForm("title", event.currentTarget.value)} required />
+          <TextInput label="Customer" placeholder="Customer or organization" value={artForm.customerName} onChange={(event) => updateArtForm("customerName", event.currentTarget.value)} />
+          <Select label="Pickup or Ship" value={artForm.fulfillmentMethod} onChange={(value) => updateArtForm("fulfillmentMethod", value || "Pickup")} data={["Pickup", "Ship", "Delivery", "Other"]} allowDeselect={false} />
+          <TextInput label="Promised Date" type="date" value={artForm.promisedDate} onChange={(event) => updateArtForm("promisedDate", event.currentTarget.value)} />
+          <TextInput label="Assigned Lead" placeholder="Name" value={artForm.assignedTo} onChange={(event) => updateArtForm("assignedTo", event.currentTarget.value)} />
+          <TextInput label="Notes" placeholder="What must happen next" value={artForm.notes} onChange={(event) => updateArtForm("notes", event.currentTarget.value)} />
+        </SimpleGrid>
+        <Group justify="flex-end" mb="lg">
+          <Button color="red" leftSection={<IconFlame size={18} />} loading={artSaving} disabled={artItems.length >= 10} onClick={addArtHotItem}>
+            Add Hot Artwork
+          </Button>
+        </Group>
+
+        {artItems.length ? (
+          <Table.ScrollContainer minWidth={760}>
+            <Table striped highlightOnHover>
+              <Table.Thead><Table.Tr><Table.Th>Artwork</Table.Th><Table.Th>Customer</Table.Th><Table.Th>Method</Table.Th><Table.Th>Promised</Table.Th><Table.Th>Lead</Table.Th><Table.Th>Notes</Table.Th><Table.Th>Quick Actions</Table.Th></Table.Tr></Table.Thead>
+              <Table.Tbody>{artItems.map((item) => (
+                <Table.Tr key={item.id}>
+                  <Table.Td><Text fw={800}>{item.title}</Text></Table.Td>
+                  <Table.Td>{item.customer_name || "—"}</Table.Td>
+                  <Table.Td><Badge variant="light">{item.fulfillment_method}</Badge></Table.Td>
+                  <Table.Td>{item.promised_date ? new Date(`${item.promised_date}T12:00:00`).toLocaleDateString() : "Not set"}</Table.Td>
+                  <Table.Td>{item.assigned_to || "Unassigned"}</Table.Td>
+                  <Table.Td>{item.notes || "—"}</Table.Td>
+                  <Table.Td><Group gap="xs" wrap="nowrap"><Tooltip label="Mark complete"><ActionIcon color="green" variant="light" onClick={() => closeArtHotItem(item, "Completed")}><IconCheck size={17} /></ActionIcon></Tooltip><Tooltip label="Remove from list"><ActionIcon color="red" variant="light" onClick={() => closeArtHotItem(item, "Removed")}><IconTrash size={17} /></ActionIcon></Tooltip></Group></Table.Td>
+                </Table.Tr>
+              ))}</Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        ) : <Text c="dimmed" ta="center" py="xl">No manual Hot Artwork items are active. Dated customer orders will still appear automatically in Morning Huddle.</Text>}
+      </Card>
 
       <Card withBorder radius="lg" p="lg">
         <Group justify="space-between" mb="lg" wrap="wrap">

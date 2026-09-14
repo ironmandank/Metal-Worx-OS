@@ -65,7 +65,8 @@ function buildExecutiveSummary(data) {
   const s = h.summary || {};
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.combined || [];
-  const sentences = [`Metal Worx begins today with ${priorityItems.length} Hot Today or quick-turnaround priorit${priorityItems.length === 1 ? "y" : "ies"}, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, ${projects.length} active outside project${projects.length === 1 ? "" : "s"}, and ${s.todayFieldWork || 0} scheduled field activit${s.todayFieldWork === 1 ? "y" : "ies"}.`];
+  const artHotItems = data?.artHotItems || [];
+  const sentences = [`Metal Worx begins today with ${priorityItems.length} Hot Today or quick-turnaround priorit${priorityItems.length === 1 ? "y" : "ies"}, ${artHotItems.length} hot artwork or approaching dated order${artHotItems.length === 1 ? "" : "s"}, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, ${projects.length} active outside project${projects.length === 1 ? "" : "s"}, and ${s.todayFieldWork || 0} scheduled field activit${s.todayFieldWork === 1 ? "y" : "ies"}.`];
   if (s.blockers) sentences.push(`${s.blockers} active blocker${s.blockers === 1 ? " requires" : "s require"} leadership attention before new work is released.`);
   else sentences.push("No active operational blockers are currently recorded.");
   if (s.overdueActions) sentences.push(`${s.overdueActions} overdue action${s.overdueActions === 1 ? " must" : "s must"} be assigned and recovered today.`);
@@ -92,6 +93,7 @@ export default function MorningHuddleTV({ setPage }) {
   const summary = huddle.summary || {};
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.combined || [];
+  const artHotItems = (data?.artHotItems || []).slice(0,10);
   const projectLeadCount = new Set(projects.map((project) => String(project.owner || project.assigned_to || "").trim()).filter(Boolean)).size;
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
   const executive = useMemo(() => buildExecutiveSummary(data), [data]);
@@ -111,6 +113,7 @@ export default function MorningHuddleTV({ setPage }) {
     <section className="tv-summary"><label>Executive Summary</label><p>{loading ? "Preparing today’s operating summary…" : executive}</p></section>
     <section className="tv-kpis">
       <div className="tv-kpi danger"><span>Hot Items / Quick Turnaround</span><strong>{priorityItems.length}</strong></div>
+      <div className="tv-kpi warn"><span>Hot Artwork / Dated Orders</span><strong>{artHotItems.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
       <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
       <div className="tv-kpi"><span>Outside Project Leads</span><strong>{projectLeadCount}</strong></div>
@@ -121,6 +124,7 @@ export default function MorningHuddleTV({ setPage }) {
     </section>
     <section className="tv-grid">
       <div className="tv-panel"><h2><IconClipboardCheck/> Hot Items & Today’s Commitments</h2>{priorities.length ? <ul className="tv-list">{priorities.map((x,i)=><li key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><strong>{text(x.title,"Priority")}</strong><small>{text(x.owner)} · {text(x.department || x.category || x.nextAction,"Action required")} · {text(x.dueDisplay || x.dueDate,"No time set")}</small></li>)}</ul>:<div className="tv-empty">No Hot Today items or commitments recorded.</div>}</div>
+      <div className="tv-panel"><h2><IconClipboardCheck/> Hot Artwork & Dated Orders</h2>{artHotItems.length ? <ul className="tv-list">{artHotItems.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Artwork")}</strong><small>{text(x.customer,"Customer not entered")} · {text(x.fulfillmentMethod,"Pickup")} {text(x.dueDisplay,"Date not set")} · Lead: {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No hot artwork or approaching pickup/ship dates.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Art & Shop Production</h2>{shopWorkload.length ? <ul className="tv-list">{shopWorkload.map((item)=><li key={item.name}><strong>{item.name}: {item.count}</strong><small>Active work at this station</small></li>)}</ul>:<div className="tv-empty">No active shop production is recorded.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <ul className="tv-list">{field.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Field activity")}</strong><small>{dateOnly(x.start || x.date || x.dueDate)} · {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No field work scheduled today.</div>}</div>
       <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <ul className="tv-list">{blockers.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></li>)}</ul>:<div className="tv-empty">No blockers recorded.</div>}</div>

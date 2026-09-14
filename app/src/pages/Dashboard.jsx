@@ -267,6 +267,8 @@ const styles = `
 
   .mc-hot { border-top: 2px solid var(--mc-red); }
   .mc-hot .mc-row { grid-template-columns: 72px minmax(0, 1.5fr) minmax(80px, .7fr) auto; }
+  .mc-art { border-top: 2px solid #a855f7; }
+  .mc-art .mc-row { grid-template-columns: 82px minmax(0, 1.5fr) minmax(90px, .7fr) auto; }
   .mc-priority {
     display: inline-flex; justify-content: center; padding: 4px 6px; border-radius: 4px;
     color: #fff; background: #b50715; font-size: .55rem; font-weight: 900; text-transform: uppercase;
@@ -857,6 +859,7 @@ function Dashboard({
     : outsideProjects;
 
   const hotItems = attention.slice(0, 5);
+  const artHotItems = safeArray(dashboardData?.artHotItems).slice(0, 10);
   const commitments = safeArray(huddle.todayFocus).length
     ? safeArray(huddle.todayFocus).slice(0, 5)
     : hotItems.slice(0, 5);
@@ -925,6 +928,13 @@ function Dashboard({
         if (update.schedule_change) lines.push(`Schedule change: ${update.schedule_change}`);
         if (update.budget_change) lines.push(`Budget change: ${update.budget_change}`);
       });
+
+      lines.push("", "HOT ARTWORK & DATED SHOP ORDERS:");
+      if (artHotItems.length) {
+        artHotItems.forEach((item) => lines.push(`- ${item.title} | ${item.customer || "Customer not entered"} | ${item.fulfillmentMethod || "Pickup"}: ${item.dueDisplay || "Date not set"} | Lead: ${item.owner || "Unassigned"}`));
+      } else {
+        lines.push("- No hot artwork or approaching dated shop orders are recorded.");
+      }
 
       lines.push("", `OPERATING COUNTS: ${stats.openOrders || 0} open orders; ${outsideProjects.length} active outside projects; ${stats.inProduction || 0} shop jobs in production; ${huddleSummary.blockers || 0} active blockers; ${stats.overdue || 0} overdue actions.`);
       setBriefText(lines.join("\n"));
@@ -1523,6 +1533,38 @@ function Dashboard({
               <span className="mc-tag">
                 {item.status || item.tag || "Open"}
               </span>
+            </button>
+          ))
+        )}
+      </section>
+
+      <section className="mc-panel mc-art">
+        <PanelHead
+          icon={IconTool}
+          title="Hot Artwork & Dated Orders"
+          subtitle="Manual art priorities plus customer orders approaching pickup or ship dates"
+          action={`Manage (${artHotItems.length}/10 shown)`}
+          onAction={() => goToPage("quickTurnaround")}
+        />
+        {artHotItems.length === 0 ? (
+          <Empty text="No hot artwork or approaching dated customer orders." />
+        ) : (
+          artHotItems.map((item, index) => (
+            <button
+              className="mc-row"
+              key={item.id || index}
+              onClick={() => item.sourceType === "customerOrder" ? openOrderById(item.sourceId) : goToPage("quickTurnaround")}
+            >
+              <span className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}>{item.priority || "High"}</span>
+              <span className="mc-row-main">
+                <strong>{item.title || "Artwork"}</strong>
+                <small>{item.customer || "Customer not entered"}</small>
+              </span>
+              <span className="mc-row-meta">
+                <strong>{item.owner || "Unassigned"}</strong>
+                <small>{item.notes || "Art priority"}</small>
+              </span>
+              <span className="mc-tag">{item.fulfillmentMethod || "Pickup"} · {item.dueDisplay || "Date not set"}</span>
             </button>
           ))
         )}
