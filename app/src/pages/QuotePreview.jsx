@@ -551,6 +551,80 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           new TableRow({ children: [wordCell("TOTAL ESTIMATED PRICE", { bold: true }), wordCell(""), wordCell(money(grandTotal), { bold: true, alignment: AlignmentType.RIGHT })] }),
         ],
       });
+      const wordImageCards = [];
+      for (const image of quoteImages.slice(0, 4)) {
+        try {
+          const response = await fetch(image.image_url);
+          if (!response.ok) throw new Error("Image could not be downloaded");
+          const blob = await response.blob();
+          const bytes = await blob.arrayBuffer();
+          const dimensions = await new Promise((resolve) => {
+            const preview = new Image();
+            preview.onload = () => resolve({
+              width: preview.naturalWidth || 1,
+              height: preview.naturalHeight || 1,
+            });
+            preview.onerror = () => resolve({ width: 4, height: 3 });
+            preview.src = image.image_url;
+          });
+          const scale = Math.min(255 / dimensions.width, 170 / dimensions.height);
+          wordImageCards.push({
+            image,
+            bytes,
+            type: blob.type.includes("png") ? "png" : "jpg",
+            width: Math.max(80, Math.round(dimensions.width * scale)),
+            height: Math.max(60, Math.round(dimensions.height * scale)),
+          });
+        } catch (imageError) {
+          console.warn("Quote image was skipped during Word export:", imageError);
+        }
+      }
+
+      const wordImageTable = wordImageCards.length
+        ? new WordTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            borders: WORD_BORDERS,
+            rows: Array.from(
+              { length: Math.ceil(wordImageCards.length / 2) },
+              (_, rowIndex) =>
+                new TableRow({
+                  children: [0, 1].map((columnIndex) => {
+                    const card = wordImageCards[rowIndex * 2 + columnIndex];
+                    return new TableCell({
+                      width: { size: 50, type: WidthType.PERCENTAGE },
+                      children: card
+                        ? [
+                            new Paragraph({
+                              alignment: AlignmentType.CENTER,
+                              spacing: { after: 80 },
+                              children: [
+                                new ImageRun({
+                                  data: card.bytes,
+                                  transformation: { width: card.width, height: card.height },
+                                  type: card.type,
+                                }),
+                              ],
+                            }),
+                            new Paragraph({
+                              alignment: AlignmentType.CENTER,
+                              children: [
+                                wordRun(
+                                  [card.image.image_type || "Project Image", card.image.caption]
+                                    .filter(Boolean)
+                                    .join(" — "),
+                                  { bold: true, size: 20 },
+                                ),
+                              ],
+                            }),
+                          ]
+                        : [new Paragraph("")],
+                    });
+                  }),
+                }),
+            ),
+          })
+        : null;
+
       const signatureTable = new WordTable({
         width: { size: 100, type: WidthType.PERCENTAGE },
         borders: WORD_BORDERS,
@@ -604,6 +678,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             headers: { default: header },
             footers: { default: footer },
             children: [
+              ...(wordImageTable ? [wordHeading("Project Images and References"), wordImageTable] : []),
               ...(quote.assumptions ? [wordHeading("Assumptions"), ...wordBulletBlock(quote.assumptions)] : []),
               ...(quote.exclusions ? [wordHeading("Exclusions and Change Conditions"), ...wordBulletBlock(quote.exclusions)] : []),
               wordHeading("Payment Terms"),
