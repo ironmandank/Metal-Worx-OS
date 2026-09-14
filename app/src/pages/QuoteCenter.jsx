@@ -199,7 +199,7 @@ function QuoteCenter({
       return;
     }
     const subject = `Site Estimate Request — ${siteEstimate.customer || siteEstimate.destination}`;
-    const gmailUrl = `https://mail.google.com/mail/u/${encodeURIComponent(\n      "info@metalworxinc.net",\n    )}/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(\n      siteEstimateSummary(),\n    )}`;\n    window.open(gmailUrl, "_blank", "noopener,noreferrer");
+    window.location.href = `mailto:?subject=${encodeURIComponent(\n      subject,\n    )}&body=${encodeURIComponent(siteEstimateSummary())}`;
   }
 
   async function copySiteEstimate() {
