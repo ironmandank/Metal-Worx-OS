@@ -192,7 +192,13 @@ function QuoteCenter({
     const emailUrl = `mailto:info@metalworxinc.net,kory@metalworxinc.net?subject=${encodeURIComponent(
       subject,
     )}&body=${encodeURIComponent(siteEstimateSummary())}`;
-    window.location.href = emailUrl;
+    const emailLink = document.createElement("a");
+    emailLink.href = emailUrl;
+    emailLink.target = "_blank";
+    emailLink.rel = "noopener noreferrer";
+    document.body.appendChild(emailLink);
+    emailLink.click();
+    emailLink.remove();
   }
 
   async function copySiteEstimate() {
