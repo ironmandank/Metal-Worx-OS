@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
   IconArrowsShuffle,
@@ -125,16 +125,18 @@ const NAV_GROUPS = [
   {
     id: "office",
     label: "Office",
+    description: "Calendar, follow-ups, communication, and reporting",
     icon: IconBriefcase,
     items: [
       {
         page: "companyCalendar",
-        label: "Company Calendar",
+        label: "Company Events & Availability",
+        section: "Daily Office Work",
         icon: IconCalendarEvent,
       },
       {
         page: "callbacks",
-        label: "Callbacks & Follow-Ups",
+        label: "Customer Follow-Ups",
         icon: IconPhone,
       },
       {
@@ -145,23 +147,15 @@ const NAV_GROUPS = [
       {
         page: "reports",
         label: "Reports & Analytics",
+        section: "Leadership",
         icon: IconChartBar,
-      },
-      {
-        page: "pilotFeedback",
-        label: "Pilot Feedback",
-        icon: IconTestPipe,
-      },
-      {
-        page: "knowledgeCenter",
-        label: "Knowledge Center",
-        icon: IconBook2,
       },
     ],
   },
   {
     id: "sales",
     label: "Sales",
+    description: "Customers, orders, and new work",
     icon: IconUsers,
     items: [
       {
@@ -184,6 +178,7 @@ const NAV_GROUPS = [
   {
     id: "outside",
     label: "Outside",
+    description: "Estimate → approve → prepare → complete field work",
     icon: IconTool,
     items: [
       {
@@ -219,11 +214,13 @@ const NAV_GROUPS = [
   {
     id: "inventory",
     label: "Inventory",
+    description: "Stock, receiving, requests, and inventory tools",
     icon: IconBox,
     items: [
       {
         page: "inventoryDashboard",
-        label: "Inventory Command Center",
+        label: "Inventory Overview",
+        section: "Daily Inventory Work",
         icon: IconLayoutDashboard,
       },
       {
@@ -237,29 +234,31 @@ const NAV_GROUPS = [
         icon: IconTruckDelivery,
       },
       {
-        page: "inventoryStorage",
-        label: "Storage Positions",
-        icon: IconMapPin,
-      },
-      {
-        page: "inventoryScanner",
-        label: "Scan QR Code",
-        icon: IconScan,
-      },
-      {
         page: "showSales",
         label: "Shows & Mobile Sales",
         icon: IconShoppingCart,
       },
       {
         page: "materialRequestCart",
-        label: "Material Request Cart",
+        label: "Request Materials",
+        section: "Material Requests",
         icon: IconShoppingCart,
       },
       {
         page: "materialRequestQueue",
-        label: "Material Request Queue",
+        label: "Review Material Requests",
         icon: IconClipboardList,
+      },
+      {
+        page: "inventoryStorage",
+        label: "Storage Positions",
+        section: "Inventory Tools",
+        icon: IconMapPin,
+      },
+      {
+        page: "inventoryScanner",
+        label: "Scan QR Code",
+        icon: IconScan,
       },
       {
         page: "inventoryCount",
@@ -279,6 +278,7 @@ const NAV_GROUPS = [
       {
         page: "inventoryImport",
         label: "Excel Import Wizard",
+        adminOnly: true,
         icon: IconFileSpreadsheet,
       },
     ],
@@ -286,12 +286,14 @@ const NAV_GROUPS = [
   {
     id: "production",
     label: "Production",
+    description: "Manage jobs, scheduling, and design work",
     icon: IconBuildingFactory2,
     items: [
       {
-        page: "designQueue",
-        label: "Design Queue",
-        icon: IconPalette,
+        page: "productionControl",
+        label: "Production Control",
+        section: "Production Management",
+        icon: IconColumns,
       },
       {
         page: "productionJobs",
@@ -299,15 +301,17 @@ const NAV_GROUPS = [
         icon: IconBuildingFactory2,
       },
       {
-        page: "productionControl",
-        label: "Production Control",
-        icon: IconColumns,
+        page: "designQueue",
+        label: "Design Queue",
+        section: "Design Work",
+        icon: IconPalette,
       },
     ],
   },
   {
     id: "stations",
     label: "Stations",
+    description: "Open the live queue for each shop station",
     icon: IconColumns,
     items: [
       {
@@ -350,11 +354,13 @@ const NAV_GROUPS = [
   {
     id: "setup",
     label: "Setup",
+    description: "Templates, employee access, training, and support",
     icon: IconSettings,
     items: [
       {
         page: "productTemplates",
         label: "Product Templates",
+        section: "System Setup",
         icon: IconTemplate,
       },
       {
@@ -365,7 +371,19 @@ const NAV_GROUPS = [
       {
         page: "employeeLogins",
         label: "Employee Logins",
+        adminOnly: true,
         icon: IconUserShield,
+      },
+      {
+        page: "knowledgeCenter",
+        label: "Help & Training",
+        section: "Help & Support",
+        icon: IconBook2,
+      },
+      {
+        page: "pilotFeedback",
+        label: "Report a Problem or Idea",
+        icon: IconTestPipe,
       },
     ],
   },
@@ -393,9 +411,22 @@ function AppLayout({
   const safeActiveUser =
     activeUser || authenticatedProfile?.display_name || "Employee";
 
+  const isAdministrator = String(
+    authenticatedProfile?.access_level || "",
+  ).toLowerCase().includes("admin");
+
+  const visibleNavGroups = useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.adminOnly || isAdministrator),
+      })),
+    [isAdministrator],
+  );
+
   const activeGroup = useMemo(
     () =>
-      NAV_GROUPS.find((group) =>
+      visibleNavGroups.find((group) =>
         group.items.some(
           (item) =>
             item.page === activePage ||
@@ -403,7 +434,7 @@ function AppLayout({
               item.department === activeDepartment),
         ),
       )?.id || "",
-    [activePage, activeDepartment],
+    [activePage, activeDepartment, visibleNavGroups],
   );
 
   useEffect(() => {
@@ -521,7 +552,7 @@ function AppLayout({
     setOpenGroup((current) => (current === groupId ? "" : groupId));
   }
 
-  const selectedGroup = NAV_GROUPS.find((group) => group.id === openGroup);
+  const selectedGroup = visibleNavGroups.find((group) => group.id === openGroup);
 
   return (
     <div
@@ -592,7 +623,7 @@ function AppLayout({
           <div className="mw-rail-divider" />
 
           <div className="mw-rail-groups">
-            {NAV_GROUPS.map((group) => {
+            {visibleNavGroups.map((group) => {
               const GroupIcon = group.icon;
               const active = activeGroup === group.id || openGroup === group.id;
 
@@ -622,7 +653,7 @@ function AppLayout({
               <div className="mw-flyout-header">
                 <div>
                   <strong>{selectedGroup.label}</strong>
-                  <span>{selectedGroup.id === "outside" ? "Estimate → build → install → closeout" : "Metal Worx navigation"}</span>
+                  <span>{selectedGroup.description}</span>
                 </div>
                 <button
                   type="button"
@@ -644,29 +675,32 @@ function AppLayout({
               )}
 
               <div className="mw-flyout-items">
-                {selectedGroup.items.map((item) => {
+                {selectedGroup.items.map((item, index) => {
                   const ItemIcon = item.icon;
                   const active = isItemActive(item);
+                  const showSection = item.section && selectedGroup.items[index - 1]?.section !== item.section;
 
                   return (
-                    <button
-                      key={item.page || item.department}
-                      type="button"
-                      className={active ? "mw-nav-active" : ""}
-                      onClick={() =>
-                        item.department
-                          ? openDepartmentQueue(item.department)
-                          : navigate(item.page)
-                      }
-                    >
-                      <ItemIcon />
-                      <span className="mw-flyout-item-copy">
-                        <small>{item.step}</small>
-                        <strong>{item.label}</strong>
-                        {item.description && <em>{item.description}</em>}
-                      </span>
-                      <IconChevronRight />
-                    </button>
+                    <Fragment key={item.page || item.department}>
+                      {showSection && <div className="mw-flyout-section-label">{item.section}</div>}
+                      <button
+                        type="button"
+                        className={active ? "mw-nav-active" : ""}
+                        onClick={() =>
+                          item.department
+                            ? openDepartmentQueue(item.department)
+                            : navigate(item.page)
+                        }
+                      >
+                        <ItemIcon />
+                        <span className="mw-flyout-item-copy">
+                          {item.step && <small>{item.step}</small>}
+                          <strong>{item.label}</strong>
+                          {item.description && <em>{item.description}</em>}
+                        </span>
+                        <IconChevronRight />
+                      </button>
+                    </Fragment>
                   );
                 })}
               </div>

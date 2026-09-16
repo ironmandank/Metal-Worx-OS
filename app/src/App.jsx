@@ -50,6 +50,7 @@ const OrderBuilder = page("OrderBuilder");
 const CustomerDetails = page("CustomerDetails");
 const CustomerOrderDetails = page("CustomerOrderDetails");
 const DesignQueue = page("DesignQueue");
+const AccessDenied = page("AccessDenied");
 const Projects = page("Projects");
 const NewProject = page("NewProject");
 const ProjectDetails = page("ProjectDetails");
@@ -218,7 +219,7 @@ function App() {
       setAuthSession(nextSession);
       setAuthenticatedProfile({
         ...profile,
-        access_level: "Employee",
+        access_level: profile.access_level || "Employee",
       });
       setActiveUser(profile.display_name);
       setAuthError("");
@@ -344,6 +345,24 @@ function App() {
   }
 
   function renderPage() {
+    const administratorOnlyPages = new Set([
+      "employeeLogins",
+      "inventoryImport",
+    ]);
+    const isAdministrator = String(
+      authenticatedProfile?.access_level || "",
+    ).toLowerCase().includes("admin");
+
+    if (administratorOnlyPages.has(page) && !isAdministrator) {
+      return (
+        <AccessDenied
+          accessLevel={authenticatedProfile?.access_level}
+          requestedPage={page === "employeeLogins" ? "Employee Logins" : "Excel Import Wizard"}
+          setPage={setPage}
+        />
+      );
+    }
+
     if (page === "dashboard") {
       return (
         <Dashboard
