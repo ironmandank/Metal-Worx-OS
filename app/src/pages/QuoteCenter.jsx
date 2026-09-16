@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Checkbox,
+  FileInput,
   Group,
   Loader,
   NumberInput,
@@ -131,6 +132,7 @@ function QuoteCenter({
   const [showPasteOrganizer, setShowPasteOrganizer] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [organizedQuote, setOrganizedQuote] = useState(null);
+  const [organizerImages, setOrganizerImages] = useState([]);
   const [organizerCreating, setOrganizerCreating] = useState(false);
   const [showSiteEstimate, setShowSiteEstimate] = useState(true);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
@@ -449,6 +451,79 @@ function QuoteCenter({
     });
   }
 
+  function addOrganizerImages(files) {
+    const selectedFiles = Array.isArray(files) ? files : files ? [files] : [];
+    if (!selectedFiles.length) return;
+
+    setOrganizerImages((current) => [
+      ...current,
+      ...selectedFiles.map((file) => ({
+        file,
+        caption: file.name.replace(/\.[^/.]+$/, "").replace(/[-_]+/g, " "),
+        image_type: "Project Image",
+        show_on_pdf: true,
+      })),
+    ]);
+  }
+
+  function updateOrganizerImage(index, field, value) {
+    setOrganizerImages((current) =>
+      current.map((image, imageIndex) =>
+        imageIndex === index ? { ...image, [field]: value } : image,
+      ),
+    );
+  }
+
+  function removeOrganizerImage(index) {
+    setOrganizerImages((current) =>
+      current.filter((_, imageIndex) => imageIndex !== index),
+    );
+  }
+
+  async function uploadOrganizerImages(quoteId) {
+    const failures = [];
+
+    for (let index = 0; index < organizerImages.length; index += 1) {
+      const image = organizerImages[index];
+      const extension = image.file.name.split(".").pop();
+      const safeName = image.file.name
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9-_]/g, "-");
+      const filePath = `${quoteId}/${Date.now()}-${index}-${safeName}.${extension}`;
+
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from("quote-images")
+          .upload(filePath, image.file, { cacheControl: "3600", upsert: false });
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = supabase.storage
+          .from("quote-images")
+          .getPublicUrl(filePath);
+
+        const { error: databaseError } = await supabase
+          .from("project_quote_images")
+          .insert({
+            quote_id: quoteId,
+            image_url: publicUrlData.publicUrl,
+            caption: image.caption.trim(),
+            image_type: image.image_type,
+            show_on_pdf: image.show_on_pdf,
+            sort_order: index + 1,
+          });
+
+        if (databaseError) {
+          await supabase.storage.from("quote-images").remove([filePath]);
+          throw databaseError;
+        }
+      } catch (error) {
+        failures.push(`${image.file.name}: ${error.message || "upload failed"}`);
+      }
+    }
+
+    return failures;
+  }
+
   function updateOrganizedField(field, value) {
     setOrganizedQuote((current) => ({
       ...(current || emptyOrganizedQuote()),
@@ -566,13 +641,23 @@ function QuoteCenter({
       const { error: itemError } = await supabase.from("project_quote_items").insert(itemPayload);
       if (itemError) throw itemError;
 
+      const imageFailures = await uploadOrganizerImages(createdQuote.id);
+
       setSelectedQuote(createdQuote);
       setSelectedProject(null);
-      notifications.show({
-        title: "Editable Draft Quote Created",
-        message: `${createdQuote.quote_number} was organized and is ready for final review.`,
-        color: "green",
-      });
+      if (imageFailures.length) {
+        notifications.show({
+          title: "Draft Created — Some Images Need Attention",
+          message: `${createdQuote.quote_number} was created, but ${imageFailures.length} image${imageFailures.length === 1 ? "" : "s"} did not upload. You can add them again in Quote Builder.`,
+          color: "orange",
+        });
+      } else {
+        notifications.show({
+          title: "Editable Draft Quote Created",
+          message: `${createdQuote.quote_number} was organized with ${organizerImages.length} attached image${organizerImages.length === 1 ? "" : "s"} and is ready for final review.`,
+          color: "green",
+        });
+      }
       setPage("quoteBuilder");
     } catch (error) {
       notifications.show({ title: "Quote Could Not Be Created", message: error.message, color: "red" });
@@ -997,6 +1082,7 @@ function QuoteCenter({
                 onClick={() => {
                   setPasteText("");
                   setOrganizedQuote(null);
+                  setOrganizerImages([]);
                 }}
               >
                 Clear
@@ -1058,6 +1144,68 @@ function QuoteCenter({
                   <Textarea label="Payment Terms" minRows={3} autosize value={organizedQuote.payment_terms} onChange={(event) => updateOrganizedField("payment_terms", event.currentTarget.value)} />
                   <Textarea label="Pricing Notes" minRows={3} autosize value={organizedQuote.price_notes} onChange={(event) => updateOrganizedField("price_notes", event.currentTarget.value)} />
                 </SimpleGrid>
+
+                <Card withBorder radius="md" p="md">
+                  <Stack gap="md">
+                    <div>
+                      <Title order={4}>Images, Drawings & Reference Files</Title>
+                      <Text size="sm" c="dimmed">
+                        Attach project photos, sketches, measurements, renderings, or reference images. They will be saved with the draft quote.
+                      </Text>
+                    </div>
+                    <FileInput
+                      label="Attach Images"
+                      description="Select one or more PNG, JPG, or WebP images."
+                      placeholder="Choose images from this device"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      multiple
+                      clearable
+                      value={[]}
+                      onChange={addOrganizerImages}
+                    />
+                    {organizerImages.length === 0 ? (
+                      <Text size="sm" c="dimmed">No images attached yet.</Text>
+                    ) : (
+                      <Stack gap="sm">
+                        {organizerImages.map((image, index) => (
+                          <Card key={`${image.file.name}-${image.file.lastModified}-${index}`} withBorder radius="sm" p="sm">
+                            <Stack gap="sm">
+                              <Group justify="space-between" align="flex-start" wrap="wrap">
+                                <div>
+                                  <Text fw={800}>{image.file.name}</Text>
+                                  <Text size="xs" c="dimmed">
+                                    {(image.file.size / 1024 / 1024).toFixed(2)} MB
+                                  </Text>
+                                </div>
+                                <Button size="xs" variant="subtle" color="red" onClick={() => removeOrganizerImage(index)}>
+                                  Remove
+                                </Button>
+                              </Group>
+                              <SimpleGrid cols={{ base: 1, md: 2 }}>
+                                <Select
+                                  label="Image Type"
+                                  data={["Project Image", "Site Photo", "Drawing", "Rendering", "Reference Photo", "Layout", "Material Sample", "Finish Sample", "Other"]}
+                                  value={image.image_type}
+                                  onChange={(value) => updateOrganizerImage(index, "image_type", value || "Project Image")}
+                                />
+                                <TextInput
+                                  label="Caption"
+                                  value={image.caption}
+                                  onChange={(event) => updateOrganizerImage(index, "caption", event.currentTarget.value)}
+                                />
+                              </SimpleGrid>
+                              <Checkbox
+                                label="Show this image on the PDF quote"
+                                checked={image.show_on_pdf}
+                                onChange={(event) => updateOrganizerImage(index, "show_on_pdf", event.currentTarget.checked)}
+                              />
+                            </Stack>
+                          </Card>
+                        ))}
+                      </Stack>
+                    )}
+                  </Stack>
+                </Card>
                 <Group justify="flex-end">
                   <Button color="green" loading={organizerCreating} onClick={createOrganizedDraftQuote}>
                     Create Editable Draft Quote
