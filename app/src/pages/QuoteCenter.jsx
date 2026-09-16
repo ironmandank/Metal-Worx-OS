@@ -20,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 
 import { supabase } from "../lib/supabase";
 import { generateNumber } from "../lib/generateNumber";
+import { emptyOrganizedQuote, organizeQuoteText } from "../lib/quoteOrganizer";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -127,6 +128,10 @@ function QuoteCenter({
   const [converting, setConverting] = useState(false);
   const [conversionQuote, setConversionQuote] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPasteOrganizer, setShowPasteOrganizer] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [organizedQuote, setOrganizedQuote] = useState(null);
+  const [organizerCreating, setOrganizerCreating] = useState(false);
   const [showSiteEstimate, setShowSiteEstimate] = useState(true);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
   const [search, setSearch] = useState("");
@@ -425,6 +430,155 @@ function QuoteCenter({
         [field]: value,
       }));
     };
+  }
+
+  function organizePastedQuote() {
+    if (!pasteText.trim()) {
+      notifications.show({
+        title: "Paste Quote Information",
+        message: "Paste the customer quote write-up before organizing it.",
+        color: "orange",
+      });
+      return;
+    }
+    setOrganizedQuote(organizeQuoteText(pasteText));
+    notifications.show({
+      title: "Quote Organized",
+      message: "Review every field and line item before creating the draft quote.",
+      color: "green",
+    });
+  }
+
+  function updateOrganizedField(field, value) {
+    setOrganizedQuote((current) => ({
+      ...(current || emptyOrganizedQuote()),
+      [field]: value,
+    }));
+  }
+
+  function updateOrganizedItem(index, field, value) {
+    setOrganizedQuote((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  }
+
+  function addOrganizedItem() {
+    setOrganizedQuote((current) => ({
+      ...(current || emptyOrganizedQuote()),
+      items: [
+        ...(current?.items || []),
+        { item_type: "Service", title: "", description: "", quantity: 1, unit: "Each", unit_price: 0 },
+      ],
+    }));
+  }
+
+  function removeOrganizedItem(index) {
+    setOrganizedQuote((current) => ({
+      ...current,
+      items: current.items.filter((_, itemIndex) => itemIndex !== index),
+    }));
+  }
+
+  async function createOrganizedDraftQuote() {
+    if (!organizedQuote?.customer_name?.trim()) {
+      notifications.show({ title: "Customer Required", message: "Enter the customer or company name.", color: "orange" });
+      return;
+    }
+    if (!organizedQuote?.quote_title?.trim()) {
+      notifications.show({ title: "Quote Title Required", message: "Enter a name for this quote.", color: "orange" });
+      return;
+    }
+    const validItems = organizedQuote.items.filter((item) => item.title.trim());
+    if (!validItems.length) {
+      notifications.show({ title: "Line Item Required", message: "Add at least one line item before creating the quote.", color: "orange" });
+      return;
+    }
+
+    setOrganizerCreating(true);
+    try {
+      const quoteNumber = await generateNumber("Quote");
+      const quoteDate = new Date().toISOString().slice(0, 10);
+      const subtotal = validItems.reduce(
+        (sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0),
+        0,
+      );
+      const taxRate = Number(organizedQuote.tax_rate || 0);
+      const taxAmount = subtotal * taxRate;
+      const payload = {
+        quote_number: quoteNumber,
+        project_id: null,
+        quote_type: "Standalone Quote",
+        customer_name: organizedQuote.customer_name.trim(),
+        company_name: organizedQuote.customer_name.trim(),
+        contact_name: organizedQuote.customer_name.trim(),
+        contact_phone: organizedQuote.contact_phone.trim() || null,
+        contact_email: organizedQuote.contact_email.trim() || null,
+        billing_address: organizedQuote.address.trim() || null,
+        project_name: organizedQuote.quote_title.trim(),
+        quote_title: organizedQuote.quote_title.trim(),
+        assigned_to: activeUserName,
+        prepared_by: activeUserName,
+        quote_date: quoteDate,
+        valid_until: addDays(quoteDate, 15),
+        status: "Draft",
+        is_active: true,
+        tax_rate: taxRate,
+        subtotal,
+        tax_amount: taxAmount,
+        total_amount: subtotal + taxAmount,
+        quote_layout: "Detailed Fabrication",
+        scope_of_work: organizedQuote.scope_of_work,
+        specifications: organizedQuote.specifications,
+        included_services: organizedQuote.included_services,
+        exclusions: organizedQuote.exclusions,
+        project_schedule: organizedQuote.project_schedule,
+        down_payment_terms: organizedQuote.down_payment_terms,
+        payment_terms: organizedQuote.payment_terms || organizedQuote.down_payment_terms,
+        price_notes: organizedQuote.price_notes,
+        warranty_terms: "Metal Worx Inc. warrants fabricated products against defects in workmanship for 90 days from completion.",
+        disclaimer: "Due to fluctuations in material costs, Metal Worx Inc. reserves the right to update this quote. All prices are subject to final material cost verification.",
+        acceptance_terms: "By signing below, the customer accepts this quote, including its scope, price, assumptions, exclusions, payment schedule, and stated terms. Work outside the approved scope requires customer authorization.",
+      };
+
+      const { data: createdQuote, error } = await supabase
+        .from("project_quotes")
+        .insert([payload])
+        .select()
+        .single();
+      if (error) throw error;
+
+      const itemPayload = validItems.map((item, index) => ({
+        quote_id: createdQuote.id,
+        item_type: item.item_type || "Service",
+        title: item.title.trim(),
+        description: item.description?.trim() || "",
+        quantity: Number(item.quantity || 0),
+        unit_price: Number(item.unit_price || 0),
+        line_total: Number(item.quantity || 0) * Number(item.unit_price || 0),
+        is_optional: false,
+        is_selected: true,
+        show_on_pdf: true,
+        sort_order: index + 1,
+      }));
+      const { error: itemError } = await supabase.from("project_quote_items").insert(itemPayload);
+      if (itemError) throw itemError;
+
+      setSelectedQuote(createdQuote);
+      setSelectedProject(null);
+      notifications.show({
+        title: "Editable Draft Quote Created",
+        message: `${createdQuote.quote_number} was organized and is ready for final review.`,
+        color: "green",
+      });
+      setPage("quoteBuilder");
+    } catch (error) {
+      notifications.show({ title: "Quote Could Not Be Created", message: error.message, color: "red" });
+    } finally {
+      setOrganizerCreating(false);
+    }
   }
 
   async function openQuote(quote, targetPage) {
@@ -801,13 +955,119 @@ function QuoteCenter({
             ? "Close Site Visit & Mileage"
             : "Plan Site Visit & Mileage"}
         </Button>
-        <Button
-          color="red"
-          onClick={() => setShowCreate((current) => !current)}
-        >
-          {showCreate ? "Close New Quote" : "New Standalone Quote"}
-        </Button>
+        <Group gap="sm">
+          <Button
+            variant={showPasteOrganizer ? "filled" : "light"}
+            color="green"
+            onClick={() => setShowPasteOrganizer((current) => !current)}
+          >
+            {showPasteOrganizer ? "Close Paste & Organize" : "Paste & Organize Quote"}
+          </Button>
+          <Button
+            color="red"
+            onClick={() => setShowCreate((current) => !current)}
+          >
+            {showCreate ? "Close New Quote" : "New Standalone Quote"}
+          </Button>
+        </Group>
       </Group>
+
+      {showPasteOrganizer && (
+        <MWSection
+          title="Paste & Organize Quote"
+          subtitle="Paste a complete write-up, review the organized fields, and create an editable draft."
+        >
+          <Stack gap="md">
+            <Alert color="green">
+              Nothing is sent or approved automatically. The organizer creates a draft that must be reviewed in Quote Builder.
+            </Alert>
+            <Textarea
+              label="Complete Quote Information"
+              description="Include customer details, line items, prices, scope, process, deposit terms, exclusions, and other notes."
+              placeholder="Paste the complete quote write-up here..."
+              minRows={10}
+              autosize
+              value={pasteText}
+              onChange={(event) => setPasteText(event.currentTarget.value)}
+            />
+            <Group justify="space-between" wrap="wrap">
+              <Button
+                variant="subtle"
+                color="gray"
+                onClick={() => {
+                  setPasteText("");
+                  setOrganizedQuote(null);
+                }}
+              >
+                Clear
+              </Button>
+              <Button color="green" onClick={organizePastedQuote}>Organize Quote</Button>
+            </Group>
+
+            {organizedQuote && (
+              <Stack gap="lg">
+                <Alert color="blue" title="Review Required">
+                  Confirm the customer, title, quantities, pricing, tax rate, and scope before creating the draft.
+                </Alert>
+                <SimpleGrid cols={{ base: 1, md: 2 }}>
+                  <TextInput label="Customer / Company" required value={organizedQuote.customer_name} onChange={(event) => updateOrganizedField("customer_name", event.currentTarget.value)} />
+                  <TextInput label="Quote / Project Name" required value={organizedQuote.quote_title} onChange={(event) => updateOrganizedField("quote_title", event.currentTarget.value)} />
+                  <TextInput label="Phone" value={organizedQuote.contact_phone} onChange={(event) => updateOrganizedField("contact_phone", event.currentTarget.value)} />
+                  <TextInput label="Email" value={organizedQuote.contact_email} onChange={(event) => updateOrganizedField("contact_email", event.currentTarget.value)} />
+                  <TextInput label="Project / Billing Address" value={organizedQuote.address} onChange={(event) => updateOrganizedField("address", event.currentTarget.value)} />
+                  <NumberInput label="Sales Tax Rate" suffix="%" min={0} max={100} decimalScale={3} value={Number(organizedQuote.tax_rate || 0) * 100} onChange={(value) => updateOrganizedField("tax_rate", Number(value || 0) / 100)} />
+                </SimpleGrid>
+
+                <Stack gap="sm">
+                  <Group justify="space-between">
+                    <Title order={4}>Organized Line Items</Title>
+                    <Button size="xs" variant="light" onClick={addOrganizedItem}>Add Line Item</Button>
+                  </Group>
+                  {organizedQuote.items.map((item, index) => (
+                    <Card key={`${index}-${item.title}`} withBorder radius="md" p="md">
+                      <Stack gap="sm">
+                        <SimpleGrid cols={{ base: 1, md: 4 }}>
+                          <TextInput label="Item" value={item.title} onChange={(event) => updateOrganizedItem(index, "title", event.currentTarget.value)} />
+                          <NumberInput label="Quantity" min={0} decimalScale={2} value={Number(item.quantity || 0)} onChange={(value) => updateOrganizedItem(index, "quantity", Number(value || 0))} />
+                          <TextInput label="Unit" value={item.unit || "Each"} onChange={(event) => updateOrganizedItem(index, "unit", event.currentTarget.value)} />
+                          <NumberInput label="Unit Price" prefix="$" min={0} decimalScale={2} fixedDecimalScale value={Number(item.unit_price || 0)} onChange={(value) => updateOrganizedItem(index, "unit_price", Number(value || 0))} />
+                        </SimpleGrid>
+                        <Textarea label="Description" minRows={2} autosize value={item.description || ""} onChange={(event) => updateOrganizedItem(index, "description", event.currentTarget.value)} />
+                        <Group justify="space-between">
+                          <Button size="xs" variant="subtle" color="red" onClick={() => removeOrganizedItem(index)}>Remove</Button>
+                          <Text fw={800}>{money(Number(item.quantity || 0) * Number(item.unit_price || 0))}</Text>
+                        </Group>
+                      </Stack>
+                    </Card>
+                  ))}
+                  <Card withBorder radius="md" p="md">
+                    <Group justify="space-between">
+                      <Text fw={900}>Parsed Subtotal</Text>
+                      <Title order={3} c="green">{money(organizedQuote.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))}</Title>
+                    </Group>
+                  </Card>
+                </Stack>
+
+                <SimpleGrid cols={{ base: 1, md: 2 }}>
+                  <Textarea label="Scope of Work" minRows={5} autosize value={organizedQuote.scope_of_work} onChange={(event) => updateOrganizedField("scope_of_work", event.currentTarget.value)} />
+                  <Textarea label="Project Process / Schedule" minRows={5} autosize value={organizedQuote.project_schedule} onChange={(event) => updateOrganizedField("project_schedule", event.currentTarget.value)} />
+                  <Textarea label="Specifications" minRows={3} autosize value={organizedQuote.specifications} onChange={(event) => updateOrganizedField("specifications", event.currentTarget.value)} />
+                  <Textarea label="Included Services" minRows={3} autosize value={organizedQuote.included_services} onChange={(event) => updateOrganizedField("included_services", event.currentTarget.value)} />
+                  <Textarea label="Exclusions" minRows={3} autosize value={organizedQuote.exclusions} onChange={(event) => updateOrganizedField("exclusions", event.currentTarget.value)} />
+                  <Textarea label="Deposit / Down-Payment Terms" minRows={3} autosize value={organizedQuote.down_payment_terms} onChange={(event) => updateOrganizedField("down_payment_terms", event.currentTarget.value)} />
+                  <Textarea label="Payment Terms" minRows={3} autosize value={organizedQuote.payment_terms} onChange={(event) => updateOrganizedField("payment_terms", event.currentTarget.value)} />
+                  <Textarea label="Pricing Notes" minRows={3} autosize value={organizedQuote.price_notes} onChange={(event) => updateOrganizedField("price_notes", event.currentTarget.value)} />
+                </SimpleGrid>
+                <Group justify="flex-end">
+                  <Button color="green" loading={organizerCreating} onClick={createOrganizedDraftQuote}>
+                    Create Editable Draft Quote
+                  </Button>
+                </Group>
+              </Stack>
+            )}
+          </Stack>
+        </MWSection>
+      )}
 
       {showSiteEstimate && (
         <MWSection title="Site Visit, Google Maps & Mileage" subtitle="Use this before a potential job becomes a formal quote.">
