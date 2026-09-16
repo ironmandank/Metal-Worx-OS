@@ -4,9 +4,12 @@ import {
   Badge,
   Box,
   Button,
+  Card,
   Group,
   Loader,
+  Modal,
   Paper,
+  ScrollArea,
   Select,
   SimpleGrid,
   Stack,
@@ -19,6 +22,8 @@ import {
   IconAlertTriangle,
   IconArrowRight,
   IconCalendarCheck,
+  IconChevronLeft,
+  IconChevronRight,
   IconClock,
   IconMapPin,
   IconRefresh,
@@ -33,6 +38,18 @@ import MWPageHeader from "../components/ui/MWPageHeader";
 import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
+import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../lib/calendar";
+
+const FIELD_CALENDAR_STYLES = `
+  .mw-field-calendar { display:grid; grid-template-columns:repeat(7,minmax(130px,1fr)); min-width:910px; border-left:1px solid #2b343a; border-bottom:1px solid #2b343a; }
+  .mw-field-weekday { padding:9px; text-align:center; background:#11181d; border-top:1px solid #2b343a; border-right:1px solid #2b343a; color:#9ca8b0; font-size:10px; font-weight:900; text-transform:uppercase; }
+  .mw-field-day { min-height:125px; padding:8px; background:#0e1418; border-top:1px solid #2b343a; border-right:1px solid #2b343a; cursor:pointer; }
+  .mw-field-day:hover { background:#172127; } .mw-field-day.outside { opacity:.42; } .mw-field-day.today { box-shadow:inset 0 0 0 2px #e31b2f; }
+  .mw-field-day-head { display:flex; justify-content:space-between; gap:5px; margin-bottom:5px; font-weight:900; }
+  .mw-field-day-head small { color:#7f8c95; font-size:9px; text-transform:uppercase; }
+  .mw-field-event { margin-top:5px; padding:5px 6px; border-left:4px solid #228be6; border-radius:4px; background:#20282e; color:#fff; font-size:9px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mw-field-event.project { border-left-color:#7950f2; } .mw-field-event.visit { border-left-color:#228be6; } .mw-field-event.install { border-left-color:#40c057; } .mw-field-event.test { border-left-color:#fd7e14; }
+`;
 
 const SCHEDULE_TYPES = {
   "Site Visit": {
@@ -266,6 +283,7 @@ function buildScheduleEntries(projects, customers) {
 
 function FieldSchedule({ setPage, setSelectedProject }) {
   const [projects, setProjects] = useState([]);
+  const [prequoteVisits, setPrequoteVisits] = useState([]);
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -273,6 +291,8 @@ function FieldSchedule({ setPage, setSelectedProject }) {
   const [ownerFilter, setOwnerFilter] = useState("All");
   const [typeFilter, setTypeFilter] = useState("All");
   const [search, setSearch] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => firstOfMonth());
+  const [selectedDay, setSelectedDay] = useState(null);
 
   const loadSchedule = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -284,7 +304,7 @@ function FieldSchedule({ setPage, setSelectedProject }) {
     setErrorMessage("");
 
     try {
-      const [projectResult, customerResult] = await Promise.all([
+      const [projectResult, customerResult, visitResult] = await Promise.all([
         supabase
           .from("projects")
           .select("*")
@@ -292,10 +312,16 @@ function FieldSchedule({ setPage, setSelectedProject }) {
           .neq("status", "Cancelled")
           .order("created_at", { ascending: false }),
         supabase.from("customers").select("*"),
+        supabase
+          .from("prequote_site_visits")
+          .select("*")
+          .in("status", ["Open", "Scheduled"])
+          .order("requested_visit_date", { ascending: true }),
       ]);
 
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
+      if (visitResult.error) throw visitResult.error;
 
       const customerMap = (customerResult.data || []).reduce(
         (result, customer) => {
@@ -307,6 +333,7 @@ function FieldSchedule({ setPage, setSelectedProject }) {
 
       setProjects(projectResult.data || []);
       setCustomers(customerMap);
+      setPrequoteVisits(visitResult.data || []);
     } catch (error) {
       console.error("Field Schedule load error:", error);
       setErrorMessage(
@@ -326,6 +353,53 @@ function FieldSchedule({ setPage, setSelectedProject }) {
     () => buildScheduleEntries(projects, customers),
     [projects, customers]
   );
+
+  const calendarDays = useMemo(() => buildMonthGrid(calendarMonth), [calendarMonth]);
+  const calendarEntriesByDay = useMemo(() => {
+    const result = {};
+    const add = (day, entry) => {
+      if (!day) return;
+      const key = dateKey(day);
+      if (!result[key]) result[key] = [];
+      result[key].push(entry);
+    };
+
+    prequoteVisits.forEach((visit) => add(visit.requested_visit_date, {
+      id: `prequote-${visit.id}`, type: "Site Visit", label: visit.customer_name || "Estimate Visit",
+      owner: visit.assigned_estimator || "Unassigned", location: visit.job_site_address || "Address not entered", kind: "visit",
+    }));
+    entries.forEach((entry) => add(entry.start, {
+      id: entry.id, type: entry.type, label: entry.project.project_name || entry.project.project_number,
+      owner: getOwner(entry.project), location: getLocation(entry.project), project: entry.project,
+      kind: entry.type === "Installation" ? "install" : entry.type === "Test Fit" ? "test" : "visit",
+    }));
+    projects.forEach((project) => {
+      if (!project.planned_start_date) return;
+      const duration = Math.max(Number(project.planned_duration_days || 1), 1);
+      for (let index = 0; index < duration; index += 1) {
+        add(addDays(project.planned_start_date, index), {
+          id: `planned-${project.id}-${index}`, type: "Planned Project", label: project.project_name || project.project_number,
+          owner: getOwner(project), location: getLocation(project), project, kind: "project",
+        });
+      }
+    });
+    return result;
+  }, [entries, prequoteVisits, projects]);
+
+  const unscheduledWork = useMemo(() => [
+    ...prequoteVisits
+      .filter((visit) => !visit.requested_visit_date)
+      .map((visit) => ({
+        id: `unscheduled-visit-${visit.id}`, type: "Estimate Visit", label: visit.customer_name || "Potential Customer",
+        location: visit.job_site_address || "Address not entered", owner: visit.assigned_estimator || "Unassigned", kind: "visit",
+      })),
+    ...projects
+      .filter((project) => !project.planned_start_date && !project.site_visit_start && !project.test_fit_start && !project.install_start)
+      .map((project) => ({
+        id: `unscheduled-project-${project.id}`, type: "Outside Project", label: project.project_name || project.project_number,
+        location: getLocation(project), owner: getOwner(project), kind: "project", project,
+      })),
+  ], [prequoteVisits, projects]);
 
   const ownerOptions = useMemo(
     () => [
@@ -596,6 +670,7 @@ function FieldSchedule({ setPage, setSelectedProject }) {
 
   return (
     <Stack gap="lg">
+      <style>{FIELD_CALENDAR_STYLES}</style>
       <MWPageHeader
         title="Field Schedule"
         subtitle="Live site visits, test fits, and installation commitments."
@@ -607,6 +682,59 @@ function FieldSchedule({ setPage, setSelectedProject }) {
       />
 
       <OutsideWorkspaceNav current="fieldSchedule" setPage={setPage} />
+
+      <MWPanel
+        title="Outside Work Calendar"
+        subtitle="One monthly view for estimate visits, test fits, installations, and planned outside projects such as SSU. Click a day to see everything scheduled."
+        icon={IconCalendarCheck}
+      >
+        <Group justify="space-between" mb="md" wrap="wrap">
+          <Group gap="xs">
+            <Button size="xs" variant="default" aria-label="Previous month" onClick={() => setCalendarMonth((value) => moveMonth(value, -1))}><IconChevronLeft size={16} /></Button>
+            <Button size="xs" variant="light" onClick={() => setCalendarMonth(firstOfMonth())}>Today</Button>
+            <Button size="xs" variant="default" aria-label="Next month" onClick={() => setCalendarMonth((value) => moveMonth(value, 1))}><IconChevronRight size={16} /></Button>
+          </Group>
+          <Title order={3}>{calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</Title>
+          <Group gap="sm"><Badge color="blue">Estimate Visit</Badge><Badge color="orange">Test Fit</Badge><Badge color="green">Install</Badge><Badge color="violet">Planned Project</Badge></Group>
+        </Group>
+        <ScrollArea type="auto">
+          <div className="mw-field-calendar">
+            {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((day) => <div className="mw-field-weekday" key={day}>{day}</div>)}
+            {calendarDays.map((day) => {
+              const key = dateKey(day);
+              const dayEntries = calendarEntriesByDay[key] || [];
+              return <div key={key} className={`mw-field-day ${day.getMonth() !== calendarMonth.getMonth() ? "outside" : ""} ${key === dateKey(new Date()) ? "today" : ""}`} role="button" tabIndex={0} onClick={() => setSelectedDay(day)} onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) setSelectedDay(day); }}>
+                <div className="mw-field-day-head"><span>{day.getDate()}</span><small>{dayEntries.length ? `${dayEntries.length} scheduled` : "Open"}</small></div>
+                {dayEntries.slice(0, 4).map((entry) => <div key={entry.id} className={`mw-field-event ${entry.kind}`} title={`${entry.type}: ${entry.label}`}>{entry.label}</div>)}
+                {dayEntries.length > 4 && <Text size="xs" c="dimmed" mt={4}>+{dayEntries.length - 4} more</Text>}
+              </div>;
+            })}
+          </div>
+        </ScrollArea>
+        <Paper withBorder radius="md" p="md" mt="md">
+          <Group justify="space-between" mb="sm"><div><Text fw={900}>Needs Scheduling</Text><Text size="xs" c="dimmed">Open estimate visits and active projects stay here until a date is assigned.</Text></div><Badge color={unscheduledWork.length ? "orange" : "green"}>{unscheduledWork.length}</Badge></Group>
+          {unscheduledWork.length ? (
+            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
+              {unscheduledWork.map((item) => <Card key={item.id} withBorder radius="md" p="sm">
+                <Group justify="space-between" align="flex-start" wrap="nowrap"><div><Group gap="xs"><Text fw={900} size="sm">{item.label}</Text><Badge size="xs" color={item.kind === "project" ? "violet" : "blue"}>{item.type}</Badge></Group><Text size="xs" c="dimmed">{item.location}</Text><Text size="xs" c="dimmed">Owner: {item.owner}</Text></div>{item.project ? <Button size="xs" variant="light" onClick={() => openProject(item.project)}>Schedule</Button> : <Button size="xs" variant="light" onClick={() => setPage("quoteCenter")}>Open Visit</Button>}</Group>
+              </Card>)}
+            </SimpleGrid>
+          ) : <Alert color="green">Every active outside item has a scheduled date.</Alert>}
+        </Paper>
+      </MWPanel>
+
+      <Modal opened={Boolean(selectedDay)} onClose={() => setSelectedDay(null)} centered size="lg" title={selectedDay ? selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) : "Scheduled Work"}>
+        <Stack gap="sm">
+          {selectedDay && (calendarEntriesByDay[dateKey(selectedDay)] || []).length ? (calendarEntriesByDay[dateKey(selectedDay)] || []).map((entry) => (
+            <Paper key={entry.id} withBorder radius="md" p="md">
+              <Group justify="space-between" align="flex-start">
+                <div><Group gap="xs"><Text fw={900}>{entry.label}</Text><Badge color={entry.kind === "install" ? "green" : entry.kind === "test" ? "orange" : entry.kind === "project" ? "violet" : "blue"}>{entry.type}</Badge></Group><Text size="sm">{entry.location}</Text><Text size="xs" c="dimmed">Assigned to: {entry.owner}</Text></div>
+                {entry.project && <Button size="xs" variant="light" onClick={() => openProject(entry.project)}>Open Project</Button>}
+              </Group>
+            </Paper>
+          )) : <Alert color="green">Nothing is scheduled on this day.</Alert>}
+        </Stack>
+      </Modal>
 
       <MWKpiStrip
         items={[
