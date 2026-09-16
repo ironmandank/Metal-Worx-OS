@@ -134,6 +134,7 @@ function QuoteCenter({
   const [organizedQuote, setOrganizedQuote] = useState(null);
   const [organizerImages, setOrganizerImages] = useState([]);
   const [organizerCreating, setOrganizerCreating] = useState(false);
+  const [deletingQuoteId, setDeletingQuoteId] = useState(null);
   const [showSiteEstimate, setShowSiteEstimate] = useState(true);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
   const [search, setSearch] = useState("");
@@ -711,6 +712,71 @@ function QuoteCenter({
         message: error.message,
         color: "red",
       });
+    }
+  }
+
+  async function deleteQuote(quote) {
+    const quoteLabel = quote.quote_number || `Quote ${quote.id}`;
+    const customerLabel =
+      quote.company_name || quote.customer_name || quote.contact_name || "No customer entered";
+    const linkedProjectWarning =
+      quote.project_id || quote.converted_project_id
+        ? "\n\nThe linked project will remain in the system; only this quote will be deleted."
+        : "";
+
+    if (
+      !window.confirm(
+        `Permanently delete ${quoteLabel} for ${customerLabel}?\n\nThis removes the quote, its line items, and its attached image records. This cannot be undone.${linkedProjectWarning}`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingQuoteId(quote.id);
+    try {
+      const { data: quoteImages, error: imageLoadError } = await supabase
+        .from("project_quote_images")
+        .select("image_url")
+        .eq("quote_id", quote.id);
+      if (imageLoadError) throw imageLoadError;
+
+      const { error: deleteError } = await supabase
+        .from("project_quotes")
+        .delete()
+        .eq("id", quote.id);
+      if (deleteError) throw deleteError;
+
+      const storagePaths = (quoteImages || [])
+        .map((image) => {
+          const marker = "/quote-images/";
+          if (!image.image_url?.includes(marker)) return null;
+          return decodeURIComponent(image.image_url.split(marker)[1]);
+        })
+        .filter(Boolean);
+
+      if (storagePaths.length) {
+        const { error: storageError } = await supabase.storage
+          .from("quote-images")
+          .remove(storagePaths);
+        if (storageError) console.error("Quote image cleanup failed:", storageError);
+      }
+
+      setQuotes((current) => current.filter((item) => item.id !== quote.id));
+      notifications.show({
+        title: "Quote Deleted",
+        message: `${quoteLabel} was permanently removed.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Quote Could Not Be Deleted",
+        message:
+          error.message ||
+          "This quote may still be linked to another record. Nothing was removed.",
+        color: "red",
+      });
+    } finally {
+      setDeletingQuoteId(null);
     }
   }
 
@@ -1545,6 +1611,15 @@ function QuoteCenter({
                         Convert
                       </Button>
                     )}
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    color="red"
+                    loading={deletingQuoteId === quote.id}
+                    onClick={() => deleteQuote(quote)}
+                  >
+                    Delete Quote
+                  </Button>
                 </Group>
               </SimpleGrid>
             </Card>

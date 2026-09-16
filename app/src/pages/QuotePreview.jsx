@@ -1220,7 +1220,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         @media print {
           @page {
             size: Letter;
-            margin: 0;
+            margin: .3in .42in .48in;
           }
 
           body {
@@ -1246,19 +1246,160 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           }
 
           .quote-page {
-            width: 8.5in;
-            min-height: 11in;
-            height: 11in;
-            padding: .32in .42in .3in;
+            width: auto;
+            min-height: 0;
+            height: auto;
+            padding: 0;
             border-bottom: 0;
-            page-break-after: always;
-            break-after: page;
-            overflow: hidden;
-          }
-
-          .quote-page:last-child {
             page-break-after: auto;
             break-after: auto;
+            overflow: visible;
+          }
+
+          .quote-running-header {
+            margin-bottom: 11px;
+            padding-bottom: 8px;
+          }
+
+          .quote-title-grid,
+          .quote-info-table {
+            margin-bottom: 11px;
+          }
+
+          .quote-title-block {
+            padding: 6px 18px 9px;
+          }
+
+          .quote-title-block h1 {
+            margin: 4px 0 2px;
+            font-size: 21px;
+          }
+
+          .quote-info-cell {
+            min-height: 48px;
+            padding: 7px 10px;
+          }
+
+          .quote-info-label {
+            margin-bottom: 2px;
+          }
+
+          .quote-info-value {
+            font-size: 11px;
+            line-height: 1.18;
+          }
+
+          .quote-price-band {
+            margin: 10px 0 4px;
+          }
+
+          .quote-price-label,
+          .quote-price-value {
+            padding: 8px 12px;
+          }
+
+          .quote-price-value {
+            font-size: 21px;
+          }
+
+          .quote-price-notes {
+            margin-bottom: 9px;
+          }
+
+          .quote-section {
+            margin-top: 12px;
+          }
+
+          .quote-section h2 {
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            font-size: 16px;
+            break-after: avoid-page;
+            page-break-after: avoid;
+          }
+
+          .quote-text,
+          .quote-list {
+            font-size: 11px;
+            line-height: 1.33;
+          }
+
+          .quote-list li {
+            margin: 2px 0;
+          }
+
+          .quote-table {
+            font-size: 10px;
+          }
+
+          .quote-table th,
+          .quote-table td {
+            padding: 6px 7px !important;
+          }
+
+          .quote-table tr,
+          .quote-price-band,
+          .quote-info-table,
+          .quote-term-card,
+          .quote-image-card,
+          .quote-signatures {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .quote-image-grid {
+            gap: 8px;
+            margin-top: 7px;
+          }
+
+          .quote-image-card img {
+            height: 145px;
+          }
+
+          .quote-terms-grid {
+            gap: 8px;
+            margin-top: 7px;
+          }
+
+          .quote-term-card {
+            min-height: 0;
+            padding: 8px;
+          }
+
+          .quote-term-card h3 {
+            margin-bottom: 4px;
+            font-size: 11px;
+          }
+
+          .quote-term-card div {
+            font-size: 10px;
+            line-height: 1.3;
+          }
+
+          .quote-acceptance {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .quote-signature {
+            min-height: 112px;
+            padding: 8px;
+          }
+
+          .quote-signature h3 {
+            margin: -8px -8px 34px;
+            padding: 7px 8px;
+          }
+
+          .quote-signature-line {
+            margin-top: 15px;
+          }
+
+          .quote-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -.31in;
           }
 
           .quote-running-header,
@@ -1447,29 +1588,6 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             value={quote.included_services}
           />
 
-          <footer className="quote-footer">
-            METAL WORX INC. | Veteran Owned | American Made | Page 1
-          </footer>
-        </article>
-
-        <article className="quote-page">
-          <header className="quote-running-header">
-            <img
-              src={COMPANY_LOGO_URL}
-              alt="Metal Worx Inc."
-              className="quote-logo"
-            />
-            <div className="quote-company">
-              METAL WORX INC.
-              <br />
-              1122 Gillespie St. | Fayetteville, NC 28306
-              <br />
-              (910) 438-9353 | info@metalworxinc.net
-              <br />
-              www.metalworxinc.net | Veteran Owned
-            </div>
-          </header>
-
           <section className="quote-section">
             <h2>Price Breakdown</h2>
             <Table className="quote-table">
@@ -1564,29 +1682,6 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             </section>
           )}
 
-          <footer className="quote-footer">
-            METAL WORX INC. | Veteran Owned | American Made | Page 2
-          </footer>
-        </article>
-
-        <article className="quote-page">
-          <header className="quote-running-header">
-            <img
-              src={COMPANY_LOGO_URL}
-              alt="Metal Worx Inc."
-              className="quote-logo"
-            />
-            <div className="quote-company">
-              METAL WORX INC.
-              <br />
-              1122 Gillespie St. | Fayetteville, NC 28306
-              <br />
-              (910) 438-9353 | info@metalworxinc.net
-              <br />
-              www.metalworxinc.net | Veteran Owned
-            </div>
-          </header>
-
           {assumptions.length > 0 && (
             <section className="quote-section">
               <h2>Assumptions</h2>
@@ -1643,42 +1738,6 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             </section>
           )}
 
-          {!assumptions.length &&
-            !exclusions.length &&
-            !quote.safety_technical_notice &&
-            !quoteImages.length && (
-              <section className="quote-section">
-                <h2>Project Conditions</h2>
-                <div className="quote-text">
-                  No additional assumptions, exclusions, technical notices, or
-                  project images were entered for this quotation.
-                </div>
-              </section>
-            )}
-
-          <footer className="quote-footer">
-            METAL WORX INC. | Veteran Owned | American Made | Page 3
-          </footer>
-        </article>
-
-        <article className="quote-page">
-          <header className="quote-running-header">
-            <img
-              src={COMPANY_LOGO_URL}
-              alt="Metal Worx Inc."
-              className="quote-logo"
-            />
-            <div className="quote-company">
-              METAL WORX INC.
-              <br />
-              1122 Gillespie St. | Fayetteville, NC 28306
-              <br />
-              (910) 438-9353 | info@metalworxinc.net
-              <br />
-              www.metalworxinc.net | Veteran Owned
-            </div>
-          </header>
-
           <section className="quote-section">
             <h2>Payment Terms</h2>
             <div className="quote-terms-grid">
@@ -1733,7 +1792,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           </section>
 
           <footer className="quote-footer">
-            METAL WORX INC. | Veteran Owned | American Made | Page 4
+            METAL WORX INC. | Veteran Owned | American Made
           </footer>
         </article>
       </main>
