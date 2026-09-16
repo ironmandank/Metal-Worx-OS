@@ -40,7 +40,7 @@ function formatDue(value) {
   });
 }
 
-function QuickTurnaroundDashboard({ setPage, activeUser }) {
+function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [commitments, setCommitments] = useState([]);
@@ -126,7 +126,7 @@ function QuickTurnaroundDashboard({ setPage, activeUser }) {
     <MWPanel title="Commitment Controls" subtitle="Filter the board or capture urgent work immediately" icon={IconBolt}>
       <Group justify="space-between">
         <Group><Select w={190} value={statusFilter} onChange={(value) => setStatusFilter(value || "Active")} data={["Active", "Open", "Acknowledged", "In Progress", "Blocked", "Completed", "Cancelled", { value: "all", label: "All Statuses" }]}/><Select w={170} value={priorityFilter} onChange={(value) => setPriorityFilter(value || "all")} data={[{ value: "all", label: "All Priorities" }, "Critical", "Urgent", "High"]}/><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
-        <Button color="red" leftSection={<IconPlus size={18}/>} onClick={() => setModalOpen(true)}>New Quick Commitment</Button>
+        {!readOnly && <Button color="red" leftSection={<IconPlus size={18}/>} onClick={() => setModalOpen(true)}>New Quick Commitment</Button>}
       </Group>
     </MWPanel>
 
@@ -136,7 +136,7 @@ function QuickTurnaroundDashboard({ setPage, activeUser }) {
         <Paper p="sm" withBorder><Group justify="space-between"><Group gap="xs"><IconClock size={18}/><Text fw={800}>Required {formatDue(item.required_by)}</Text></Group><Text fw={900} c={item.timing_status === "Overdue" ? "red.4" : "gray.1"}>{item.timing_status === "Overdue" ? "PAST DUE" : `${Math.round(Number(item.hours_remaining || 0))} hrs`}</Text></Group></Paper>
         <SimpleGrid cols={2}><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>ASSIGNED TO</Text><Text fw={750}>{item.assigned_to || "Unassigned"}</Text></Stack><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>MATERIALS</Text><Badge w="fit-content" color={item.materials_status === "Ready" || item.materials_status === "Not Required" ? "green" : "orange"} variant="light">{item.materials_status}</Badge></Stack></SimpleGrid>
         {item.description && <Text size="sm">{item.description}</Text>}
-        <Group grow>{item.status === "Open" && <Button color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button color="green" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete</Button>}</Group>
+        {!readOnly && <Group grow>{item.status === "Open" && <Button color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button color="green" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete</Button>}</Group>}
       </Stack></Paper>)}</SimpleGrid>}
     </MWPanel>
 

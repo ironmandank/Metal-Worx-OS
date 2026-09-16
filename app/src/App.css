@@ -4093,6 +4093,22 @@ textarea.form-input {
   backdrop-filter: blur(16px);
 }
 
+.mw-readonly-indicator {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #64511c;
+  border-radius: 8px;
+  color: #ffe7a3;
+  background: rgba(105, 78, 8, 0.28);
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .mw-icon-shell .mw-topbar-search {
   width: min(510px, 48vw);
   min-height: 38px;

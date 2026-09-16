@@ -161,6 +161,7 @@ const NAV_GROUPS = [
       {
         page: "orderBuilder",
         label: "New Order",
+        writeRestricted: true,
         icon: IconShoppingCart,
       },
       {
@@ -231,17 +232,20 @@ const NAV_GROUPS = [
       {
         page: "inventoryReceiving",
         label: "Receiving",
+        writeRestricted: true,
         icon: IconTruckDelivery,
       },
       {
         page: "showSales",
         label: "Shows & Mobile Sales",
+        writeRestricted: true,
         icon: IconShoppingCart,
       },
       {
         page: "materialRequestCart",
         label: "Request Materials",
         section: "Material Requests",
+        writeRestricted: true,
         icon: IconShoppingCart,
       },
       {
@@ -263,6 +267,7 @@ const NAV_GROUPS = [
       {
         page: "inventoryCount",
         label: "Inventory Count Mode",
+        writeRestricted: true,
         icon: IconShieldCheck,
       },
       {
@@ -361,11 +366,13 @@ const NAV_GROUPS = [
         page: "productTemplates",
         label: "Product Templates",
         section: "System Setup",
+        writeRestricted: true,
         icon: IconTemplate,
       },
       {
         page: "workflowTemplates",
         label: "Workflow Templates",
+        writeRestricted: true,
         icon: IconArrowsShuffle,
       },
       {
@@ -414,14 +421,21 @@ function AppLayout({
   const isAdministrator = String(
     authenticatedProfile?.access_level || "",
   ).toLowerCase().includes("admin");
+  const isReadOnly = String(
+    authenticatedProfile?.access_level || "",
+  ).toLowerCase().includes("read only");
 
   const visibleNavGroups = useMemo(
     () =>
       NAV_GROUPS.map((group) => ({
         ...group,
-        items: group.items.filter((item) => !item.adminOnly || isAdministrator),
+        items: group.items.filter(
+          (item) =>
+            (!item.adminOnly || isAdministrator) &&
+            (!item.writeRestricted || !isReadOnly),
+        ),
       })),
-    [isAdministrator],
+    [isAdministrator, isReadOnly],
   );
 
   const activeGroup = useMemo(
@@ -753,6 +767,7 @@ function AppLayout({
           </div>
 
           <div className="mw-topbar-actions">
+            {isReadOnly && <div className="mw-readonly-indicator">View Only</div>}
             <div
               className="mw-global-shop-status"
               data-tour="shop-status"

@@ -420,7 +420,7 @@ function normalizeEmployee(record) {
   };
 }
 
-export default function HotToday() {
+export default function HotToday({ readOnly = false }) {
   const [items, setItems] = useState([]);
   const [artItems, setArtItems] = useState([]);
   const [artForm, setArtForm] = useState(EMPTY_ART_FORM);
@@ -985,14 +985,14 @@ export default function HotToday() {
               </ActionIcon>
             </Tooltip>
 
-            <Button
+            {!readOnly && <Button
               color="red"
               size="md"
               leftSection={<IconFlame size={18} />}
               onClick={openCreateModal}
             >
               Promote Work
-            </Button>
+            </Button>}
           </Group>
         </Group>
       </Paper>
@@ -1211,7 +1211,7 @@ export default function HotToday() {
 
                   return (
                     <Table.Tr key={item.id}>
-                      <Table.Td>
+                      {!readOnly && <Table.Td>
                         <Stack gap={4}>
                           <Group gap="xs">
                             <Badge
@@ -1242,7 +1242,7 @@ export default function HotToday() {
                             Reason: {item.reason}
                           </Text>
                         </Stack>
-                      </Table.Td>
+                      </Table.Td>}
 
                       <Table.Td>
                         <Stack gap={3}>

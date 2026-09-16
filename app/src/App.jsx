@@ -33,6 +33,7 @@ const InventoryCountMode = page("InventoryCountMode");
 const InventoryImportWizard = page("InventoryImportWizard");
 const ShowSales = page("ShowSales");
 const QuickTurnaroundDashboard = page("QuickTurnaroundDashboard");
+const HotToday = page("HotToday");
 const NewJob = page("NewJob");
 const JobQueue = page("JobQueue");
 const ProductionBoard = page("ProductionBoard");
@@ -352,12 +353,38 @@ function App() {
     const isAdministrator = String(
       authenticatedProfile?.access_level || "",
     ).toLowerCase().includes("admin");
+    const isReadOnly = String(
+      authenticatedProfile?.access_level || "",
+    ).toLowerCase().includes("read only");
+    const readOnlyRestrictedPages = new Set([
+      "newInventoryItem",
+      "inventoryAdjustment",
+      "inventoryReceiving",
+      "inventoryCount",
+      "inventoryImport",
+      "materialRequestCart",
+      "newJob",
+      "newProject",
+      "editProject",
+      "newProductTemplate",
+      "orderBuilder",
+    ]);
 
     if (administratorOnlyPages.has(page) && !isAdministrator) {
       return (
         <AccessDenied
           accessLevel={authenticatedProfile?.access_level}
           requestedPage={page === "employeeLogins" ? "Employee Logins" : "Excel Import Wizard"}
+          setPage={setPage}
+        />
+      );
+    }
+
+    if (isReadOnly && readOnlyRestrictedPages.has(page)) {
+      return (
+        <AccessDenied
+          accessLevel={authenticatedProfile?.access_level}
+          requestedPage="Create or Edit Workspace"
           setPage={setPage}
         />
       );
@@ -536,8 +563,16 @@ function App() {
 
     if (page === "quickTurnaround") {
       return (
-        <QuickTurnaroundDashboard setPage={setPage} activeUser={activeUser} />
+        <QuickTurnaroundDashboard
+          setPage={setPage}
+          activeUser={activeUser}
+          readOnly={isReadOnly}
+        />
       );
+    }
+
+    if (page === "hotToday") {
+      return <HotToday readOnly={isReadOnly} />;
     }
 
     if (page === "newJob") {
