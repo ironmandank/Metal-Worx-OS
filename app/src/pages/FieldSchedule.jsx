@@ -716,7 +716,17 @@ function FieldSchedule({ setPage, setSelectedProject }) {
           {unscheduledWork.length ? (
             <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
               {unscheduledWork.map((item) => <Card key={item.id} withBorder radius="md" p="sm">
-                <Group justify="space-between" align="flex-start" wrap="nowrap"><div><Group gap="xs"><Text fw={900} size="sm">{item.label}</Text><Badge size="xs" color={item.kind === "project" ? "violet" : "blue"}>{item.type}</Badge></Group><Text size="xs" c="dimmed">{item.location}</Text><Text size="xs" c="dimmed">Owner: {item.owner}</Text></div>{item.project ? <Button size="xs" variant="light" onClick={() => openProject(item.project)}>Schedule</Button> : <Button size="xs" variant="light" onClick={() => setPage("quoteCenter")}>Open Visit</Button>}</Group>
+                <Stack justify="space-between" h="100%" gap="sm">
+                  <div style={{ minWidth: 0 }}>
+                    <Text fw={900} size="sm" lh={1.25} style={{ overflowWrap: "anywhere" }}>{item.label}</Text>
+                    <Badge mt={6} size="xs" color={item.kind === "project" ? "violet" : "blue"}>{item.type}</Badge>
+                    <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
+                    <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
+                  </div>
+                  {item.project
+                    ? <Button fullWidth size="xs" variant="light" onClick={() => openProject(item.project)}>Schedule Project</Button>
+                    : <Button fullWidth size="xs" variant="light" onClick={() => setPage("quoteCenter")}>Open Estimate Visit</Button>}
+                </Stack>
               </Card>)}
             </SimpleGrid>
           ) : <Alert color="green">Every active outside item has a scheduled date.</Alert>}

@@ -1221,7 +1221,10 @@ function Procurement({
                   radius="xl"
                   size={48}
                 >
-                  {QUEUE_META[queue].icon}
+                  {(() => {
+                    const EmptyQueueIcon = QUEUE_META[queue].icon;
+                    return <EmptyQueueIcon size={22} />;
+                  })()}
                 </ThemeIcon>
 
                 <Text

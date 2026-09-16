@@ -34,15 +34,19 @@ export default function OutsideWorkspaceNav({ current, setPage }) {
               style={{
                 cursor: "pointer",
                 textAlign: "left",
+                minHeight: 94,
                 borderColor: active ? `var(--mantine-color-${area.color}-6)` : undefined,
                 background: active ? `color-mix(in srgb, var(--mantine-color-${area.color}-9) 32%, transparent)` : "rgba(255,255,255,.018)",
               }}
             >
-              <Group wrap="nowrap" gap="sm">
+              <Group wrap="nowrap" gap="sm" align="flex-start">
                 <ThemeIcon color={area.color} variant={active ? "filled" : "light"} radius="md"><Icon size={18} /></ThemeIcon>
-                <Stack gap={1} style={{ minWidth: 0 }}>
-                  <Group gap={6} wrap="nowrap"><Badge size="xs" color={area.color} variant="light">{area.step}</Badge><Text size="sm" fw={900} truncate>{area.label}</Text></Group>
-                  <Text size="xs" c="dimmed" truncate>{area.description}</Text>
+                <Stack gap={3} style={{ minWidth: 0, flex: 1 }}>
+                  <Group gap={6} wrap="wrap" align="center">
+                    <Badge size="xs" color={area.color} variant="light">{area.step}</Badge>
+                    <Text size="sm" fw={900} lh={1.2} style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{area.label}</Text>
+                  </Group>
+                  <Text size="xs" c="dimmed" lh={1.25} style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{area.description}</Text>
                 </Stack>
               </Group>
             </Card>
