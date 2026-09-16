@@ -27,6 +27,7 @@ import { downloadSignedApprovalPdf } from "../services/signedApprovalExportServi
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
+import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 
 const TEMPLATE_FIELDS = [
   "quote_title",
@@ -1189,6 +1190,8 @@ function QuoteCenter({
         setPage={setPage}
         showDashboard={true}
       />
+
+      <OutsideWorkspaceNav current="quoteCenter" setPage={setPage} />
 
       <Group justify="space-between" mb="lg" wrap="wrap">
         <Button

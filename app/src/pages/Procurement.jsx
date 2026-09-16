@@ -37,6 +37,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import MWPageHeader from "../components/ui/MWPageHeader";
+import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 import MWSection from "../components/ui/MWSection";
 
 import {
@@ -949,6 +950,8 @@ function Procurement({
         backLabel="Mission Control"
         showDashboard={true}
       />
+
+      <OutsideWorkspaceNav current="procurement" setPage={setPage} />
 
       <SimpleGrid
         cols={{

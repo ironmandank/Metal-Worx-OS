@@ -41,8 +41,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
+import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 import { supabase } from "../lib/supabase";
 import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../lib/calendar";
+import { OUTSIDE_PHASES, getOutsideNextDate, getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
 
 const CALENDAR_TYPES = [
@@ -104,6 +106,10 @@ function formatDate(value, includeTime = false) {
   });
 }
 
+function money(value) {
+  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
 function getCustomerName(customer) {
   if (!customer) return "";
 
@@ -157,6 +163,7 @@ function Projects({ setPage, setSelectedProject }) {
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
   const [viewMode, setViewMode] = useState("active");
+  const [workspaceView, setWorkspaceView] = useState("board");
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -195,9 +202,11 @@ function Projects({ setPage, setSelectedProject }) {
       const projectIds = trackedProjects.map((project) => project.id);
       let checklistRows = [];
       let updateRows = [];
+      let quoteRows = [];
+      let approvalRows = [];
 
       if (projectIds.length) {
-        const [checklistResult, updateResult] = await Promise.all([
+        const [checklistResult, updateResult, quoteResult] = await Promise.all([
           supabase
             .from("project_checklist_items")
             .select("project_id, status")
@@ -210,12 +219,29 @@ function Projects({ setPage, setSelectedProject }) {
             .in("project_id", projectIds)
             .order("update_date", { ascending: false })
             .order("created_at", { ascending: false }),
+          supabase
+            .from("project_quotes")
+            .select("id, project_id, status, created_at")
+            .in("project_id", projectIds)
+            .order("created_at", { ascending: false }),
         ]);
 
         if (checklistResult.error) throw checklistResult.error;
         if (updateResult.error) throw updateResult.error;
+        if (quoteResult.error) throw quoteResult.error;
         checklistRows = checklistResult.data || [];
         updateRows = updateResult.data || [];
+        quoteRows = quoteResult.data || [];
+        const quoteIds = quoteRows.map((quote) => quote.id);
+        if (quoteIds.length) {
+          const approvalResult = await supabase
+            .from("customer_quote_approvals")
+            .select("id, quote_id, status, approved_at, signer_name, document_version, created_at")
+            .in("quote_id", quoteIds)
+            .order("created_at", { ascending: false });
+          if (approvalResult.error) throw approvalResult.error;
+          approvalRows = approvalResult.data || [];
+        }
       }
 
       const trackingMap = Object.fromEntries(
@@ -227,6 +253,8 @@ function Projects({ setPage, setSelectedProject }) {
             complete: 0,
             blocked: 0,
             latestUpdate: null,
+            latestApproval: null,
+            latestQuote: null,
           },
         ])
       );
@@ -243,6 +271,16 @@ function Projects({ setPage, setSelectedProject }) {
       updateRows.forEach((update) => {
         const tracking = trackingMap[update.project_id];
         if (tracking && !tracking.latestUpdate) tracking.latestUpdate = update;
+      });
+
+      const projectIdByQuote = Object.fromEntries(quoteRows.map((quote) => [quote.id, quote.project_id]));
+      quoteRows.forEach((quote) => {
+        const tracking = trackingMap[quote.project_id];
+        if (tracking && !tracking.latestQuote) tracking.latestQuote = quote;
+      });
+      approvalRows.forEach((approval) => {
+        const tracking = trackingMap[projectIdByQuote[approval.quote_id]];
+        if (tracking && !tracking.latestApproval) tracking.latestApproval = approval;
       });
 
       setProjects(loadedProjects);
@@ -273,7 +311,7 @@ function Projects({ setPage, setSelectedProject }) {
 
   const filteredProjects = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const source = viewMode === "completed" ? completedProjects : projects;
+    const source = workspaceView === "completed" ? completedProjects : projects;
     if (!term) return source;
 
     return source.filter((project) => {
@@ -303,7 +341,37 @@ function Projects({ setPage, setSelectedProject }) {
         .toLowerCase()
         .includes(term);
     });
-  }, [completedProjects, customers, projects, search, viewMode]);
+  }, [completedProjects, customers, projects, search, workspaceView]);
+
+  const leadershipSummary = useMemo(() => {
+    const now = new Date();
+    const nextWeek = new Date(now.getTime() + 7 * 86400000);
+    return {
+      attention: projects.filter((project) => {
+        const tracking = trackingByProject[project.id];
+        return tracking?.blocked > 0 || tracking?.latestUpdate?.leadership_attention_required || project.status === "On Hold";
+      }).length,
+      overdue: projects.filter((project) => {
+        const due = project.due_date || project.target_completion_date;
+        return due && new Date(due) < now;
+      }).length,
+      upcoming: projects.filter((project) => {
+        const date = getOutsideNextDate(project);
+        if (!date) return false;
+        const value = new Date(date);
+        return value >= now && value <= nextWeek;
+      }).length,
+      balance: projects.reduce((sum, project) => sum + Math.max(Number(project.balance_due || 0), 0), 0),
+    };
+  }, [projects, trackingByProject]);
+
+  const projectsByPhase = useMemo(() => Object.fromEntries(
+    OUTSIDE_PHASES.map((phase) => [phase.key, filteredProjects.filter((project) => {
+      const approval = trackingByProject[project.id]?.latestApproval;
+      const operationalProject = approval?.status === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project;
+      return getOutsidePhase(operationalProject).key === phase.key;
+    })])
+  ), [filteredProjects, trackingByProject]);
 
   const siteVisitCount = projects.filter(
     (project) =>
@@ -476,6 +544,8 @@ function Projects({ setPage, setSelectedProject }) {
         showDashboard
       />
 
+      <OutsideWorkspaceNav current="projects" setPage={setPage} />
+
       <MWKpiStrip
         compact
         columns={{ base: 1, sm: 2, xl: 4 }}
@@ -511,6 +581,34 @@ function Projects({ setPage, setSelectedProject }) {
         ]}
       />
 
+      <MWPanel
+        title="Outside Operations Workspace"
+        subtitle="Move between the stage board, detailed project list, capacity calendar, and completed records."
+        icon={IconTool}
+      >
+        <SegmentedControl
+          fullWidth
+          value={workspaceView}
+          onChange={(value) => {
+            setWorkspaceView(value);
+            setViewMode(value === "completed" ? "completed" : "active");
+          }}
+          data={[
+            { label: "Operations Board", value: "board" },
+            { label: "Project List", value: "list" },
+            { label: "Calendar", value: "calendar" },
+            { label: `Completed (${completedProjects.length})`, value: "completed" },
+          ]}
+        />
+        <SimpleGrid cols={{ base: 2, lg: 4 }} mt="lg">
+          <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Needs Leadership</Text><Text fz={28} fw={900} c={leadershipSummary.attention ? "red" : "green"}>{leadershipSummary.attention}</Text></Paper>
+          <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Overdue</Text><Text fz={28} fw={900} c={leadershipSummary.overdue ? "orange" : "green"}>{leadershipSummary.overdue}</Text></Paper>
+          <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Next 7 Days</Text><Text fz={28} fw={900}>{leadershipSummary.upcoming}</Text></Paper>
+          <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Outstanding Balance</Text><Text fz={28} fw={900}>{money(leadershipSummary.balance)}</Text></Paper>
+        </SimpleGrid>
+      </MWPanel>
+
+      {workspaceView === "calendar" && <>
       <MWPanel
         title="Project Capacity Calendar"
         subtitle="Full-month workload view. Open Edit Project to set the planned start date and estimated workdays."
@@ -580,6 +678,63 @@ function Projects({ setPage, setSelectedProject }) {
           )}
         </Stack>
       </Modal>
+      </>}
+
+      {workspaceView === "board" && (
+        <MWPanel
+          title="Stage-Based Operations Board"
+          subtitle="Each active project appears once in its current stage. The card shows the next action, owner, timing, blockers, and financial readiness."
+          icon={IconClipboardCheck}
+        >
+          <Group mb="lg" wrap="wrap">
+            <TextInput
+              style={{ flex: 1, minWidth: 280 }}
+              placeholder="Search projects, customers, owners, addresses, or next actions..."
+              leftSection={<IconSearch size={17} />}
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+            <Button variant="light" color="gray" leftSection={refreshing ? <Loader size={16} /> : <IconRefresh size={17} />} disabled={refreshing} onClick={() => loadProjects(false)}>Refresh</Button>
+          </Group>
+          <ScrollArea type="auto">
+            <Group align="stretch" wrap="nowrap" gap="md" style={{ minWidth: 1820 }}>
+              {OUTSIDE_PHASES.map((phase) => (
+                <Paper key={phase.key} p="sm" radius="lg" withBorder style={{ width: 245, flex: "0 0 245px", background: "rgba(255,255,255,.02)" }}>
+                  <Group justify="space-between" mb="sm">
+                    <Text fw={900}>{phase.label}</Text>
+                    <Badge color={phase.color} variant="filled">{projectsByPhase[phase.key]?.length || 0}</Badge>
+                  </Group>
+                  <Stack gap="sm">
+                    {(projectsByPhase[phase.key] || []).map((project) => {
+                      const customer = customers[project.customer_id];
+                      const tracking = trackingByProject[project.id] || {};
+                      const approvalStatus = tracking.latestApproval?.status || project.approval_status;
+                      const operationalProject = approvalStatus === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project;
+                      const nextDate = getOutsideNextDate(project);
+                      const needsAttention = tracking.blocked > 0 || tracking.latestUpdate?.leadership_attention_required;
+                      return <Card key={project.id} withBorder p="sm" radius="md" onClick={() => openProject(project)} style={{ cursor: "pointer", borderColor: needsAttention ? "var(--mantine-color-red-6)" : undefined }}>
+                        <Stack gap={7}>
+                          <Group justify="space-between" align="flex-start" wrap="nowrap"><Text fw={900} size="sm" lineClamp={2}>{getProjectIdentity(project, customer)}</Text>{project.priority === "Rush" && <Badge color="red" size="xs">Rush</Badge>}</Group>
+                          <Text size="xs" c="dimmed">{project.assigned_to || project.intake_owner || "Unassigned"}</Text>
+                          <Text size="xs" fw={800}>{project.next_action || getSuggestedNextAction(operationalProject)}</Text>
+                          <Text size="xs" c="dimmed">Next date: {formatDate(nextDate)}</Text>
+                          <Group gap={5} wrap="wrap">
+                            {needsAttention && <Badge color="red" size="xs">Attention</Badge>}
+                            <Badge color={approvalStatus === "Approved" ? "green" : approvalStatus === "Changes Requested" ? "red" : "gray"} size="xs">Approval: {approvalStatus || "Pending"}</Badge>
+                            {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"} size="xs">Deposit</Badge>}
+                            {Number(project.balance_due || 0) > 0 && <Badge color="yellow" size="xs">{money(project.balance_due)} due</Badge>}
+                          </Group>
+                        </Stack>
+                      </Card>;
+                    })}
+                    {!(projectsByPhase[phase.key] || []).length && <Text size="xs" c="dimmed" ta="center" py="lg">No projects</Text>}
+                  </Stack>
+                </Paper>
+              ))}
+            </Group>
+          </ScrollArea>
+        </MWPanel>
+      )}
 
       {errorMessage && (
         <Alert
@@ -591,7 +746,7 @@ function Projects({ setPage, setSelectedProject }) {
         </Alert>
       )}
 
-      <MWPanel
+      {(workspaceView === "list" || workspaceView === "completed") && <MWPanel
         title={viewMode === "completed" ? "Completed Project Library" : "Project Tracker"}
         subtitle={
           viewMode === "completed"
@@ -600,16 +755,6 @@ function Projects({ setPage, setSelectedProject }) {
         }
         icon={IconTool}
       >
-        <SegmentedControl
-          mb="lg"
-          fullWidth
-          value={viewMode}
-          onChange={setViewMode}
-          data={[
-            { label: `Active Projects (${projects.length})`, value: "active" },
-            { label: `Completed Library (${completedProjects.length})`, value: "completed" },
-          ]}
-        />
         <Group mb="lg" wrap="wrap">
           <TextInput
             style={{ flex: 1, minWidth: 280 }}
@@ -942,7 +1087,7 @@ function Projects({ setPage, setSelectedProject }) {
             })}
           </SimpleGrid>
         )}
-      </MWPanel>
+      </MWPanel>}
     </Stack>
   );
 }

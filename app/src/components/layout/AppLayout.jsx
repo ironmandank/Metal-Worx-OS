@@ -187,23 +187,31 @@ const NAV_GROUPS = [
     icon: IconTool,
     items: [
       {
+        page: "projects",
+        label: "Outside Command Center",
+        description: "All outside jobs organized by current stage",
+        step: "OVERVIEW",
+        icon: IconLayoutDashboard,
+      },
+      {
         page: "quoteCenter",
-        label: "Quote Center",
+        label: "Estimates & Approvals",
+        description: "Site visits, quotes, customer approval, and signed records",
+        step: "01",
         icon: IconFileSpreadsheet,
       },
       {
-        page: "projects",
-        label: "Outside Projects",
-        icon: IconTool,
-      },
-      {
         page: "procurement",
-        label: "Procurement Center",
+        label: "Materials & Procurement",
+        description: "Pricing, purchasing, receiving, and material readiness",
+        step: "02",
         icon: IconPackage,
       },
       {
         page: "fieldSchedule",
         label: "Field Schedule & Installs",
+        description: "Site visits, test fits, installation dates, and crews",
+        step: "03",
         icon: IconCalendarEvent,
       },
     ],
@@ -614,7 +622,7 @@ function AppLayout({
               <div className="mw-flyout-header">
                 <div>
                   <strong>{selectedGroup.label}</strong>
-                  <span>Metal Worx navigation</span>
+                  <span>{selectedGroup.id === "outside" ? "Estimate → build → install → closeout" : "Metal Worx navigation"}</span>
                 </div>
                 <button
                   type="button"
@@ -624,6 +632,16 @@ function AppLayout({
                   <IconX />
                 </button>
               </div>
+
+              {selectedGroup.id === "outside" && (
+                <div className="mw-outside-flow" aria-label="Outside project workflow">
+                  <span>Estimate</span><i />
+                  <span>Approve</span><i />
+                  <span>Build</span><i />
+                  <span>Install</span><i />
+                  <span>Close</span>
+                </div>
+              )}
 
               <div className="mw-flyout-items">
                 {selectedGroup.items.map((item) => {
@@ -642,7 +660,11 @@ function AppLayout({
                       }
                     >
                       <ItemIcon />
-                      <span>{item.label}</span>
+                      <span className="mw-flyout-item-copy">
+                        <small>{item.step}</small>
+                        <strong>{item.label}</strong>
+                        {item.description && <em>{item.description}</em>}
+                      </span>
                       <IconChevronRight />
                     </button>
                   );

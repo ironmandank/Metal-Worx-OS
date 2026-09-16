@@ -1,0 +1,26 @@
+import { describe, expect, it } from "vitest";
+import { getOutsidePhase, getSuggestedNextAction } from "./outsideProjectWorkflow";
+
+describe("outside project workflow", () => {
+  it("places a project needing a site visit in pre-quote", () => {
+    const project = { site_visit_required: true, site_visit_status: "Not Started" };
+    expect(getOutsidePhase(project).key).toBe("pre_quote");
+    expect(getSuggestedNextAction(project)).toMatch(/site visit/i);
+  });
+
+  it("places a sent quote awaiting customer approval in quote and approval", () => {
+    const project = { quote_required: true, quote_status: "Sent", customer_approval_required: true, approval_status: "Pending" };
+    expect(getOutsidePhase(project).key).toBe("quote_approval");
+  });
+
+  it("places approved fabrication work in production", () => {
+    const project = { quote_required: true, quote_status: "Approved", customer_approval_required: true, approval_status: "Approved", status: "In Progress", fabrication_required: true, fabrication_status: "In Progress", balance_status: "Pending" };
+    expect(getOutsidePhase(project).key).toBe("production");
+  });
+
+  it("places finished work with a balance in closeout", () => {
+    const project = { customer_approval_required: false, status: "In Progress", balance_status: "Due" };
+    expect(getOutsidePhase(project).key).toBe("closeout");
+    expect(getSuggestedNextAction(project)).toMatch(/remaining balance/i);
+  });
+});

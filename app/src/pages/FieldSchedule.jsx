@@ -30,6 +30,7 @@ import {
 
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
+import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
 
@@ -604,6 +605,8 @@ function FieldSchedule({ setPage, setSelectedProject }) {
         backLabel="Projects"
         showDashboard
       />
+
+      <OutsideWorkspaceNav current="fieldSchedule" setPage={setPage} />
 
       <MWKpiStrip
         items={[

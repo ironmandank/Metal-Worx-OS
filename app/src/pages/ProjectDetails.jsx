@@ -10,7 +10,9 @@ import {
   Loader,
   Modal,
   NumberInput,
+  Paper,
   ScrollArea,
+  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -55,6 +57,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { releaseProject } from "../lib/productionWorkflow";
+import { getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 
 import MWActionBar from "../components/ui/MWActionBar";
 import MWCommandCenter from "../components/ui/MWCommandCenter";
@@ -69,6 +72,7 @@ import MWStatPill from "../components/ui/MWStatPill";
 import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
+import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
 function money(value) {
   return Number(value || 0).toLocaleString("en-US", {
@@ -355,6 +359,12 @@ function ProjectDetails({
   const [materialRequests, setMaterialRequests] = useState([]);
 
   const [activeTab, setActiveTab] = useState(selectedProject?.initialTab || "overview");
+  const tabGroup = useMemo(() => {
+    if (["workflow", "production", "schedule", "tracking"].includes(activeTab)) return "work";
+    if (activeTab === "procurement") return "financial";
+    if (["activity", "notes", "package"].includes(activeTab)) return "records";
+    return "command";
+  }, [activeTab]);
 
   const [materialsLoading, setMaterialsLoading] = useState(false);
 
@@ -363,6 +373,7 @@ function ProjectDetails({
   const [saving, setSaving] = useState(false);
   const [releasingProduction, setReleasingProduction] = useState(false);
   const [projectPayments, setProjectPayments] = useState([]);
+  const [customerApproval, setCustomerApproval] = useState(null);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
@@ -411,6 +422,7 @@ function ProjectDetails({
     loadProject();
     loadMaterialRequests();
     loadProjectPayments();
+    loadCustomerApproval();
     setActiveTab(selectedProject.initialTab || "overview");
   }, [selectedProject]);
 
@@ -471,6 +483,32 @@ function ProjectDetails({
       });
     } finally {
       setPaymentsLoading(false);
+    }
+  }
+
+  async function loadCustomerApproval() {
+    if (!selectedProject?.id) return setCustomerApproval(null);
+    try {
+      const { data: quotes, error: quoteError } = await supabase
+        .from("project_quotes")
+        .select("id")
+        .eq("project_id", selectedProject.id)
+        .order("created_at", { ascending: false });
+      if (quoteError) throw quoteError;
+      const quoteIds = (quotes || []).map((quote) => quote.id);
+      if (!quoteIds.length) return setCustomerApproval(null);
+      const { data, error } = await supabase
+        .from("customer_quote_approvals")
+        .select("*")
+        .in("quote_id", quoteIds)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      setCustomerApproval(data || null);
+    } catch (error) {
+      console.error("Customer approval load error:", error);
+      setCustomerApproval(null);
     }
   }
 
@@ -1089,7 +1127,7 @@ function ProjectDetails({
   }
 
   async function refreshProject() {
-    await Promise.all([loadProject(), loadMaterialRequests()]);
+    await Promise.all([loadProject(), loadMaterialRequests(), loadProjectPayments(), loadCustomerApproval()]);
   }
 
   const procurementSummary = useMemo(
@@ -1932,6 +1970,27 @@ function ProjectDetails({
 
         <MWActionBar actions={actionItems} />
 
+        <MWSection title="Project Workspace">
+          <Stack gap="md">
+            <SimpleGrid cols={{ base: 1, md: 3 }}>
+              <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Current Stage</Text><Text fw={900} fz="lg">{getOutsidePhase(customerApproval?.status === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project).label}</Text></Paper>
+              <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Suggested Next Action</Text><Text fw={900}>{getSuggestedNextAction(customerApproval?.status === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project)}</Text></Paper>
+              <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Assigned Owner</Text><Text fw={900}>{project.assigned_to || project.intake_owner || "Unassigned"}</Text></Paper>
+            </SimpleGrid>
+            <SegmentedControl
+              fullWidth
+              value={tabGroup}
+              onChange={(value) => setActiveTab({ command: "overview", work: "workflow", financial: "procurement", records: "activity" }[value])}
+              data={[
+                { label: "Command Center", value: "command" },
+                { label: "Work Plan", value: "work" },
+                { label: "Financial & Materials", value: "financial" },
+                { label: "Project Records", value: "records" },
+              ]}
+            />
+          </Stack>
+        </MWSection>
+
         <Tabs
           value={activeTab}
           onChange={(value) => setActiveTab(value || "overview")}
@@ -1947,15 +2006,15 @@ function ProjectDetails({
               background: "rgba(255,255,255,0.025)",
             }}
           >
-            <Tabs.Tab value="overview" leftSection={<IconBuilding size={16} />}>
+            {tabGroup === "command" && <Tabs.Tab value="overview" leftSection={<IconBuilding size={16} />}>
               Overview
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab value="workflow" leftSection={<IconTimeline size={16} />}>
+            {tabGroup === "work" && <Tabs.Tab value="workflow" leftSection={<IconTimeline size={16} />}>
               Workflow
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab
+            {tabGroup === "financial" && <Tabs.Tab
               value="procurement"
               leftSection={<IconShoppingCart size={16} />}
               rightSection={
@@ -1972,37 +2031,37 @@ function ProjectDetails({
               }
             >
               Procurement
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab
+            {tabGroup === "work" && <Tabs.Tab
               value="production"
               leftSection={<IconSettingsAutomation size={16} />}
             >
               Production
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab value="schedule" leftSection={<IconCalendar size={16} />}>
+            {tabGroup === "work" && <Tabs.Tab value="schedule" leftSection={<IconCalendar size={16} />}>
               Schedule
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
+            {tabGroup === "records" && <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
               Activity
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
+            {tabGroup === "records" && <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
               Notes
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab
+            {tabGroup === "work" && <Tabs.Tab
               value="tracking"
               leftSection={<IconClipboardCheck size={16} />}
             >
               Checklist & Updates
-            </Tabs.Tab>
+            </Tabs.Tab>}
 
-            <Tabs.Tab value="package" leftSection={<IconPackage size={16} />}>
+            {tabGroup === "records" && <Tabs.Tab value="package" leftSection={<IconPackage size={16} />}>
               Files & Package
-            </Tabs.Tab>
+            </Tabs.Tab>}
           </Tabs.List>
 
           <Tabs.Panel value="overview">
@@ -2122,9 +2181,21 @@ function ProjectDetails({
                           </Text>
 
                           <MWStatusBadge
-                            status={project.approval_status || "Pending"}
+                            status={customerApproval?.status || project.approval_status || "Pending"}
                           />
                         </Group>
+
+                        {customerApproval && (
+                          <Paper p="sm" withBorder radius="md">
+                            <Stack gap={6}>
+                              <Text size="xs" fw={850} tt="uppercase" c="dimmed">Customer Approval Portal</Text>
+                              <Text size="sm">Version {customerApproval.document_version || 1}{customerApproval.signer_name ? ` · ${customerApproval.signer_name}` : ""}</Text>
+                              <Text size="xs" c="dimmed">{customerApproval.approved_at ? `Approved ${formatDateTime(customerApproval.approved_at)}` : customerApproval.sent_at ? `Sent ${formatDateTime(customerApproval.sent_at)}` : "Approval record created"}</Text>
+                              {customerApproval.customer_message && <Text size="xs" c="orange">Customer note: {customerApproval.customer_message}</Text>}
+                              {customerApproval.status === "Approved" && <Button size="xs" variant="light" color="green" onClick={() => downloadSignedApprovalPdf(customerApproval)}>Download Signed Approval</Button>}
+                            </Stack>
+                          </Paper>
+                        )}
 
                         <Divider color="rgba(255,255,255,0.07)" />
 

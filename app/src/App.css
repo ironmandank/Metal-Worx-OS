@@ -3807,7 +3807,7 @@ textarea.form-input {
   top: 86px;
   left: 104px;
   z-index: 2000;
-  width: 310px;
+  width: 370px;
   max-height: calc(100dvh - 110px);
   overflow: hidden;
   border: 1px solid #39434c;
@@ -3874,13 +3874,33 @@ textarea.form-input {
   padding: 9px;
 }
 
+.mw-outside-flow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 14px;
+  border-bottom: 1px solid #252d34;
+  color: #929da6;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.55rem;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.mw-outside-flow i {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, #6e0b18, #ee263b);
+}
+
 .mw-icon-shell .mw-flyout-items button {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 44px;
+  min-height: 58px;
   margin: 0;
   padding: 7px 9px;
   border: 1px solid transparent;
@@ -3923,6 +3943,43 @@ textarea.form-input {
   font-size: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mw-flyout-items .mw-flyout-item-copy {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.mw-flyout-item-copy small,
+.mw-flyout-item-copy strong,
+.mw-flyout-item-copy em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mw-flyout-item-copy small {
+  color: #ff4055;
+  font-size: 0.5rem;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mw-flyout-item-copy strong {
+  color: inherit;
+  font-size: 0.72rem;
+}
+
+.mw-flyout-item-copy em {
+  color: #78848d;
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 600;
 }
 
 .mw-rail-footer {
@@ -4241,7 +4298,7 @@ textarea.form-input {
     top:64px;
     left:8px;
     z-index:2300;
-    width:calc(min(280px, 84vw) - 16px);
+    width:calc(min(370px, 94vw) - 16px);
     max-height:calc(100dvh - 80px);
   }
 

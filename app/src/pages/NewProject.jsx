@@ -216,6 +216,7 @@ function NewProject({ setPage }) {
   const [intakeChecklist, setIntakeChecklist] = useState([]);
   const [intakeQuoteItems, setIntakeQuoteItems] = useState([]);
   const [preparingIntake, setPreparingIntake] = useState(false);
+  const [showAdvancedWorkflow, setShowAdvancedWorkflow] = useState(false);
 
   const [
     materialRequests,
@@ -1939,7 +1940,14 @@ function NewProject({ setPage }) {
           </Stack>
         </MWSection>
 
-        <MWSection title="Project Workflow Status">
+        <Paper withBorder p="md" radius="lg">
+          <Group justify="space-between" align="center">
+            <div><Text fw={900}>Advanced Status Setup</Text><Text size="sm" c="dimmed">New projects start at the correct stage automatically. Open this only when importing work already underway.</Text></div>
+            <Button variant="light" color="gray" onClick={() => setShowAdvancedWorkflow((value) => !value)}>{showAdvancedWorkflow ? "Hide Advanced Status" : "Set Existing Status"}</Button>
+          </Group>
+        </Paper>
+
+        {showAdvancedWorkflow && <MWSection title="Project Workflow Status">
           <Stack>
             <Group grow>
               <Select
@@ -2198,7 +2206,7 @@ function NewProject({ setPage }) {
               }
             />
           </Stack>
-        </MWSection>
+        </MWSection>}
 
         <div
           style={{
