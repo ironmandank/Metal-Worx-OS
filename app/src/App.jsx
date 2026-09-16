@@ -78,11 +78,20 @@ function PageLoading() {
 class WorkspaceErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { failed: false };
+    this.state = { failed: false, errorMessage: "" };
   }
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(error) {
+    return {
+      failed: true,
+      errorMessage: error?.message || "This workspace encountered an unexpected display problem.",
+    };
+  }
+
+  componentDidUpdate(previousProps) {
+    if (this.state.failed && previousProps.resetKey !== this.props.resetKey) {
+      this.setState({ failed: false, errorMessage: "" });
+    }
   }
 
   componentDidCatch(error, details) {
@@ -94,8 +103,12 @@ class WorkspaceErrorBoundary extends Component {
     return (
       <div style={{ margin: 24, padding: 28, border: "1px solid #8f2631", borderRadius: 14, background: "#171013", color: "#fff", textAlign: "center" }}>
         <h2 style={{ marginTop: 0 }}>This workspace could not be displayed.</h2>
-        <p>Your information has not been cleared. Reload the page and try again.</p>
-        <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 18px", border: 0, borderRadius: 8, background: "#d20a20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Reload Metal Worx OS</button>
+        <p>Your information has not been cleared. You can retry this workspace or safely return to Mission Control.</p>
+        <p style={{ color: "#a9b1b8", fontSize: 13 }}>{this.state.errorMessage}</p>
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 10 }}>
+          <button type="button" onClick={() => this.setState({ failed: false, errorMessage: "" })} style={{ padding: "10px 18px", border: 0, borderRadius: 8, background: "#d20a20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Try This Workspace Again</button>
+          <button type="button" onClick={this.props.onReturn} style={{ padding: "10px 18px", border: "1px solid #48525a", borderRadius: 8, background: "#151b20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Return to Mission Control</button>
+        </div>
       </div>
     );
   }
@@ -841,7 +854,7 @@ function App() {
   }
 
   if (page === "morningHuddleTV") {
-    return <WorkspaceErrorBoundary><Suspense fallback={<PageLoading />}><MorningHuddleTV setPage={setPage} /></Suspense></WorkspaceErrorBoundary>;
+    return <WorkspaceErrorBoundary resetKey="morningHuddleTV" onReturn={() => setPage("dashboard")}><Suspense fallback={<PageLoading />}><MorningHuddleTV setPage={setPage} /></Suspense></WorkspaceErrorBoundary>;
   }
 
   return (
@@ -859,7 +872,7 @@ function App() {
       openInventoryItem={openInventoryItem}
       openInventoryBin={openInventoryBin}
     >
-      <WorkspaceErrorBoundary><Suspense fallback={<PageLoading />}>{renderPage()}</Suspense></WorkspaceErrorBoundary>
+      <WorkspaceErrorBoundary resetKey={page} onReturn={() => setPage("dashboard")}><Suspense fallback={<PageLoading />}>{renderPage()}</Suspense></WorkspaceErrorBoundary>
     </AppLayout>
   );
 }

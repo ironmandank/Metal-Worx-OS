@@ -244,6 +244,7 @@ function Procurement({
   const [requests, setRequests] = useState([]);
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [queue, setQueue] = useState("pricing");
@@ -291,6 +292,7 @@ function Procurement({
 
   async function loadRequests() {
     setLoading(true);
+    setLoadError("");
 
     try {
       const [openRequests, receivedRequests] =
@@ -360,6 +362,7 @@ function Procurement({
       setRequests(uniqueRequests);
     } catch (error) {
       console.error("Procurement load error:", error);
+      setLoadError(error.message || "Unable to load procurement requests.");
 
       notifications.show({
         title: "Procurement Load Failed",
@@ -952,6 +955,22 @@ function Procurement({
       />
 
       <OutsideWorkspaceNav current="procurement" setPage={setPage} />
+
+      {loadError && (
+        <Alert
+          color="red"
+          title="Materials Could Not Load"
+          withCloseButton
+          onClose={() => setLoadError("")}
+        >
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Text size="sm">{loadError}</Text>
+            <Button size="xs" color="red" variant="light" onClick={loadRequests}>
+              Try Again
+            </Button>
+          </Group>
+        </Alert>
+      )}
 
       <SimpleGrid
         cols={{
