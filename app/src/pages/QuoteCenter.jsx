@@ -8,6 +8,7 @@ import {
   FileInput,
   Group,
   Loader,
+  Modal,
   NumberInput,
   Select,
   SimpleGrid,
@@ -22,6 +23,7 @@ import { notifications } from "@mantine/notifications";
 import { supabase } from "../lib/supabase";
 import { generateNumber } from "../lib/generateNumber";
 import { emptyOrganizedQuote, organizeQuoteText } from "../lib/quoteOrganizer";
+import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -135,6 +137,12 @@ function QuoteCenter({
   const [organizerImages, setOrganizerImages] = useState([]);
   const [organizerCreating, setOrganizerCreating] = useState(false);
   const [deletingQuoteId, setDeletingQuoteId] = useState(null);
+  const [approvalsByQuote, setApprovalsByQuote] = useState({});
+  const [approvalQuote, setApprovalQuote] = useState(null);
+  const [approvalEmail, setApprovalEmail] = useState("");
+  const [approvalDays, setApprovalDays] = useState(15);
+  const [approvalLink, setApprovalLink] = useState("");
+  const [approvalBusy, setApprovalBusy] = useState(false);
   const [showSiteEstimate, setShowSiteEstimate] = useState(true);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
   const [search, setSearch] = useState("");
@@ -284,7 +292,7 @@ function QuoteCenter({
   async function loadCenter() {
     setLoading(true);
     try {
-      const [quoteResult, customerResult, templateResult, siteVisitResult] = await Promise.all([
+      const [quoteResult, customerResult, templateResult, siteVisitResult, approvalResult] = await Promise.all([
         supabase
           .from("project_quotes")
           .select("*")
@@ -302,17 +310,28 @@ function QuoteCenter({
           .from("prequote_site_visits")
           .select("*")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("customer_quote_approvals")
+          .select("id,quote_id,document_version,status,recipient_email,expires_at,sent_at,viewed_at,approved_at,signer_name,signer_email,customer_message,document_hash")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (quoteResult.error) throw quoteResult.error;
       if (customerResult.error) throw customerResult.error;
       if (templateResult.error) throw templateResult.error;
       if (siteVisitResult.error) throw siteVisitResult.error;
+      if (approvalResult.error) throw approvalResult.error;
 
       setQuotes(quoteResult.data || []);
       setCustomers(customerResult.data || []);
       setTemplates(templateResult.data || []);
       setSiteVisits(siteVisitResult.data || []);
+      setApprovalsByQuote(
+        (approvalResult.data || []).reduce((latest, approval) => {
+          if (!latest[approval.quote_id]) latest[approval.quote_id] = approval;
+          return latest;
+        }, {}),
+      );
     } catch (error) {
       notifications.show({
         title: "Quote Center Could Not Load",
@@ -321,6 +340,81 @@ function QuoteCenter({
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  function openApprovalManager(quote) {
+    setApprovalQuote(quote);
+    setApprovalEmail(quote.contact_email || approvalsByQuote[quote.id]?.recipient_email || "");
+    setApprovalDays(15);
+    setApprovalLink("");
+  }
+
+  async function createApprovalLink() {
+    if (!approvalQuote) return;
+    setApprovalBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("customer-quote-approval", {
+        body: {
+          action: "create",
+          quote_id: approvalQuote.id,
+          recipient_email: approvalEmail,
+          expiration_days: approvalDays,
+        },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || "The approval link could not be created.");
+      const link = `${window.location.origin}/approve?token=${data.token}`;
+      setApprovalLink(link);
+      setApprovalsByQuote((current) => ({ ...current, [approvalQuote.id]: data.approval }));
+      setQuotes((current) => current.map((quote) => quote.id === approvalQuote.id ? { ...quote, status: "Sent" } : quote));
+      notifications.show({ title: "Customer Approval Link Ready", message: "The quote was frozen into a new document version. Copy the link and send it to the customer.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Approval Link Could Not Be Created", message: error.message, color: "red" });
+    } finally {
+      setApprovalBusy(false);
+    }
+  }
+
+  async function copyApprovalLink() {
+    await navigator.clipboard.writeText(approvalLink);
+    notifications.show({ title: "Approval Link Copied", message: "Paste it into your customer email. The quote will update automatically when they respond.", color: "green" });
+  }
+
+  async function revokeApprovalLink() {
+    const approval = approvalQuote ? approvalsByQuote[approvalQuote.id] : null;
+    if (!approval || !window.confirm("Revoke this customer approval link? The customer will no longer be able to approve it.")) return;
+    setApprovalBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("customer-quote-approval", { body: { action: "revoke", approval_id: approval.id } });
+      if (error || data?.error) throw new Error(data?.error || error?.message);
+      setApprovalsByQuote((current) => ({ ...current, [approvalQuote.id]: { ...approval, status: "Revoked" } }));
+      setApprovalLink("");
+      notifications.show({ title: "Approval Link Revoked", message: "That link can no longer be used.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Link Could Not Be Revoked", message: error.message, color: "red" });
+    } finally {
+      setApprovalBusy(false);
+    }
+  }
+
+  async function downloadSignedAgreement() {
+    const summary = approvalQuote ? approvalsByQuote[approvalQuote.id] : null;
+    if (!summary) return;
+    setApprovalBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("customer_quote_approvals")
+        .select("*")
+        .eq("id", summary.id)
+        .single();
+      if (error) throw error;
+      if (data.status !== "Approved") throw new Error("This quote has not been signed yet.");
+      downloadSignedApprovalPdf(data);
+      notifications.show({ title: "Signed Agreement Downloaded", message: "A permanent PDF copy was saved to your computer.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Signed Agreement Could Not Download", message: error.message, color: "red" });
+    } finally {
+      setApprovalBusy(false);
     }
   }
 
@@ -1591,6 +1685,18 @@ function QuoteCenter({
                   >
                     Preview
                   </Button>
+                  <Button
+                    size="xs"
+                    color={approvalsByQuote[quote.id]?.status === "Approved" ? "green" : "violet"}
+                    variant={approvalsByQuote[quote.id] ? "light" : "filled"}
+                    onClick={() => openApprovalManager(quote)}
+                  >
+                    {approvalsByQuote[quote.id]?.status === "Approved"
+                      ? "Signed Approval"
+                      : approvalsByQuote[quote.id]
+                        ? `Approval: ${approvalsByQuote[quote.id].status}`
+                        : "Customer Approval"}
+                  </Button>
                   {(quote.converted_project_id || quote.project_id) && (
                     <Button
                       size="xs"
@@ -1634,6 +1740,74 @@ function QuoteCenter({
           )}
         </Stack>
       </MWSection>
+
+      <Modal
+        opened={Boolean(approvalQuote)}
+        onClose={() => setApprovalQuote(null)}
+        title="Customer Quote Approval"
+        size="lg"
+        centered
+      >
+        {approvalQuote && (
+          <Stack>
+            <Alert color="blue" title={`${approvalQuote.quote_number || `Quote ${approvalQuote.id}`} — ${approvalQuote.company_name || approvalQuote.customer_name || approvalQuote.contact_name || "Customer"}`}>
+              Generate a private link, then paste it into Gmail. The customer reviews and signs inside Metal Worx OS, and the quote status updates automatically.
+            </Alert>
+
+            {approvalsByQuote[approvalQuote.id] && (
+              <Card withBorder>
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text size="xs" c="dimmed" fw={800}>LATEST APPROVAL</Text>
+                    <Text fw={900}>Version {approvalsByQuote[approvalQuote.id].document_version}</Text>
+                    <Text size="sm">Sent {formatDate(approvalsByQuote[approvalQuote.id].sent_at)}</Text>
+                    <Text size="sm">Expires {formatDate(approvalsByQuote[approvalQuote.id].expires_at)}</Text>
+                  </div>
+                  <Badge color={statusColor(approvalsByQuote[approvalQuote.id].status)}>{approvalsByQuote[approvalQuote.id].status}</Badge>
+                </Group>
+                {approvalsByQuote[approvalQuote.id].signer_name && (
+                  <Text mt="sm" size="sm">
+                    Signed by <strong>{approvalsByQuote[approvalQuote.id].signer_name}</strong>
+                    {approvalsByQuote[approvalQuote.id].signer_email ? ` (${approvalsByQuote[approvalQuote.id].signer_email})` : ""}
+                    {approvalsByQuote[approvalQuote.id].approved_at ? ` on ${formatDate(approvalsByQuote[approvalQuote.id].approved_at)}` : ""}.
+                  </Text>
+                )}
+                {approvalsByQuote[approvalQuote.id].customer_message && <Alert color="orange" mt="sm" title="Customer requested changes">{approvalsByQuote[approvalQuote.id].customer_message}</Alert>}
+                {approvalsByQuote[approvalQuote.id].status === "Approved" && (
+                  <Button mt="md" color="green" loading={approvalBusy} onClick={downloadSignedAgreement}>
+                    Download Signed Agreement PDF
+                  </Button>
+                )}
+              </Card>
+            )}
+
+            {!approvalLink && (
+              <>
+                <TextInput label="Customer email (for the approval record)" placeholder="customer@example.com" value={approvalEmail} onChange={(event) => setApprovalEmail(event.currentTarget.value)} />
+                <NumberInput label="Link expires after" suffix=" days" min={1} max={60} value={approvalDays} onChange={(value) => setApprovalDays(Number(value) || 15)} />
+                <Alert color="yellow" title="Creates a frozen version">
+                  Creating a new link revokes any older open link. If the quote changes later, generate a new link so the customer approves the correct version.
+                </Alert>
+                <Button color="violet" loading={approvalBusy} onClick={createApprovalLink}>
+                  {approvalsByQuote[approvalQuote.id] ? "Generate New Approval Link" : "Generate Customer Approval Link"}
+                </Button>
+              </>
+            )}
+
+            {approvalLink && (
+              <>
+                <TextInput label="Private customer link" value={approvalLink} readOnly />
+                <Group grow><Button color="green" onClick={copyApprovalLink}>Copy Link for Gmail</Button><Button variant="light" color="blue" onClick={() => window.open(approvalLink, "_blank", "noopener,noreferrer")}>Preview Customer Page</Button></Group>
+                <Alert color="yellow">For security, this link is shown only now. If it is lost, generate a new one; the old open link will be revoked.</Alert>
+              </>
+            )}
+
+            {["Sent", "Viewed"].includes(approvalsByQuote[approvalQuote.id]?.status) && !approvalLink && (
+              <Button variant="subtle" color="red" loading={approvalBusy} onClick={revokeApprovalLink}>Revoke Current Link</Button>
+            )}
+          </Stack>
+        )}
+      </Modal>
     </>
   );
 }

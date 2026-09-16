@@ -61,6 +61,7 @@ const QuoteCenter = page("QuoteCenter");
 const PilotFeedback = page("PilotFeedback");
 const KnowledgeCenter = page("KnowledgeCenter");
 const EmployeeLoginManagement = page("EmployeeLoginManagement");
+const CustomerQuoteApproval = page("CustomerQuoteApproval");
 
 import "./App.css";
 
@@ -99,6 +100,8 @@ class WorkspaceErrorBoundary extends Component {
 }
 
 function App() {
+  const isCustomerApprovalPage =
+    typeof window !== "undefined" && window.location.pathname === "/approve";
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState(null);
   const [authenticatedProfile, setAuthenticatedProfile] = useState(null);
@@ -745,6 +748,10 @@ function App() {
         openCallback={openCallback}
       />
     );
+  }
+
+  if (isCustomerApprovalPage) {
+    return <Suspense fallback={<PageLoading />}><CustomerQuoteApproval /></Suspense>;
   }
 
   if (authLoading) {

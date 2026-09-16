@@ -10,6 +10,31 @@ body {
   color: #f5f5f5;
 }
 
+/* PUBLIC CUSTOMER QUOTE APPROVAL */
+.approval-public-shell { min-height: 100dvh; background: #eef1f4; color: #17191c; padding: 32px 16px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.approval-public-shell > img { width: 230px; }
+.approval-document { width: min(980px, 100%); background: #fff; border-radius: 16px; box-shadow: 0 18px 60px rgba(0,0,0,.16); padding: 34px; }
+.approval-header { display: flex; justify-content: space-between; align-items: center; gap: 28px; border-bottom: 3px solid #c90018; padding-bottom: 22px; margin-bottom: 24px; }
+.approval-header img { width: 220px; max-height: 88px; object-fit: contain; }
+.approval-header > div { text-align: right; }
+.approval-summary-card { background: #f7f8fa; margin: 22px 0; }
+.approval-total { text-align: right; }
+.approval-meta-grid, .approval-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin-top: 20px; }
+.approval-meta-grid div { display: flex; flex-direction: column; gap: 3px; }
+.approval-meta-grid span { color: #4b5563; }
+.approval-section { margin: 26px 0; break-inside: avoid; }
+.approval-section h2 { font-size: 20px; border-bottom: 1px solid #cbd1d8; padding-bottom: 7px; margin-bottom: 10px; }
+.approval-section p { white-space: pre-wrap; line-height: 1.6; }
+.approval-image-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.approval-image-grid figure { border: 1px solid #d5d9de; border-radius: 10px; overflow: hidden; background: #f7f8fa; }
+.approval-image-grid img { width: 100%; max-height: 360px; object-fit: contain; display: block; background: #fff; }
+.approval-image-grid figcaption { padding: 9px 12px; color: #4b5563; font-size: 13px; }
+.approval-sign-section { background: #f7f8fa; border: 2px solid #d3d8de; border-radius: 14px; padding: 24px; margin-top: 30px; }
+.approval-signature-pad { width: 100%; height: 180px; display: block; background: #fff; border: 2px dashed #9ca3af; border-radius: 9px; touch-action: none; cursor: crosshair; }
+.approval-document footer { border-top: 1px solid #d5d9de; margin-top: 30px; padding-top: 15px; text-align: center; color: #6b7280; font-size: 12px; }
+@media (max-width: 680px) { .approval-document { padding: 20px 16px; } .approval-header { flex-direction: column; text-align: center; } .approval-header > div, .approval-total { text-align: center; } .approval-meta-grid, .approval-form-grid, .approval-image-grid { grid-template-columns: 1fr; } }
+@media print { .approval-public-shell { background: #fff; padding: 0; } .approval-document { width: 100%; box-shadow: none; padding: 0; } .approval-sign-section { display: none; } }
+
 /* APP SHELL */
 
 .mw-app-shell {
