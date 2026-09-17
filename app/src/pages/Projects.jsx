@@ -56,6 +56,37 @@ const CALENDAR_TYPES = [
   { label: "Other Project", color: "#66717a", terms: [] },
 ];
 
+const OUTSIDE_WORKSPACES = [
+  {
+    key: "estimates",
+    label: "Estimates & Site Visits",
+    description: "Unscheduled and scheduled field estimates",
+    phases: ["pre_quote"],
+    color: "cyan",
+  },
+  {
+    key: "approvals",
+    label: "Quotes & Approvals",
+    description: "Pricing, customer decisions, and deposits",
+    phases: ["quote_approval"],
+    color: "violet",
+  },
+  {
+    key: "production",
+    label: "Production & Materials",
+    description: "Released work, materials, and fabrication",
+    phases: ["ready", "production"],
+    color: "orange",
+  },
+  {
+    key: "field",
+    label: "Field Work & Closeout",
+    description: "Test fits, installs, closeout, and holds",
+    phases: ["field", "closeout", "hold"],
+    color: "teal",
+  },
+];
+
 const capacityCalendarStyles = `
   .mw-capacity-shell { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; background: #0b1014; }
   .mw-month-weekdays, .mw-month-grid { display:grid; grid-template-columns:repeat(7,minmax(130px,1fr)); min-width:910px; }
@@ -159,11 +190,21 @@ function getCalendarType(project) {
   return CALENDAR_TYPES.find((type) => type.terms.some((term) => words.includes(term))) || CALENDAR_TYPES.at(-1);
 }
 
+function getCalendarEntryType(entry) {
+  if (entry.kind === "estimate") return { label: "Estimate Visit", color: "#f59f00" };
+  if (entry.kind === "site_visit") return { label: "Site Visit", color: "#0ca6a6" };
+  if (entry.kind === "test_fit") return { label: "Test Fit", color: "#7950f2" };
+  if (entry.kind === "install") return { label: "Installation", color: "#2f9e44" };
+  return getCalendarType(entry.project || {});
+}
+
 function Projects({ setPage, setSelectedProject }) {
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
+  const [siteVisits, setSiteVisits] = useState([]);
   const [viewMode, setViewMode] = useState("active");
   const [workspaceView, setWorkspaceView] = useState("board");
+  const [activeWorkspace, setActiveWorkspace] = useState("estimates");
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -180,16 +221,21 @@ function Projects({ setPage, setSelectedProject }) {
     setErrorMessage("");
 
     try {
-      const [projectResult, customerResult] = await Promise.all([
+      const [projectResult, customerResult, siteVisitResult] = await Promise.all([
         supabase
           .from("projects")
           .select("*")
           .order("created_at", { ascending: false }),
         supabase.from("customers").select("*"),
+        supabase
+          .from("prequote_site_visits")
+          .select("*")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
+      if (siteVisitResult.error) throw siteVisitResult.error;
 
       const allProjects = projectResult.data || [];
       const loadedProjects = allProjects.filter(
@@ -285,6 +331,9 @@ function Projects({ setPage, setSelectedProject }) {
 
       setProjects(loadedProjects);
       setCompletedProjects(loadedCompletedProjects);
+      setSiteVisits((siteVisitResult.data || []).filter(
+        (visit) => !["Completed", "Converted to Quote", "Cancelled"].includes(visit.status)
+      ));
       setTrackingByProject(trackingMap);
       setCustomers(
         Object.fromEntries(
@@ -343,6 +392,20 @@ function Projects({ setPage, setSelectedProject }) {
     });
   }, [completedProjects, customers, projects, search, workspaceView]);
 
+  const filteredSiteVisits = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return siteVisits;
+    return siteVisits.filter((visit) => [
+      visit.customer_name,
+      visit.contact_name,
+      visit.contact_phone,
+      visit.job_site_address,
+      visit.assigned_estimator,
+      visit.status,
+      visit.notes,
+    ].filter(Boolean).join(" ").toLowerCase().includes(term));
+  }, [search, siteVisits]);
+
   const leadershipSummary = useMemo(() => {
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 86400000);
@@ -373,7 +436,26 @@ function Projects({ setPage, setSelectedProject }) {
     })])
   ), [filteredProjects, trackingByProject]);
 
-  const siteVisitCount = projects.filter(
+  const workspaceCounts = useMemo(() => Object.fromEntries(
+    OUTSIDE_WORKSPACES.map((workspace) => {
+      const projectCount = workspace.phases.reduce(
+        (total, phase) => total + (projectsByPhase[phase]?.length || 0),
+        0
+      );
+      const visitCount = workspace.key === "estimates" ? filteredSiteVisits.length : 0;
+      return [workspace.key, projectCount + visitCount];
+    })
+  ), [filteredSiteVisits, projectsByPhase]);
+
+  const selectedWorkspace = OUTSIDE_WORKSPACES.find(
+    (workspace) => workspace.key === activeWorkspace
+  ) || OUTSIDE_WORKSPACES[0];
+
+  const selectedWorkspaceProjects = useMemo(() => selectedWorkspace.phases.flatMap(
+    (phase) => projectsByPhase[phase] || []
+  ), [projectsByPhase, selectedWorkspace]);
+
+  const siteVisitCount = siteVisits.length + projects.filter(
     (project) =>
       project.site_visit_required &&
       project.site_visit_status !== "Completed"
@@ -386,25 +468,63 @@ function Projects({ setPage, setSelectedProject }) {
     (project) => project.status === "On Hold"
   ).length;
 
-  const scheduledProjects = projects.filter(
-    (project) => project.planned_start_date && project.planned_duration_days
-  );
   const calendarDays = useMemo(() => {
     return buildMonthGrid(calendarMonth);
   }, [calendarMonth]);
-  const scheduledProjectsByDay = useMemo(() => {
+
+  const calendarEntriesByDay = useMemo(() => {
     const result = {};
-    scheduledProjects.forEach((project) => {
-      const startDate = addDays(project.planned_start_date, 0);
+    const addEntry = (date, entry) => {
+      if (!date) return;
+      const key = dateKey(date);
+      if (!result[key]) result[key] = [];
+      if (!result[key].some((item) => item.id === entry.id)) result[key].push(entry);
+    };
+
+    siteVisits.forEach((visit) => addEntry(visit.requested_visit_date, {
+      id: `estimate-${visit.id}`,
+      kind: "estimate",
+      label: visit.customer_name || "Estimate Visit",
+      owner: visit.assigned_estimator || "Unassigned",
+      location: visit.job_site_address || "Address not entered",
+      visit,
+    }));
+
+    projects.forEach((project) => {
+      if (project.planned_start_date) {
       const duration = Math.max(Number(project.planned_duration_days || 1), 1);
       for (let index = 0; index < duration; index += 1) {
-        const key = dateKey(addDays(dateKey(startDate), index));
-        if (!result[key]) result[key] = [];
-        result[key].push(project);
+          addEntry(addDays(project.planned_start_date, index), {
+            id: `project-${project.id}-${index}`,
+            kind: "project",
+            label: project.project_name || project.project_number,
+            owner: project.assigned_to || project.intake_owner || "Unassigned",
+            location: project.work_location || project.job_address || "Location not entered",
+            project,
+          });
+        }
       }
+
+      [
+        ["site_visit", project.site_visit_start || project.site_visit_date, "Site Visit"],
+        ["test_fit", project.test_fit_start, "Test Fit"],
+        ["install", project.install_start || project.install_date, "Installation"],
+      ].forEach(([kind, date, label]) => addEntry(date, {
+        id: `${kind}-${project.id}`,
+        kind,
+        label: `${project.project_name || project.project_number} — ${label}`,
+        owner: project.assigned_to || project.intake_owner || "Unassigned",
+        location: project.work_location || project.job_address || "Location not entered",
+        project,
+      }));
     });
     return result;
-  }, [scheduledProjects]);
+  }, [projects, siteVisits]);
+
+  const calendarEntryCount = useMemo(
+    () => Object.values(calendarEntriesByDay).reduce((total, entries) => total + entries.length, 0),
+    [calendarEntriesByDay]
+  );
 
   function printDailyUpdateSheets(prefilled = true) {
     const printableProjects = prefilled ? projects : [null];
@@ -625,6 +745,9 @@ function Projects({ setPage, setSelectedProject }) {
           <Text size="xs" c="dimmed">Click any day to view its full schedule</Text>
         </Group>
         <Group gap="md" mb="md" wrap="wrap">
+          <Group gap={6}><Box w={14} h={14} style={{background:"#f59f00",borderRadius:3}}/><Text size="xs" fw={700}>Estimate Visit</Text></Group>
+          <Group gap={6}><Box w={14} h={14} style={{background:"#7950f2",borderRadius:3}}/><Text size="xs" fw={700}>Test Fit</Text></Group>
+          <Group gap={6}><Box w={14} h={14} style={{background:"#2f9e44",borderRadius:3}}/><Text size="xs" fw={700}>Installation</Text></Group>
           {CALENDAR_TYPES.map((type) => <Group key={type.label} gap={6}><Box w={14} h={14} style={{background:type.color,borderRadius:3}}/><Text size="xs" fw={700}>{type.label}</Text></Group>)}
           <Group gap={6}><Box w={14} h={14} style={{background:"transparent",border:"2px solid #ff3445",borderRadius:3}}/><Text size="xs" fw={700}>Rush Priority</Text></Group>
         </Group>
@@ -636,22 +759,22 @@ function Projects({ setPage, setSelectedProject }) {
               <div className="mw-month-grid">
                 {calendarDays.map((day) => {
                   const key = dateKey(day);
-                  const dayProjects = scheduledProjectsByDay[key] || [];
+                  const dayEntries = calendarEntriesByDay[key] || [];
                   const today = key === dateKey(new Date());
                   const weekend = day.getDay() === 0 || day.getDay() === 6;
                   const outside = day.getMonth() !== calendarMonth.getMonth();
                   return <div key={key} role="button" tabIndex={0} className={`mw-month-day ${weekend ? "weekend" : ""} ${today ? "today" : ""} ${outside ? "outside" : ""}`} onClick={() => setSelectedCalendarDay(day)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelectedCalendarDay(day); }}>
-                    <div className="mw-month-day-head"><span className="mw-month-day-number">{day.getDate()}</span><span className="mw-month-load">{dayProjects.length ? `${dayProjects.length} project${dayProjects.length === 1 ? "" : "s"}` : "Open"}</span></div>
-                    {dayProjects.map((project) => {
-                      const calendarType = getCalendarType(project);
-                      return <div key={project.id} className={`mw-month-project ${project.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${project.project_name || project.project_number} — ${project.assigned_to || "Unassigned lead"}`}><strong>{project.project_name || project.project_number}</strong><span>{project.assigned_to || "Unassigned lead"}</span></div>;
+                    <div className="mw-month-day-head"><span className="mw-month-day-number">{day.getDate()}</span><span className="mw-month-load">{dayEntries.length ? `${dayEntries.length} item${dayEntries.length === 1 ? "" : "s"}` : "Open"}</span></div>
+                    {dayEntries.map((entry) => {
+                      const calendarType = getCalendarEntryType(entry);
+                      return <div key={entry.id} className={`mw-month-project ${entry.project?.priority === "Rush" ? "rush" : ""}`} style={{borderLeftColor:calendarType.color}} title={`${entry.label} — ${entry.owner}`}><strong>{entry.label}</strong><span>{calendarType.label} · {entry.owner}</span></div>;
                     })}
                   </div>;
                 })}
               </div>
             </div>
           </ScrollArea>
-        {!scheduledProjects.length && <Alert color="blue" mt="md">No projects are scheduled yet. Every day is currently open. Add a planned start date and estimated workdays in Edit Project.</Alert>}
+        {!calendarEntryCount && <Alert color="blue" mt="md">Nothing is scheduled yet. Add an estimate date, field-work date, or planned project start date.</Alert>}
       </MWPanel>
 
       <Modal
@@ -662,14 +785,15 @@ function Projects({ setPage, setSelectedProject }) {
         centered
       >
         <Stack gap="sm">
-          {selectedCalendarDay && (scheduledProjectsByDay[dateKey(selectedCalendarDay)] || []).length ? (
-            (scheduledProjectsByDay[dateKey(selectedCalendarDay)] || []).map((project) => {
-              const calendarType = getCalendarType(project);
-              return <Card key={project.id} withBorder radius="md" p="md" style={{ borderLeft:`6px solid ${calendarType.color}` }}>
+          {selectedCalendarDay && (calendarEntriesByDay[dateKey(selectedCalendarDay)] || []).length ? (
+            (calendarEntriesByDay[dateKey(selectedCalendarDay)] || []).map((entry) => {
+              const calendarType = getCalendarEntryType(entry);
+              return <Card key={entry.id} withBorder radius="md" p="md" style={{ borderLeft:`6px solid ${calendarType.color}` }} onClick={() => entry.project ? openProject(entry.project) : setPage("quoteCenter")}>
                 <Stack gap={3}>
-                  <Group gap="xs"><Text fw={900}>{project.project_name || project.project_number}</Text>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
-                  <Text size="sm">Lead: {project.assigned_to || "Unassigned"}</Text>
-                  <Text size="xs" c="dimmed">{calendarType.label} · Starts {formatDate(project.planned_start_date)} · {Number(project.planned_duration_days || 1)} workday{Number(project.planned_duration_days || 1) === 1 ? "" : "s"}</Text>
+                  <Group gap="xs"><Text fw={900}>{entry.label}</Text>{entry.project?.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
+                  <Text size="sm">Assigned: {entry.owner}</Text>
+                  <Text size="sm">{entry.location}</Text>
+                  <Text size="xs" c="dimmed">{calendarType.label} · Click to open {entry.project ? "project" : "site-visit tracker"}</Text>
                 </Stack>
               </Card>;
             })
@@ -682,8 +806,8 @@ function Projects({ setPage, setSelectedProject }) {
 
       {workspaceView === "board" && (
         <MWPanel
-          title="Stage-Based Operations Board"
-          subtitle="Each active project appears once in its current stage. The card shows the next action, owner, timing, blockers, and financial readiness."
+          title="Outside Operations Board"
+          subtitle="Choose one part of the workflow to see the work that needs attention without scrolling through every stage."
           icon={IconClipboardCheck}
         >
           <Group mb="lg" wrap="wrap">
@@ -696,43 +820,87 @@ function Projects({ setPage, setSelectedProject }) {
             />
             <Button variant="light" color="gray" leftSection={refreshing ? <Loader size={16} /> : <IconRefresh size={17} />} disabled={refreshing} onClick={() => loadProjects(false)}>Refresh</Button>
           </Group>
-          <ScrollArea type="auto">
-            <Group align="stretch" wrap="nowrap" gap="md" style={{ minWidth: 1820 }}>
-              {OUTSIDE_PHASES.map((phase) => (
-                <Paper key={phase.key} p="sm" radius="lg" withBorder style={{ width: 245, flex: "0 0 245px", background: "rgba(255,255,255,.02)" }}>
-                  <Group justify="space-between" mb="sm">
-                    <Text fw={900}>{phase.label}</Text>
-                    <Badge color={phase.color} variant="filled">{projectsByPhase[phase.key]?.length || 0}</Badge>
-                  </Group>
-                  <Stack gap="sm">
-                    {(projectsByPhase[phase.key] || []).map((project) => {
-                      const customer = customers[project.customer_id];
-                      const tracking = trackingByProject[project.id] || {};
-                      const approvalStatus = tracking.latestApproval?.status || project.approval_status;
-                      const operationalProject = approvalStatus === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project;
-                      const nextDate = getOutsideNextDate(project);
-                      const needsAttention = tracking.blocked > 0 || tracking.latestUpdate?.leadership_attention_required;
-                      return <Card key={project.id} withBorder p="sm" radius="md" onClick={() => openProject(project)} style={{ cursor: "pointer", borderColor: needsAttention ? "var(--mantine-color-red-6)" : undefined }}>
-                        <Stack gap={7}>
-                          <Group justify="space-between" align="flex-start" wrap="nowrap"><Text fw={900} size="sm" lineClamp={2}>{getProjectIdentity(project, customer)}</Text>{project.priority === "Rush" && <Badge color="red" size="xs">Rush</Badge>}</Group>
-                          <Text size="xs" c="dimmed">{project.assigned_to || project.intake_owner || "Unassigned"}</Text>
-                          <Text size="xs" fw={800}>{project.next_action || getSuggestedNextAction(operationalProject)}</Text>
-                          <Text size="xs" c="dimmed">Next date: {formatDate(nextDate)}</Text>
-                          <Group gap={5} wrap="wrap">
-                            {needsAttention && <Badge color="red" size="xs">Attention</Badge>}
-                            <Badge color={approvalStatus === "Approved" ? "green" : approvalStatus === "Changes Requested" ? "red" : "gray"} size="xs">Approval: {approvalStatus || "Pending"}</Badge>
-                            {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"} size="xs">Deposit</Badge>}
-                            {Number(project.balance_due || 0) > 0 && <Badge color="yellow" size="xs">{money(project.balance_due)} due</Badge>}
-                          </Group>
-                        </Stack>
-                      </Card>;
-                    })}
-                    {!(projectsByPhase[phase.key] || []).length && <Text size="xs" c="dimmed" ta="center" py="lg">No projects</Text>}
+
+          <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="sm" mb="xl">
+            {OUTSIDE_WORKSPACES.map((workspace) => {
+              const active = workspace.key === activeWorkspace;
+              return <Paper
+                key={workspace.key}
+                role="button"
+                tabIndex={0}
+                p="md"
+                radius="lg"
+                withBorder
+                onClick={() => setActiveWorkspace(workspace.key)}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setActiveWorkspace(workspace.key); }}
+                style={{ cursor: "pointer", borderColor: active ? `var(--mantine-color-${workspace.color}-6)` : undefined, background: active ? `var(--mantine-color-${workspace.color}-light)` : "rgba(255,255,255,.02)" }}
+              >
+                <Group justify="space-between" wrap="nowrap">
+                  <div>
+                    <Text fw={900}>{workspace.label}</Text>
+                    <Text size="xs" c="dimmed">{workspace.description}</Text>
+                  </div>
+                  <Badge color={workspace.color} variant={active ? "filled" : "light"} size="lg">{workspaceCounts[workspace.key] || 0}</Badge>
+                </Group>
+              </Paper>;
+            })}
+          </SimpleGrid>
+
+          <Group justify="space-between" mb="md" align="flex-end">
+            <div>
+              <Title order={3}>{selectedWorkspace.label}</Title>
+              <Text size="sm" c="dimmed">{selectedWorkspace.description}</Text>
+            </div>
+            {selectedWorkspace.key === "estimates" && <Button color="red" onClick={() => setPage("quoteCenter")}>Open Site Visit Tracker</Button>}
+          </Group>
+
+          {selectedWorkspace.key === "estimates" && filteredSiteVisits.length > 0 && (
+            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md" mb="lg">
+              {filteredSiteVisits.map((visit) => <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: "5px solid #f59f00" }}>
+                <Stack gap="xs">
+                  <Group justify="space-between"><Badge color={visit.requested_visit_date ? "blue" : "orange"}>{visit.requested_visit_date ? "Scheduled Estimate" : "Needs Scheduling"}</Badge><Badge color="cyan" variant="light">Pre-Quote</Badge></Group>
+                  <Text fw={900}>{visit.customer_name || "Potential Customer"}</Text>
+                  <Text size="sm">{visit.job_site_address || "Address not entered"}</Text>
+                  <Text size="sm" c="dimmed">Assigned: {visit.assigned_estimator || "Unassigned"}</Text>
+                  <Text size="sm" c="dimmed">Visit: {formatDate(visit.requested_visit_date)}</Text>
+                  <Button variant="light" color="red" onClick={() => setPage("quoteCenter")}>Open Estimate</Button>
+                </Stack>
+              </Card>)}
+            </SimpleGrid>
+          )}
+
+          {selectedWorkspaceProjects.length > 0 && (
+            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
+              {selectedWorkspaceProjects.map((project) => {
+                const customer = customers[project.customer_id];
+                const tracking = trackingByProject[project.id] || {};
+                const approvalStatus = tracking.latestApproval?.status || project.approval_status;
+                const operationalProject = approvalStatus === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project;
+                const phase = getOutsidePhase(operationalProject);
+                const nextDate = getOutsideNextDate(project);
+                const needsAttention = tracking.blocked > 0 || tracking.latestUpdate?.leadership_attention_required;
+                return <Card key={project.id} withBorder p="md" radius="lg" onClick={() => openProject(project)} style={{ cursor: "pointer", borderColor: needsAttention ? "var(--mantine-color-red-6)" : undefined }}>
+                  <Stack gap="xs">
+                    <Group justify="space-between" align="flex-start"><Badge color={phase.color}>{phase.label}</Badge>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
+                    <Text fw={900}>{getProjectIdentity(project, customer)}</Text>
+                    <Text size="sm" c="dimmed">Owner: {project.assigned_to || project.intake_owner || "Unassigned"}</Text>
+                    <Text size="sm" fw={800}>{project.next_action || getSuggestedNextAction(operationalProject)}</Text>
+                    <Text size="xs" c="dimmed">Next date: {formatDate(nextDate)}</Text>
+                    <Group gap="xs">
+                      {needsAttention && <Badge color="red">Attention</Badge>}
+                      {phase.key === "quote_approval" && <Badge color={approvalStatus === "Approved" ? "green" : "gray"}>Approval: {approvalStatus || "Pending"}</Badge>}
+                      {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"}>Deposit</Badge>}
+                      {Number(project.balance_due || 0) > 0 && <Badge color="yellow">{money(project.balance_due)} due</Badge>}
+                    </Group>
                   </Stack>
-                </Paper>
-              ))}
-            </Group>
-          </ScrollArea>
+                </Card>;
+              })}
+            </SimpleGrid>
+          )}
+
+          {!selectedWorkspaceProjects.length && !(selectedWorkspace.key === "estimates" && filteredSiteVisits.length) && (
+            <Alert color="green">No active work is currently in {selectedWorkspace.label.toLowerCase()}.</Alert>
+          )}
         </MWPanel>
       )}
 
