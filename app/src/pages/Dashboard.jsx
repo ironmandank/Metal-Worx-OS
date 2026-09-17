@@ -121,7 +121,7 @@ const styles = `
   .mc-brief-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
   .mc-huddle-toolbar { display: flex; justify-content: flex-end; padding: 10px 12px 0; }
 
-  .mc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .mc-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .mc-kpi {
     display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 13px;
     min-height: 96px; padding: 13px 15px; border: 1px solid var(--mc-line); border-radius: 7px;
@@ -134,10 +134,8 @@ const styles = `
     border-radius: 50%; color: var(--mc-red); background: #11171b;
   }
   .mc-kpi-icon svg { width: 25px; height: 25px; }
-  .mc-kpi:nth-child(5) .mc-kpi-icon,
-  .mc-kpi:nth-child(6) .mc-kpi-icon { color: var(--mc-amber); }
-  .mc-kpi:nth-child(7) .mc-kpi-icon,
-  .mc-kpi:nth-child(8) .mc-kpi-icon { color: var(--mc-green); }
+  .mc-kpi:nth-child(5) .mc-kpi-icon { color: var(--mc-amber); }
+  .mc-kpi:nth-child(6) .mc-kpi-icon { color: var(--mc-green); }
   .mc-kpi-copy { min-width: 0; }
   .mc-kpi-copy span { display: block; color: #d9dee2; font-size: .75rem; font-weight: 900; text-transform: uppercase; }
   .mc-kpi-copy strong { display: block; margin-top: 3px; font-size: 2rem; line-height: 1; }
@@ -169,13 +167,6 @@ const styles = `
     display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px;
     padding: 0 5px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: .56rem;
   }
-  .mc-operating-summary {
-    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
-    border-bottom: 1px solid #303a41; background: #303a41;
-  }
-  .mc-operating-stat { padding: 10px 12px; background: #11181d; }
-  .mc-operating-stat span { display: block; color: #7f8c95; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
-  .mc-operating-stat strong { display: block; margin-top: 3px; font-size: 1.15rem; }
   .mc-operating-list {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px;
   }
@@ -337,6 +328,7 @@ const styles = `
   .mc-tag.green { color: #9be870; background: #18361a; }
   .mc-tag.amber { color: #ffc45c; background: #3d2b0b; }
   .mc-empty { display: grid; place-items: center; min-height: 180px; padding: 18px; color: #707b84; font-size: .72rem; text-align: center; }
+  .mc-empty.compact, .mc-closeout-list .mc-empty { min-height: 68px; }
 
   .mc-hot { border-top: 2px solid var(--mc-red); }
   .mc-hot .mc-row { grid-template-columns: 72px minmax(0, 1.5fr) minmax(80px, .7fr) auto; }
@@ -349,32 +341,22 @@ const styles = `
   .mc-priority.quick { color: #ffd678; background: #674500; }
 
   .mc-bottom { display: grid; grid-template-columns: 1.15fr .85fr; gap: 8px; }
-  .mc-health-body { display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 20px; padding: 15px; }
-  .mc-score {
-    display: grid; place-items: center; width: 132px; aspect-ratio: 1; margin: auto; border-radius: 50%;
-    background: conic-gradient(var(--mc-green) calc(var(--score) * 1%), #2b343a 0);
+  .mc-health-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: #303940; }
+  .mc-health-card {
+    display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 10px;
+    min-height: 76px; padding: 12px; border: 0; color: inherit; text-align: left;
+    background: #11181d; cursor: pointer;
   }
-  .mc-score-inner {
-    display: grid; place-items: center; width: 100px; aspect-ratio: 1; border-radius: 50%; background: #0c1114;
-  }
-  .mc-score strong { font-size: 2rem; line-height: 1; }
-  .mc-score span {
-    width: 76px; margin-top: 5px; color: var(--mc-green); font-size: .48rem;
-    font-weight: 900; line-height: 1.15; text-align: center; text-transform: uppercase;
-  }
-  .mc-health-line {
-    display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 8px;
-    min-height: 34px; border-bottom: 1px solid #303940;
-  }
-  .mc-health-line:last-child { border-bottom: 0; }
-  .mc-health-line svg { width: 16px; height: 16px; color: #aab3ba; }
-  .mc-health-line b { font-size: .69rem; }
-  .mc-health-line b small { display: block; margin-top: 2px; color: #69757e; font-size: .55rem; font-weight: 500; }
-  .mc-health-line strong { color: var(--mc-green); font-size: .78rem; }
-  .mc-health-line strong.warn { color: var(--mc-amber); }
-  .mc-health-line strong.danger { color: var(--mc-red); }
+  .mc-health-card:hover { background: #182126; }
+  .mc-health-card svg { width: 22px; height: 22px; color: #aab3ba; }
+  .mc-health-card span { display: block; font-size: .69rem; font-weight: 900; text-transform: uppercase; }
+  .mc-health-card small { display: block; margin-top: 3px; color: #74818a; font-size: .57rem; font-weight: 500; text-transform: none; }
+  .mc-health-card strong { color: var(--mc-green); font-size: 1.45rem; }
+  .mc-health-card.warn strong { color: var(--mc-amber); }
+  .mc-health-card.danger strong { color: var(--mc-red); }
   .mc-readiness { display: grid; grid-template-columns: repeat(3, 1fr); min-height: 100%; }
-  .mc-ready-card { display: grid; place-items: center; padding: 18px 10px; border-right: 1px solid #303940; text-align: center; }
+  .mc-ready-card { display: grid; place-items: center; padding: 18px 10px; border: 0; border-right: 1px solid #303940; color: inherit; background: transparent; font: inherit; text-align: center; cursor: pointer; }
+  .mc-ready-card:hover { background: rgba(255,255,255,.025); }
   .mc-ready-card:last-child { border-right: 0; }
   .mc-ready-card span { color: #8e9aa3; font-size: .64rem; text-transform: uppercase; }
   .mc-ready-card strong { margin-top: 7px; font-size: 1.7rem; }
@@ -421,7 +403,6 @@ const styles = `
     .mc-huddle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 760px) {
-    .mc-operating-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .mc-operating-list { grid-template-columns: 1fr; }
     .mc-compact-huddle { align-items: stretch; flex-direction: column; }
     .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
@@ -432,7 +413,6 @@ const styles = `
     .mc-top-actions { grid-template-columns: 1fr 1fr; width: 100%; }
     .mc-clock { min-width: 0; }
     .mc-kpis, .mc-bottom { grid-template-columns: 1fr; }
-    .mc-health-body { grid-template-columns: 1fr; }
     .mc-closeout-row { grid-template-columns: 1fr 1fr; }
     .mc-closeout-open { justify-self: start; }
     .mc-flow-toolbar { align-items: stretch; flex-direction: column; }
@@ -449,6 +429,7 @@ const styles = `
     .mc-hot .mc-row, .mc-row { grid-template-columns: 1fr; }
     .mc-tag, .mc-priority { justify-self: start; }
     .mc-readiness { grid-template-columns: 1fr; }
+    .mc-health-grid { grid-template-columns: 1fr; }
     .mc-ready-card { border-right: 0; border-bottom: 1px solid #303940; }
     .mc-huddle-grid { grid-template-columns: 1fr; }
     .mc-huddle-card { border-right: 0; border-bottom: 1px solid #303940; }
@@ -479,10 +460,6 @@ const outsideFlowIcons = [
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
-}
-
-function clampScore(value) {
-  return Math.max(0, Math.min(100, Math.round(value)));
 }
 
 function getCloseoutCustomerName(customer) {
@@ -688,7 +665,9 @@ function Dashboard({
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [officeCloseoutOrders, setOfficeCloseoutOrders] = useState([]);
   const [outsideProjects, setOutsideProjects] = useState([]);
-  const [flowMode, setFlowMode] = useState("shop");
+  const [flowMode, setFlowMode] = useState(
+    () => window.localStorage.getItem("mw-dashboard-flow-mode") || "shop",
+  );
   const [selectedOutsideStage, setSelectedOutsideStage] = useState("");
   const [todayView, setTodayView] = useState("All");
   const [leadershipView, setLeadershipView] = useState("Needs Attention");
@@ -710,6 +689,10 @@ function Dashboard({
     );
     return () => window.clearInterval(clockTimer);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("mw-dashboard-flow-mode", flowMode);
+  }, [flowMode]);
 
   async function loadDashboard(showLoading = true) {
     if (showLoading) setLoading(true);
@@ -804,62 +787,57 @@ function Dashboard({
   const unifiedCloseoutCount =
     officeCloseoutOrders.length + outsideCloseoutProjects.length;
 
+  const quoteApprovalCount = outsideProjects.filter((project) =>
+    ["Pre-Production / Quote", "Quote & Approval"].includes(project.workflowStage) ||
+    (["Required", "Pending", "Sent"].includes(project.approval_status) && project.approval_status !== "Approved"),
+  ).length;
+  const outsideProductionCount = outsideProjects.filter((project) =>
+    ["Design", "Welding / Fabrication", "Finish / Corrections", "Assembly"].includes(project.workflowStage),
+  ).length;
+  const fieldCommitmentCount = Number(stats.siteVisits || 0) + Number(stats.installs || 0);
+
   const statCards = [
     [
-      "Open Orders",
-      stats.openOrders || 0,
-      "Customer orders",
-      IconClipboardList,
-      () => goToPage("customerOrders"),
+      "Estimates & Site Visits",
+      stats.siteVisits || 0,
+      "Scheduled and unscheduled estimates",
+      IconMapPin,
+      () => goToPage("projects"),
     ],
     [
-      "Outside Projects",
-      outsideProjects.length,
-      "Field projects",
+      "Quotes & Approvals",
+      quoteApprovalCount,
+      `${outsideProjects.length} total outside projects`,
       IconHammer,
       () => goToPage("projects"),
     ],
     [
-      "Open Work Orders",
-      stats.openWorkOrders || 0,
-      "Active work",
-      IconTool,
-      () => goToPage("jobQueue"),
+      "Open Orders",
+      stats.openOrders || 0,
+      "Approved customer orders",
+      IconClipboardList,
+      () => goToPage("customerOrders"),
     ],
     [
-      "Due Today",
-      stats.dueToday || 0,
-      "Actions due",
-      IconCalendarEvent,
-      () => goToActionCenter("Due Today"),
+      "In Production",
+      Number(stats.inProduction || 0) + outsideProductionCount,
+      `${stats.openWorkOrders || 0} active work orders`,
+      IconBuildingFactory2,
+      () => goToPage("productionControl"),
     ],
     [
-      "Overdue",
-      stats.overdue || 0,
-      "Past due actions",
-      IconAlertTriangle,
-      () => goToActionCenter("Overdue"),
-    ],
-    [
-      "Site Visits",
-      stats.siteVisits || 0,
-      "Field checks",
-      IconMapPin,
-      () => goToPage("quoteCenter"),
-    ],
-    [
-      "Installs",
-      stats.installs || 0,
-      "Scheduled installs",
+      "Field Work & Installs",
+      fieldCommitmentCount,
+      `${stats.siteVisits || 0} visits · ${stats.installs || 0} installs`,
       IconTruckDelivery,
       () => goToPage("fieldSchedule"),
     ],
     [
-      "In Production",
-      stats.inProduction || 0,
-      "Active shop jobs",
-      IconBuildingFactory2,
-      () => goToPage("productionJobs"),
+      "Closeout",
+      unifiedCloseoutCount,
+      "Payment and final office completion",
+      IconClipboardList,
+      () => goToPage("customerOrders"),
     ],
   ];
 
@@ -1042,6 +1020,16 @@ function Dashboard({
     return true;
   });
 
+  const leadershipExceptions = leadershipUpdates.filter(({ update }) =>
+    !update || Boolean(
+      update.leadership_attention_required ||
+      update.blockers ||
+      update.decisions_needed ||
+      update.schedule_change ||
+      update.budget_change,
+    ),
+  );
+
   async function prepareLeadershipNotes() {
     setBriefOpen(true);
     setBriefLoading(true);
@@ -1150,30 +1138,9 @@ function Dashboard({
     setBriefCopied(true);
   }
 
-  const scheduleScore = clampScore(100 - Number(stats.overdue || 0) * 12);
-  const projectScore = clampScore(
-    100 -
-      Number(projectHealth.attentionNeeded || 0) * 9 -
-      Number(projectHealth.blocked || 0) * 18,
-  );
-  const productionScore = clampScore(
-    100 - Number(huddleSummary.blockers || 0) * 15,
-  );
   const materialIssues =
     Number(outsideSummary.materialsNeedOrdered || 0) +
     Number(outsideSummary.materialsWaiting || 0);
-  const materialScore = clampScore(100 - materialIssues * 9);
-  const blockerScore = clampScore(
-    100 - Number(huddleSummary.blockers || 0) * 20,
-  );
-  const overallScore = clampScore(
-    (scheduleScore +
-      projectScore +
-      productionScore +
-      materialScore +
-      blockerScore) /
-      5,
-  );
 
   if (loading) {
     return (
@@ -1287,32 +1254,47 @@ function Dashboard({
         ))}
       </section>
 
+      <section className="mc-panel mc-leadership-priority">
+        <PanelHead
+          icon={IconFileDescription}
+          title="Leadership Attention"
+          subtitle="Projects missing an update or requiring a decision, schedule change, or blocker response"
+          action={`View All Projects (${outsideProjects.length})`}
+          onAction={() => goToPage("projects")}
+        />
+        <div className="mc-operating-list">
+          {leadershipExceptions.length === 0 ? (
+            <Empty compact text="No outside projects currently require leadership attention." />
+          ) : (
+            leadershipExceptions.slice(0, 6).map(({ project, update }) => {
+              const issue = update?.blockers || update?.decisions_needed || update?.schedule_change || update?.budget_change || "Daily project update has not been submitted.";
+              return (
+                <button className="mc-operating-card" type="button" key={`leadership-${project.id}`} onClick={() => openProjectById(project.id)}>
+                  <span className="mc-operating-card-head">
+                    <span className="mc-priority">Needs Attention</span>
+                    <span className="mc-tag amber">{project.workflowStage || project.status || "Active"}</span>
+                  </span>
+                  <strong className="mc-operating-card-title">{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
+                  <span className="mc-operating-card-detail">{issue}</span>
+                  <span className="mc-operating-card-foot">
+                    <span>Owner: {update?.project_lead || project.assigned_to || "Unassigned"}</span>
+                    <span>{update?.update_date ? `Updated ${update.update_date}` : "Update missing"}</span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </section>
+
       <section className="mc-panel">
         <PanelHead
           icon={IconBolt}
-          title="Today’s Operating Picture"
-          subtitle="One place for priorities, dated orders, field work, and blockers"
+          title="Needs Action Now"
+          subtitle="Priorities, dated orders, field work, and blockers requiring follow-through"
           action="Open Action Center"
           onAction={() => goToActionCenter("All")}
         />
-        <div className="mc-operating-summary">
-          <div className="mc-operating-stat">
-            <span>Due Today</span>
-            <strong>{stats.dueToday || 0}</strong>
-          </div>
-          <div className="mc-operating-stat">
-            <span>Overdue</span>
-            <strong>{stats.overdue || 0}</strong>
-          </div>
-          <div className="mc-operating-stat">
-            <span>Field Today</span>
-            <strong>{huddleSummary.todayFieldWork || 0}</strong>
-          </div>
-          <div className="mc-operating-stat">
-            <span>Active Blockers</span>
-            <strong>{huddleSummary.blockers || 0}</strong>
-          </div>
-        </div>
         <div className="mc-tabbar" role="tablist" aria-label="Today filters">
           {todayTabs.map((tab) => {
             const count =
@@ -1792,50 +1774,32 @@ function Dashboard({
         <section className="mc-panel">
           <PanelHead
             icon={IconShieldCheck}
-            title="Operations Health"
-            subtitle="Live readiness and execution score"
+            title="Readiness Snapshot"
+            subtitle="Direct counts showing where follow-through is needed"
             action="Action Center"
             onAction={() => goToActionCenter("All")}
           />
-          <div className="mc-health-body">
-            <div className="mc-score" style={{ "--score": overallScore }}>
-              <div className="mc-score-inner">
-                <strong>{overallScore}</strong>
-                <span>{overallScore >= 90 ? "Strong" : "Action Required"}</span>
-              </div>
-            </div>
-            <div>
-              <HealthLine
-                icon={IconCalendarEvent}
-                label="Schedule"
-                detail={`${stats.overdue || 0} overdue`}
-                score={scheduleScore}
-              />
-              <HealthLine
-                icon={IconClipboardList}
-                label="Projects"
-                detail={`${projectHealth.blocked || 0} blocked`}
-                score={projectScore}
-              />
-              <HealthLine
-                icon={IconBuildingFactory2}
-                label="Production"
-                detail={`${stats.inProduction || 0} active jobs`}
-                score={productionScore}
-              />
-              <HealthLine
-                icon={IconBox}
-                label="Materials"
-                detail={`${materialIssues} need attention`}
-                score={materialScore}
-              />
-              <HealthLine
-                icon={IconAlertTriangle}
-                label="Blockers"
-                detail={`${huddleSummary.blockers || 0} active`}
-                score={blockerScore}
-              />
-            </div>
+          <div className="mc-health-grid">
+            <button className={`mc-health-card ${Number(stats.overdue || 0) ? "danger" : ""}`} type="button" onClick={() => goToActionCenter("Overdue")}>
+              <IconCalendarEvent />
+              <span>Schedule<small>Overdue actions</small></span>
+              <strong>{stats.overdue || 0}</strong>
+            </button>
+            <button className={`mc-health-card ${Number(projectHealth.blocked || 0) ? "danger" : ""}`} type="button" onClick={() => goToPage("projects")}>
+              <IconClipboardList />
+              <span>Projects<small>Blocked projects</small></span>
+              <strong>{projectHealth.blocked || 0}</strong>
+            </button>
+            <button className="mc-health-card" type="button" onClick={() => goToPage("productionControl")}>
+              <IconBuildingFactory2 />
+              <span>Production<small>Active shop and outside work</small></span>
+              <strong>{Number(stats.inProduction || 0) + outsideProductionCount}</strong>
+            </button>
+            <button className={`mc-health-card ${Number(huddleSummary.blockers || 0) ? "warn" : ""}`} type="button" onClick={() => goToActionCenter("Blockers")}>
+              <IconAlertTriangle />
+              <span>Blockers<small>Reported active blockers</small></span>
+              <strong>{huddleSummary.blockers || 0}</strong>
+            </button>
           </div>
         </section>
 
@@ -1848,23 +1812,23 @@ function Dashboard({
             onAction={() => goToPage("projects")}
           />
           <div className="mc-readiness">
-            <div className="mc-ready-card ready">
-              <span>Ready</span>
+            <button className="mc-ready-card ready" type="button" onClick={() => goToPage("projects")}>
+              <span>No Material Hold</span>
               <strong>
                 {Math.max(0, outsideProjects.length - materialIssues)}
               </strong>
-              <small>Projects clear</small>
-            </div>
-            <div className="mc-ready-card order">
+              <small>No ordering or receiving issue</small>
+            </button>
+            <button className="mc-ready-card order" type="button" onClick={() => goToPage("projects")}>
               <span>Need Ordering</span>
               <strong>{outsideSummary.materialsNeedOrdered || 0}</strong>
               <small>Purchase required</small>
-            </div>
-            <div className="mc-ready-card wait">
+            </button>
+            <button className="mc-ready-card wait" type="button" onClick={() => goToPage("projects")}>
               <span>Waiting Material</span>
               <strong>{outsideSummary.materialsWaiting || 0}</strong>
               <small>Ordered / pending</small>
-            </div>
+            </button>
           </div>
         </section>
       </section>
@@ -1872,8 +1836,8 @@ function Dashboard({
       <section className="mc-panel">
         <PanelHead
           icon={IconFileDescription}
-          title="Leadership Attention"
-          subtitle="Exceptions, missing updates, and decisions across outside projects"
+          title="Project Update Library"
+          subtitle="Latest submitted update from every active outside project"
           action="View Projects"
           onAction={() => goToPage("projects")}
         />
@@ -2110,22 +2074,8 @@ function PanelHead({ icon: Icon, title, subtitle, action, onAction }) {
   );
 }
 
-function Empty({ text }) {
-  return <div className="mc-empty">{text}</div>;
-}
-
-function HealthLine({ icon: Icon, label, detail, score }) {
-  const tone = score < 65 ? "danger" : score < 85 ? "warn" : "";
-  return (
-    <div className="mc-health-line">
-      <Icon />
-      <b>
-        {label}
-        <small>{detail}</small>
-      </b>
-      <strong className={tone}>{score}</strong>
-    </div>
-  );
+function Empty({ text, compact = false }) {
+  return <div className={`mc-empty ${compact ? "compact" : ""}`}>{text}</div>;
 }
 
 export default Dashboard;
