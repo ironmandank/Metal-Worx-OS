@@ -1566,25 +1566,29 @@ export async function getDashboardData() {
   ];
 
   const shopFlow =
-    departmentStages.map((department) => ({
-      name: department,
-      capacity: 10,
-      count: new Set(
-        openWorkOrders
-          .filter(
-            (workOrder) =>
-              workOrder.is_active !== false &&
-              ["ready", "in progress", "on hold"].includes(
-                normalizeStatus(workOrder.status)
-              ) &&
-              getCanonicalShopStage(workOrder) === department
-          )
-          .map(
-            (workOrder) =>
-              workOrder.production_job_id || `work-order-${workOrder.id}`
-          )
-      ).size,
-    }));
+    departmentStages.map((department) => {
+      const departmentOrders = openWorkOrders.filter(
+        (workOrder) =>
+          workOrder.is_active !== false &&
+          ["ready", "in progress", "on hold"].includes(normalizeStatus(workOrder.status)) &&
+          getCanonicalShopStage(workOrder) === department
+      );
+      const uniqueCount = (status) => new Set(
+        departmentOrders
+          .filter((workOrder) => normalizeStatus(workOrder.status) === status)
+          .map((workOrder) => workOrder.production_job_id || `work-order-${workOrder.id}`)
+      ).size;
+      return {
+        name: department,
+        capacity: 10,
+        count: new Set(
+          departmentOrders.map((workOrder) => workOrder.production_job_id || `work-order-${workOrder.id}`)
+        ).size,
+        ready: uniqueCount("ready"),
+        inProgress: uniqueCount("in progress"),
+        onHold: uniqueCount("on hold"),
+      };
+    });
 
   /* =====================================================
      DAILY ATTENTION

@@ -902,7 +902,15 @@ function Dashboard({
         100,
         Math.round((count / Math.max(1, capacity)) * 100),
       );
-      return { name, count, capacity, percentage };
+      return {
+        name,
+        count,
+        capacity,
+        percentage,
+        ready: Number(source.ready || 0),
+        inProgress: Number(source.inProgress || 0),
+        onHold: Number(source.onHold || 0),
+      };
     });
   }, [flow, unifiedCloseoutCount]);
 
@@ -1531,7 +1539,9 @@ function Dashboard({
                   <i style={{ width: `${Math.max(4, item.percentage)}%` }} />
                 </div>
                 <small>
-                  {item.count} / {item.capacity}
+                  {flowMode === "shop" && item.name !== "Office Closeout"
+                    ? `${item.ready || 0} ready · ${item.inProgress || 0} active`
+                    : `${item.count} / ${item.capacity}`}
                 </small>
               </button>
             );

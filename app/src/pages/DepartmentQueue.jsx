@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  FileButton,
   Group,
   Progress,
   SimpleGrid,
@@ -20,12 +21,16 @@ import {
   completeProductionStep,
   startProductionStep,
 } from "../lib/productionWorkflow";
+import { uploadOrderImages } from "../components/design/DesignIntakeModal";
 
 function DepartmentQueue({
   department,
   setPage,
   setSelectedProductionJob,
   activeUser,
+  accessLevel,
+  refreshKey = 0,
+  onCreateDesign,
 }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [jobDetails, setJobDetails] = useState({});
@@ -33,7 +38,7 @@ function DepartmentQueue({
 
   useEffect(() => {
     loadQueue();
-  }, [department]);
+  }, [department, refreshKey]);
 
   async function loadQueue() {
     setLoading(true);
@@ -240,6 +245,20 @@ function DepartmentQueue({
   }
 
   async function startWorkOrder(workOrder) {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    if (
+      department === "Design" &&
+      order?.design_fee_required &&
+      !order?.design_fee_paid &&
+      order?.design_fee_status !== "Paid"
+    ) {
+      notifications.show({
+        title: "Design Fee Is Still Pending",
+        message: "Record the $50 design fee before starting this new design.",
+        color: "orange",
+      });
+      return;
+    }
     try {
       await startProductionStep(workOrder.id, activeUser);
       notifications.show({
@@ -254,6 +273,86 @@ function DepartmentQueue({
         message: error.message,
         color: "red",
       });
+    }
+  }
+
+  async function submitDesignForApproval(workOrder, file) {
+    const detail = jobDetails[workOrder.production_job_id];
+    if (!detail?.order?.id || !file) return;
+    try {
+      await uploadOrderImages(detail.order.id, [file], "Design Proof");
+      const note = `Design proof submitted by ${activeUser || "Design Team"} on ${new Date().toLocaleString()}.`;
+      const { error } = await supabase
+        .from("customer_orders")
+        .update({
+          status: "Awaiting Customer Approval",
+          design_status: "Awaiting Customer Approval",
+          design_notes: [detail.order.design_notes, note].filter(Boolean).join("\n"),
+        })
+        .eq("id", detail.order.id);
+      if (error) throw error;
+      notifications.show({
+        title: "Ready for Customer Approval",
+        message: "The proof is saved. An administrator must confirm the customer approval before Laser.",
+        color: "green",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Could Not Submit Design",
+        message: error?.message || "The proof could not be submitted.",
+        color: "red",
+      });
+    }
+  }
+
+  async function returnDesignForChanges(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id];
+    if (!detail?.order?.id) return;
+    try {
+      const note = `Customer changes requested by ${activeUser || "Administrator"} on ${new Date().toLocaleString()}.`;
+      const { error } = await supabase
+        .from("customer_orders")
+        .update({
+          status: "In Design",
+          design_status: "In Design",
+          design_notes: [detail.order.design_notes, note].filter(Boolean).join("\n"),
+        })
+        .eq("id", detail.order.id);
+      if (error) throw error;
+      notifications.show({
+        title: "Returned to Design",
+        message: "The order is back in Kory's In Progress queue.",
+        color: "orange",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({ title: "Could Not Return Design", message: error.message, color: "red" });
+    }
+  }
+
+  async function approveDesign(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id];
+    if (!detail?.order?.id) return;
+    try {
+      const result = await completeProductionStep(workOrder.id, activeUser);
+      const note = `Customer approval confirmed by ${activeUser || "Administrator"} on ${new Date().toLocaleString()}.`;
+      const { error } = await supabase
+        .from("customer_orders")
+        .update({
+          design_status: "Customer Approved",
+          design_notes: [detail.order.design_notes, note].filter(Boolean).join("\n"),
+        })
+        .eq("id", detail.order.id);
+      if (error) throw error;
+      notifications.show({
+        title: "Customer Approval Confirmed",
+        message: `${result?.next_department || "Laser"} is now ready to begin.`,
+        color: "green",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({ title: "Could Not Approve Design", message: error.message, color: "red" });
     }
   }
 
@@ -281,9 +380,17 @@ function DepartmentQueue({
     (workOrder) => workOrder.status === "Ready"
   );
 
-  const inProgressOrders = workOrders.filter(
-    (workOrder) => workOrder.status === "In Progress"
-  );
+  const awaitingApprovalOrders = workOrders.filter((workOrder) => {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    return department === "Design" && order?.design_status === "Awaiting Customer Approval";
+  });
+
+  const inProgressOrders = workOrders.filter((workOrder) => {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    return workOrder.status === "In Progress" && order?.design_status !== "Awaiting Customer Approval";
+  });
+
+  const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
   function renderWorkOrder(workOrder) {
     const detail = jobDetails[workOrder.production_job_id];
@@ -365,22 +472,27 @@ function DepartmentQueue({
               Open Job
             </Button>
 
-            <Button
-              color="red"
-              variant="light"
-              disabled={workOrder.status !== "Ready"}
-              onClick={() => startWorkOrder(workOrder)}
-            >
-              Start
-            </Button>
-
-            <Button
-              color="green"
-              disabled={workOrder.status !== "In Progress"}
-              onClick={() => completeWorkOrder(workOrder)}
-            >
-              Complete
-            </Button>
+            {department === "Design" && order?.design_status === "Awaiting Customer Approval" ? (
+              isAdministrator ? (
+                <>
+                  <Button color="orange" variant="light" onClick={() => returnDesignForChanges(workOrder)}>Changes Requested</Button>
+                  <Button color="green" onClick={() => approveDesign(workOrder)}>Confirm Approval</Button>
+                </>
+              ) : (
+                <Button disabled>Waiting for Administrator</Button>
+              )
+            ) : (
+              <>
+                <Button color="red" variant="light" disabled={workOrder.status !== "Ready"} onClick={() => startWorkOrder(workOrder)}>Start</Button>
+                {department === "Design" ? (
+                  <FileButton onChange={(file) => submitDesignForApproval(workOrder, file)} accept="image/*,.pdf,.svg">
+                    {(props) => <Button {...props} color="green" disabled={workOrder.status !== "In Progress"}>Upload Proof & Submit</Button>}
+                  </FileButton>
+                ) : (
+                  <Button color="green" disabled={workOrder.status !== "In Progress"} onClick={() => completeWorkOrder(workOrder)}>Complete</Button>
+                )}
+              </>
+            )}
           </Group>
         </Stack>
       </Card>
@@ -392,16 +504,22 @@ function DepartmentQueue({
       <MWPageHeader
         title={`${department} Queue`}
         subtitle={`Only work currently ready or in progress for ${department}.`}
-        buttonText="Production Control"
-        onButtonClick={() => setPage("productionControl")}
+        buttonText={department === "Design" ? "New Design Intake" : "Production Control"}
+        onButtonClick={department === "Design" ? onCreateDesign : () => setPage("productionControl")}
       />
+
+      {department === "Design" && (
+        <Group justify="flex-end" mb="md">
+          <Button variant="subtle" color="gray" onClick={() => setPage("productionControl")}>Open Production Control</Button>
+        </Group>
+      )}
 
       {loading ? (
         <MWSection title="Loading Queue">
           <Text c="dimmed">Loading {department} work orders...</Text>
         </MWSection>
       ) : (
-        <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="lg">
+        <SimpleGrid cols={{ base: 1, xl: department === "Design" ? 3 : 2 }} spacing="lg">
           <MWSection
             title="In Progress"
             subtitle={`${inProgressOrders.length} currently being worked`}
@@ -427,6 +545,18 @@ function DepartmentQueue({
               )}
             </Stack>
           </MWSection>
+
+          {department === "Design" && (
+            <MWSection title="Customer Approval" subtitle={`${awaitingApprovalOrders.length} awaiting confirmation`}>
+              <Stack>
+                {awaitingApprovalOrders.length === 0 ? (
+                  <Text c="dimmed">No designs are awaiting customer approval.</Text>
+                ) : (
+                  awaitingApprovalOrders.map(renderWorkOrder)
+                )}
+              </Stack>
+            </MWSection>
+          )}
         </SimpleGrid>
       )}
     </>

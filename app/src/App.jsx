@@ -623,6 +623,7 @@ function App() {
           setPage={setPage}
           setSelectedProductionJob={setSelectedProductionJob}
           activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
         />
       );
     }
