@@ -1019,10 +1019,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                   <Text size="sm">{visit.job_site_address || "Address not entered"}</Text>
                   <Text size="sm" c="dimmed">Assigned: {visit.assigned_estimator || "Unassigned"}</Text>
                   <Text size="sm" c="dimmed">Visit: {formatDate(visit.requested_visit_date)}</Text>
-                  <Group grow>
-                    <Button color="blue" loading={advancingVisitId === visit.id} onClick={() => moveVisitToQuote(visit)}>Move to Quote</Button>
-                    {isAdministrator && <Button variant="light" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Bypass</Button>}
-                  </Group>
+                  <Stack gap={8} mt={4}>
+                    <Button fullWidth color="blue" loading={advancingVisitId === visit.id} onClick={() => moveVisitToQuote(visit)}>Move to Quote</Button>
+                    {isAdministrator && <Button fullWidth variant="light" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Skip Quote &amp; Approval</Button>}
+                  </Stack>
                 </Stack>
               </Card>)}
             </SimpleGrid>
@@ -1044,11 +1044,11 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     <Text size="sm" c="dimmed">{quote?.quote_number || "Quote number pending"}</Text>
                     <Text size="sm">{visit.job_site_address || quote?.job_site_address || "Address not entered"}</Text>
                     <Text size="sm" fw={800}>{approved ? "Ready to release into production" : quote?.status === "Draft" ? "Complete pricing and send the quote" : "Waiting for customer approval"}</Text>
-                    <Group grow>
-                      <Button variant="light" color="violet" onClick={() => openLinkedQuote(visit)}>Open Quote</Button>
-                      {approved && <Button color="green" loading={advancingVisitId === visit.id} onClick={() => releaseApprovedQuote(visit)}>Release to Production</Button>}
-                    </Group>
-                    {isAdministrator && !approved && <Button variant="subtle" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Administrator Bypass</Button>}
+                    <Stack gap={8} mt={4}>
+                      <Button fullWidth variant="light" color="violet" onClick={() => openLinkedQuote(visit)}>Open Quote</Button>
+                      {approved && <Button fullWidth color="green" loading={advancingVisitId === visit.id} onClick={() => releaseApprovedQuote(visit)}>Release to Production</Button>}
+                      {isAdministrator && !approved && <Button fullWidth variant="subtle" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Skip Quote &amp; Approval</Button>}
+                    </Stack>
                   </Stack>
                 </Card>;
               })}
