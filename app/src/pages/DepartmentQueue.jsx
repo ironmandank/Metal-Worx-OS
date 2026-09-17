@@ -7,12 +7,19 @@ import {
   FileButton,
   Group,
   Progress,
+  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
-import { IconInfoCircle } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconClock,
+  IconFlag,
+  IconInfoCircle,
+  IconUserCheck,
+} from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import MWPageHeader from "../components/ui/MWPageHeader";
@@ -37,6 +44,7 @@ function DepartmentQueue({
   const [workOrders, setWorkOrders] = useState([]);
   const [jobDetails, setJobDetails] = useState({});
   const [loading, setLoading] = useState(true);
+  const [queueFilter, setQueueFilter] = useState("All");
 
   useEffect(() => {
     loadQueue();
@@ -49,8 +57,8 @@ function DepartmentQueue({
       .from("work_orders")
       .select("*")
       .eq("department", canonicalStation(department) || department)
-      .in("status", ["Ready", "In Progress"])
-      .order("step_order", { ascending: true });
+      .in("status", ["Ready", "In Progress", "Blocked"])
+      .order("station_entered_at", { ascending: true });
 
     if (error) {
       console.error(error);
@@ -219,7 +227,74 @@ function DepartmentQueue({
   function getStatusColor(status) {
     if (status === "Ready") return "blue";
     if (status === "In Progress") return "green";
+    if (status === "Blocked") return "red";
     return "gray";
+  }
+
+  function getStationAge(workOrder) {
+    const enteredAt = workOrder.station_entered_at || workOrder.started_at || workOrder.created_at;
+    if (!enteredAt) return "Station time unavailable";
+    const elapsedHours = Math.max(0, Math.floor((Date.now() - new Date(enteredAt).getTime()) / 3600000));
+    if (elapsedHours < 1) return "Entered this hour";
+    if (elapsedHours < 24) return `${elapsedHours}h in station`;
+    const days = Math.floor(elapsedHours / 24);
+    const hours = elapsedHours % 24;
+    return `${days}d${hours ? ` ${hours}h` : ""} in station`;
+  }
+
+  function isPastDue(value) {
+    if (!value) return false;
+    const dueDate = new Date(`${value}T23:59:59`);
+    return !Number.isNaN(dueDate.getTime()) && dueDate < new Date();
+  }
+
+  async function updateWorkOrder(workOrder, changes, title, message) {
+    const { error } = await supabase.from("work_orders").update(changes).eq("id", workOrder.id);
+    if (error) {
+      notifications.show({ title: "Update Failed", message: error.message, color: "red" });
+      return;
+    }
+    notifications.show({ title, message, color: "green" });
+    await loadQueue();
+  }
+
+  async function claimWorkOrder(workOrder) {
+    await updateWorkOrder(
+      workOrder,
+      { assigned_to: activeUser || "Production Team" },
+      "Work Assigned",
+      `${workOrder.work_order_number} is now assigned to ${activeUser || "Production Team"}.`
+    );
+  }
+
+  async function blockWorkOrder(workOrder) {
+    const reason = window.prompt("Why is this work blocked?");
+    if (!reason?.trim()) return;
+    await updateWorkOrder(
+      workOrder,
+      { status: "Blocked", blocked_reason: reason.trim(), assigned_to: workOrder.assigned_to || activeUser || null },
+      "Work Blocked",
+      "The issue is visible in this station queue until it is resolved."
+    );
+  }
+
+  async function resumeWorkOrder(workOrder) {
+    await updateWorkOrder(
+      workOrder,
+      { status: workOrder.started_at ? "In Progress" : "Ready", blocked_reason: null },
+      "Work Resumed",
+      "The blocker has been cleared."
+    );
+  }
+
+  async function togglePriority(workOrder) {
+    const nextPriority = workOrder.priority === "High" ? "Normal" : "High";
+    await updateWorkOrder(
+      workOrder,
+      { priority: nextPriority },
+      "Priority Updated",
+      `${workOrder.work_order_number} is now ${nextPriority.toLowerCase()} priority.`
+    );
   }
 
   async function openProductionJob(workOrder) {
@@ -392,6 +467,10 @@ function DepartmentQueue({
     return workOrder.status === "In Progress" && order?.design_status !== "Awaiting Customer Approval";
   });
 
+  const blockedOrders = workOrders.filter(
+    (workOrder) => workOrder.status === "Blocked"
+  );
+
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
   function renderWorkOrder(workOrder) {
@@ -410,6 +489,8 @@ function DepartmentQueue({
       order?.customer_order_number ||
       project?.project_number ||
       "Order not linked";
+    const priority = job?.rush ? "Rush" : workOrder.priority || "Normal";
+    const overdue = isPastDue(job?.due_date);
 
     return (
       <Card key={workOrder.id} withBorder radius="lg" p="lg">
@@ -419,6 +500,12 @@ function DepartmentQueue({
               <Badge color={getStatusColor(workOrder.status)} variant="light">
                 {workOrder.status}
               </Badge>
+              {priority !== "Normal" && (
+                <Badge color={priority === "Rush" ? "red" : "orange"} variant="filled">
+                  {priority}
+                </Badge>
+              )}
+              {overdue && <Badge color="red" variant="outline">Overdue</Badge>}
               {department === "Design" && (
                 <Badge
                   color={order?.design_fee_required
@@ -433,7 +520,7 @@ function DepartmentQueue({
               )}
             </Group>
 
-            {job?.rush && <Badge color="red">Rush</Badge>}
+            <Text size="xs" c="dimmed">{getStationAge(workOrder)}</Text>
           </Group>
 
           <Title order={3} style={{ lineHeight: 1.25, overflowWrap: "anywhere" }}>
@@ -478,6 +565,22 @@ function DepartmentQueue({
               </Text>
             </Group>
 
+            <Group justify="space-between" mt="xs">
+              <Group gap={6}>
+                <IconUserCheck size={15} />
+                <Text size="sm">Assigned To</Text>
+              </Group>
+              <Text size="sm" fw={700}>{workOrder.assigned_to || "Unassigned"}</Text>
+            </Group>
+
+            <Group justify="space-between" mt="xs">
+              <Group gap={6}>
+                <IconClock size={15} />
+                <Text size="sm">Station Time</Text>
+              </Group>
+              <Text size="sm" fw={700}>{getStationAge(workOrder)}</Text>
+            </Group>
+
             <Progress
               mt="xs"
               value={job?.progress_percent || 0}
@@ -487,7 +590,31 @@ function DepartmentQueue({
             />
           </Card>
 
-          <Group grow>
+          {workOrder.status === "Blocked" && (
+            <Alert icon={<IconAlertTriangle size={18} />} color="red" title="Work is blocked">
+              {workOrder.blocked_reason || "No blocker reason was recorded."}
+            </Alert>
+          )}
+
+          <Group gap="xs" wrap="wrap">
+            {!workOrder.assigned_to && (
+              <Button size="xs" variant="light" leftSection={<IconUserCheck size={15} />} onClick={() => claimWorkOrder(workOrder)}>
+                Claim
+              </Button>
+            )}
+            {isAdministrator && (
+              <Button size="xs" variant="subtle" color="orange" leftSection={<IconFlag size={15} />} onClick={() => togglePriority(workOrder)}>
+                {workOrder.priority === "High" ? "Normal Priority" : "Mark High Priority"}
+              </Button>
+            )}
+            {workOrder.status === "Blocked" ? (
+              <Button size="xs" color="green" variant="light" onClick={() => resumeWorkOrder(workOrder)}>Resume Work</Button>
+            ) : (
+              <Button size="xs" color="red" variant="subtle" onClick={() => blockWorkOrder(workOrder)}>Mark Blocked</Button>
+            )}
+          </Group>
+
+          <Group grow wrap="wrap">
             <Button
               variant="light"
               color="gray"
@@ -541,39 +668,56 @@ function DepartmentQueue({
         </Alert>
       )}
 
+      <Card withBorder radius="lg" p="md" mb="lg">
+        <Group justify="space-between" align="center" wrap="wrap">
+          <Stack gap={2}>
+            <Text fw={800}>Queue View</Text>
+            <Text size="sm" c="dimmed">Focus the station team on the work that needs attention now.</Text>
+          </Stack>
+          <SegmentedControl
+            value={queueFilter}
+            onChange={setQueueFilter}
+            data={[
+              { label: `All (${workOrders.length})`, value: "All" },
+              { label: `Ready (${readyOrders.length})`, value: "Ready" },
+              { label: `In Progress (${inProgressOrders.length})`, value: "In Progress" },
+              { label: `Blocked (${blockedOrders.length})`, value: "Blocked" },
+            ]}
+          />
+        </Group>
+      </Card>
+
       {loading ? (
         <MWSection title="Loading Queue">
           <Text c="dimmed">Loading {department} work orders...</Text>
         </MWSection>
       ) : (
-        <SimpleGrid cols={{ base: 1, xl: department === "Design" ? 3 : 2 }} spacing="lg">
-          <MWSection
-            title="In Progress"
-            subtitle={`${inProgressOrders.length} currently being worked`}
-          >
-            <Stack>
-              {inProgressOrders.length === 0 ? (
-                <Text c="dimmed">No work currently in progress.</Text>
-              ) : (
-                inProgressOrders.map(renderWorkOrder)
-              )}
-            </Stack>
-          </MWSection>
+        <SimpleGrid cols={{ base: 1, lg: 2, xl: department === "Design" ? 3 : 2 }} spacing="lg">
+          {(queueFilter === "All" || queueFilter === "In Progress") && (
+            <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
+              <Stack>
+                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderWorkOrder)}
+              </Stack>
+            </MWSection>
+          )}
 
-          <MWSection
-            title="Ready"
-            subtitle={`${readyOrders.length} ready to start`}
-          >
-            <Stack>
-              {readyOrders.length === 0 ? (
-                <Text c="dimmed">No work ready to start.</Text>
-              ) : (
-                readyOrders.map(renderWorkOrder)
-              )}
-            </Stack>
-          </MWSection>
+          {(queueFilter === "All" || queueFilter === "Ready") && (
+            <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
+              <Stack>
+                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderWorkOrder)}
+              </Stack>
+            </MWSection>
+          )}
 
-          {department === "Design" && (
+          {(queueFilter === "All" || queueFilter === "Blocked") && (
+            <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
+              <Stack>
+                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderWorkOrder)}
+              </Stack>
+            </MWSection>
+          )}
+
+          {department === "Design" && queueFilter === "All" && (
             <MWSection title="Customer Approval" subtitle={`${awaitingApprovalOrders.length} awaiting confirmation`}>
               <Stack>
                 {awaitingApprovalOrders.length === 0 ? (
