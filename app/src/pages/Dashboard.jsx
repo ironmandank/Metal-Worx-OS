@@ -154,6 +154,28 @@ const styles = `
   .mc-panel-title div { min-width: 0; }
   .mc-panel-title h2 { margin: 0; color: #f5f6f7; font-size: 1rem; line-height: 1.15; text-transform: uppercase; }
   .mc-panel-title small { display: block; margin-top: 2px; color: #74818a; font-size: .62rem; }
+  .mc-tabbar {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px;
+    border-bottom: 1px solid #303a41; background: #0b1115;
+  }
+  .mc-tab {
+    min-height: 32px; padding: 0 11px; border: 1px solid #3a454d; border-radius: 6px;
+    color: #9ca7af; background: #11181d; font: inherit; font-size: .64rem;
+    font-weight: 900; cursor: pointer; white-space: nowrap;
+  }
+  .mc-tab:hover { color: #fff; border-color: #6c7880; }
+  .mc-tab.active { color: #fff; border-color: #c90c1b; background: #8e000b; }
+  .mc-tab-count {
+    display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 6px;
+    padding: 0 5px; border-radius: 999px; background: rgba(255,255,255,.12); font-size: .56rem;
+  }
+  .mc-operating-summary {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px;
+    border-bottom: 1px solid #303a41; background: #303a41;
+  }
+  .mc-operating-stat { padding: 10px 12px; background: #11181d; }
+  .mc-operating-stat span { display: block; color: #7f8c95; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
+  .mc-operating-stat strong { display: block; margin-top: 3px; font-size: 1.15rem; }
   .mc-link {
     border: 0; color: #d9dfe3; background: transparent; font: inherit; font-size: .72rem;
     cursor: pointer; white-space: nowrap;
@@ -175,6 +197,13 @@ const styles = `
   .mc-update-detail.alert { border-color: #7b2028; background: #190d10; }
   .mc-update-detail span { display: block; margin-bottom: 3px; color: #84919a; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
   .mc-update-detail p { margin: 0; color: #e6eaed; font-size: .7rem; line-height: 1.4; white-space: pre-wrap; }
+  .mc-compact-huddle {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 12px; border-top: 1px solid #303a41; background: #0b1115;
+  }
+  .mc-compact-huddle-copy { min-width: 0; }
+  .mc-compact-huddle-copy strong { display: block; font-size: .78rem; }
+  .mc-compact-huddle-copy small { display: block; margin-top: 3px; color: var(--mc-muted); font-size: .64rem; }
 
   .mc-flow-toolbar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -370,6 +399,8 @@ const styles = `
     .mc-huddle-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 760px) {
+    .mc-operating-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mc-compact-huddle { align-items: stretch; flex-direction: column; }
     .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
     .mc-logo { width: 100%; padding: 0 14px; }
     .mc-title-block { padding: 0 14px; }
@@ -636,6 +667,8 @@ function Dashboard({
   const [outsideProjects, setOutsideProjects] = useState([]);
   const [flowMode, setFlowMode] = useState("shop");
   const [selectedOutsideStage, setSelectedOutsideStage] = useState("");
+  const [todayView, setTodayView] = useState("All");
+  const [leadershipView, setLeadershipView] = useState("Needs Attention");
   const [briefOpen, setBriefOpen] = useState(false);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefText, setBriefText] = useState("");
@@ -908,6 +941,37 @@ function Dashboard({
     ),
   ].slice(0, 5);
 
+  const todayGroups = {
+    "Hot Today": hotItems,
+    Commitments: commitments,
+    "Dated Orders": artHotItems,
+    "Field Work": fieldItems,
+    Blockers: riskItems,
+  };
+  const todayTabs = ["All", ...Object.keys(todayGroups)];
+  const todayItems = (
+    todayView === "All"
+      ? Object.entries(todayGroups).flatMap(([group, items]) =>
+          items.map((item) => ({ ...item, dashboardGroup: group })),
+        )
+      : (todayGroups[todayView] || []).map((item) => ({
+          ...item,
+          dashboardGroup: todayView,
+        }))
+  )
+    .filter(
+      (item, index, items) =>
+        index ===
+        items.findIndex(
+          (candidate) =>
+            String(candidate.sourceType || candidate.dashboardGroup) ===
+              String(item.sourceType || item.dashboardGroup) &&
+            String(candidate.sourceId || candidate.id || candidate.title) ===
+              String(item.sourceId || item.id || item.title),
+        ),
+    )
+    .slice(0, todayView === "All" ? 12 : 10);
+
   const leadershipUpdates = useMemo(() => {
     const updates = safeArray(huddle.dailyUpdates);
     const latestByProject = new Map();
@@ -916,15 +980,36 @@ function Dashboard({
       if (!latestByProject.has(key)) latestByProject.set(key, update);
     });
 
-    return outsideProjects.map((project) => ({
-      project,
-      update: latestByProject.get(String(project.id)) || null,
-    })).sort((left, right) => {
-      if (!left.update) return 1;
-      if (!right.update) return -1;
-      return String(right.update.created_at || right.update.update_date || "").localeCompare(String(left.update.created_at || left.update.update_date || ""));
-    });
+    return outsideProjects
+      .map((project) => ({
+        project,
+        update: latestByProject.get(String(project.id)) || null,
+      }))
+      .sort((left, right) => {
+        if (!left.update) return 1;
+        if (!right.update) return -1;
+        return String(
+          right.update.created_at || right.update.update_date || "",
+        ).localeCompare(
+          String(left.update.created_at || left.update.update_date || ""),
+        );
+      });
   }, [huddle.dailyUpdates, outsideProjects]);
+
+  const filteredLeadershipUpdates = leadershipUpdates.filter(({ update }) => {
+    const needsAttention = Boolean(
+      update?.leadership_attention_required ||
+      update?.blockers ||
+      update?.decisions_needed ||
+      update?.schedule_change ||
+      update?.budget_change,
+    );
+    if (leadershipView === "Needs Attention") return needsAttention || !update;
+    if (leadershipView === "Missing Update") return !update;
+    if (leadershipView === "On Track")
+      return Boolean(update) && !needsAttention;
+    return true;
+  });
 
   async function prepareLeadershipNotes() {
     setBriefOpen(true);
@@ -956,7 +1041,11 @@ function Dashboard({
       ];
 
       if (commitments.length) {
-        commitments.forEach((item) => lines.push(`- ${item.title || "Priority"} | Owner: ${item.owner || "Unassigned"} | ${item.nextAction || item.detail || "Needs attention"}`));
+        commitments.forEach((item) =>
+          lines.push(
+            `- ${item.title || "Priority"} | Owner: ${item.owner || "Unassigned"} | ${item.nextAction || item.detail || "Needs attention"}`,
+          ),
+        );
       } else {
         lines.push("- No whole-shop priority is currently recorded.");
       }
@@ -964,37 +1053,62 @@ function Dashboard({
       lines.push("", "ACTIVE OUTSIDE PROJECTS:");
       outsideProjects.forEach((project) => {
         const update = latestByProject.get(String(project.id));
-        lines.push("", `${project.project_number || "Project"} — ${project.project_name || project.contact_name || "Unnamed project"}`);
+        lines.push(
+          "",
+          `${project.project_number || "Project"} — ${project.project_name || project.contact_name || "Unnamed project"}`,
+        );
         lines.push(`Lead: ${project.assigned_to || "Unassigned"}`);
-        lines.push(`Stage: ${project.workflowStage || project.status || "Not recorded"}`);
-        lines.push(`Due: ${project.target_completion_date || project.due_date || "Not set"}`);
+        lines.push(
+          `Stage: ${project.workflowStage || project.status || "Not recorded"}`,
+        );
+        lines.push(
+          `Due: ${project.target_completion_date || project.due_date || "Not set"}`,
+        );
         if (!update) {
           lines.push("Today's update: NOT SUBMITTED");
           return;
         }
         lines.push(`Today's status: ${update.status || "Not recorded"}`);
-        if (update.work_completed) lines.push(`Completed: ${update.work_completed}`);
-        if (update.work_in_progress) lines.push(`In progress: ${update.work_in_progress}`);
+        if (update.work_completed)
+          lines.push(`Completed: ${update.work_completed}`);
+        if (update.work_in_progress)
+          lines.push(`In progress: ${update.work_in_progress}`);
         if (update.next_steps) lines.push(`Next steps: ${update.next_steps}`);
         if (update.blockers) lines.push(`Blockers: ${update.blockers}`);
-        if (update.materials_needed) lines.push(`Materials needed: ${update.materials_needed}`);
-        if (update.labor_needed) lines.push(`Labor/help needed: ${update.labor_needed}`);
-        if (update.decisions_needed) lines.push(`Leadership decisions: ${update.decisions_needed}`);
-        if (update.schedule_change) lines.push(`Schedule change: ${update.schedule_change}`);
-        if (update.budget_change) lines.push(`Budget change: ${update.budget_change}`);
+        if (update.materials_needed)
+          lines.push(`Materials needed: ${update.materials_needed}`);
+        if (update.labor_needed)
+          lines.push(`Labor/help needed: ${update.labor_needed}`);
+        if (update.decisions_needed)
+          lines.push(`Leadership decisions: ${update.decisions_needed}`);
+        if (update.schedule_change)
+          lines.push(`Schedule change: ${update.schedule_change}`);
+        if (update.budget_change)
+          lines.push(`Budget change: ${update.budget_change}`);
       });
 
       lines.push("", "HOT ARTWORK & DATED SHOP ORDERS:");
       if (artHotItems.length) {
-        artHotItems.forEach((item) => lines.push(`- ${item.title} | ${item.customer || "Customer not entered"} | ${item.fulfillmentMethod || "Pickup"}: ${item.dueDisplay || "Date not set"} | Lead: ${item.owner || "Unassigned"}`));
+        artHotItems.forEach((item) =>
+          lines.push(
+            `- ${item.title} | ${item.customer || "Customer not entered"} | ${item.fulfillmentMethod || "Pickup"}: ${item.dueDisplay || "Date not set"} | Lead: ${item.owner || "Unassigned"}`,
+          ),
+        );
       } else {
-        lines.push("- No hot artwork or approaching dated shop orders are recorded.");
+        lines.push(
+          "- No hot artwork or approaching dated shop orders are recorded.",
+        );
       }
 
-      lines.push("", `OPERATING COUNTS: ${stats.openOrders || 0} open orders; ${outsideProjects.length} active outside projects; ${stats.inProduction || 0} shop jobs in production; ${huddleSummary.blockers || 0} active blockers; ${stats.overdue || 0} overdue actions.`);
+      lines.push(
+        "",
+        `OPERATING COUNTS: ${stats.openOrders || 0} open orders; ${outsideProjects.length} active outside projects; ${stats.inProduction || 0} shop jobs in production; ${huddleSummary.blockers || 0} active blockers; ${stats.overdue || 0} overdue actions.`,
+      );
       setBriefText(lines.join("\n"));
     } catch (error) {
-      setBriefText(`Leadership notes could not be prepared.\n\n${error.message}`);
+      setBriefText(
+        `Leadership notes could not be prepared.\n\n${error.message}`,
+      );
     } finally {
       setBriefLoading(false);
     }
@@ -1140,6 +1254,123 @@ function Dashboard({
             </span>
           </button>
         ))}
+      </section>
+
+      <section className="mc-panel">
+        <PanelHead
+          icon={IconBolt}
+          title="Today’s Operating Picture"
+          subtitle="One place for priorities, dated orders, field work, and blockers"
+          action="Open Action Center"
+          onAction={() => goToActionCenter("All")}
+        />
+        <div className="mc-operating-summary">
+          <div className="mc-operating-stat">
+            <span>Due Today</span>
+            <strong>{stats.dueToday || 0}</strong>
+          </div>
+          <div className="mc-operating-stat">
+            <span>Overdue</span>
+            <strong>{stats.overdue || 0}</strong>
+          </div>
+          <div className="mc-operating-stat">
+            <span>Field Today</span>
+            <strong>{huddleSummary.todayFieldWork || 0}</strong>
+          </div>
+          <div className="mc-operating-stat">
+            <span>Active Blockers</span>
+            <strong>{huddleSummary.blockers || 0}</strong>
+          </div>
+        </div>
+        <div className="mc-tabbar" role="tablist" aria-label="Today filters">
+          {todayTabs.map((tab) => {
+            const count =
+              tab === "All"
+                ? Object.values(todayGroups).reduce(
+                    (total, items) => total + items.length,
+                    0,
+                  )
+                : todayGroups[tab].length;
+            return (
+              <button
+                className={`mc-tab ${todayView === tab ? "active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={todayView === tab}
+                key={tab}
+                onClick={() => setTodayView(tab)}
+              >
+                {tab}
+                <span className="mc-tab-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mc-list">
+          {todayItems.length === 0 ? (
+            <Empty
+              text={`No ${todayView === "All" ? "operating items" : todayView.toLowerCase()} need attention.`}
+            />
+          ) : (
+            todayItems.map((item, index) => (
+              <button
+                className="mc-row"
+                type="button"
+                key={`${item.dashboardGroup}-${item.id || item.sourceId || index}`}
+                onClick={() => {
+                  if (item.dashboardGroup === "Dated Orders") {
+                    if (item.sourceType === "customerOrder")
+                      openOrderById(item.sourceId);
+                    else goToPage("quickTurnaround");
+                    return;
+                  }
+                  if (item.dashboardGroup === "Field Work") {
+                    if (item.sourceType === "prequoteSiteVisit")
+                      goToPage("quoteCenter");
+                    else openProjectById(item.projectId || item.sourceId);
+                    return;
+                  }
+                  openAction(item);
+                }}
+              >
+                <span
+                  className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}
+                >
+                  {item.dashboardGroup}
+                </span>
+                <span className="mc-row-main">
+                  <strong>
+                    {item.title || item.customer || item.job || "Work item"}
+                  </strong>
+                  <small>
+                    {item.customer ||
+                      item.detail ||
+                      item.issue ||
+                      item.location ||
+                      item.type ||
+                      "Metal Worx work item"}
+                  </small>
+                </span>
+                <span className="mc-row-meta">
+                  <strong>{item.owner || "Unassigned"}</strong>
+                  <small>
+                    {item.nextAction ||
+                      item.notes ||
+                      item.date ||
+                      item.day ||
+                      "Open"}
+                  </small>
+                </span>
+                <span className={`mc-tag ${item.isToday ? "green" : ""}`}>
+                  {item.status ||
+                    item.tag ||
+                    item.dueDisplay ||
+                    (item.isToday ? "Today" : "Open")}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="mc-panel">
@@ -1544,196 +1775,6 @@ function Dashboard({
         </section>
       )}
 
-      <section className="mc-panel mc-hot">
-        <PanelHead
-          icon={IconBolt}
-          title="Hot Today & Quick Commitments"
-          subtitle="Priority work requiring immediate execution"
-          action={`View All (${attention.length})`}
-          onAction={() => goToPage("quickTurnaround")}
-        />
-        {hotItems.length === 0 ? (
-          <Empty text="No hot items are currently flagged." />
-        ) : (
-          hotItems.map((item, index) => (
-            <button
-              className="mc-row"
-              key={item.id || index}
-              onClick={() => openAction(item)}
-            >
-              <span
-                className={`mc-priority ${
-                  String(item.type || "")
-                    .toLowerCase()
-                    .includes("quick")
-                    ? "quick"
-                    : ""
-                }`}
-              >
-                {item.priority || item.tag || "Hot"}
-              </span>
-              <span className="mc-row-main">
-                <strong>{item.title || "Untitled commitment"}</strong>
-                <small>
-                  {item.customer ||
-                    item.issue ||
-                    item.type ||
-                    "Metal Worx work item"}
-                </small>
-              </span>
-              <span className="mc-row-meta">
-                <strong>{item.owner || "Unassigned"}</strong>
-                <small>{item.next || item.nextAction || "Open"}</small>
-              </span>
-              <span className="mc-tag">
-                {item.status || item.tag || "Open"}
-              </span>
-            </button>
-          ))
-        )}
-      </section>
-
-      <section className="mc-panel mc-art">
-        <PanelHead
-          icon={IconTool}
-          title="Hot Artwork & Dated Orders"
-          subtitle="Manual art priorities plus customer orders approaching pickup or ship dates"
-          action={`Manage (${artHotItems.length}/10 shown)`}
-          onAction={() => goToPage("quickTurnaround")}
-        />
-        {artHotItems.length === 0 ? (
-          <Empty text="No hot artwork or approaching dated customer orders." />
-        ) : (
-          artHotItems.map((item, index) => (
-            <button
-              className="mc-row"
-              key={item.id || index}
-              onClick={() => item.sourceType === "customerOrder" ? openOrderById(item.sourceId) : goToPage("quickTurnaround")}
-            >
-              <span className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}>{item.priority || "High"}</span>
-              <span className="mc-row-main">
-                <strong>{item.title || "Artwork"}</strong>
-                <small>{item.customer || "Customer not entered"}</small>
-              </span>
-              <span className="mc-row-meta">
-                <strong>{item.owner || "Unassigned"}</strong>
-                <small>{item.notes || "Art priority"}</small>
-              </span>
-              <span className="mc-tag">{item.fulfillmentMethod || "Pickup"} · {item.dueDisplay || "Date not set"}</span>
-            </button>
-          ))
-        )}
-      </section>
-
-      <section className="mc-three">
-        <section className="mc-panel">
-          <PanelHead
-            icon={IconBolt}
-            title="Today’s Commitments"
-            subtitle="Immediate execution list"
-            action="View All"
-            onAction={() => goToPage("quickTurnaround")}
-          />
-          <div className="mc-list">
-            {commitments.length === 0 ? (
-              <Empty text="No commitments are assigned today." />
-            ) : (
-              commitments.map((item, index) => (
-                <button
-                  className="mc-row"
-                  key={item.id || index}
-                  onClick={() => openAction(item)}
-                >
-                  <span className="mc-row-main">
-                    <strong>{item.title}</strong>
-                    <small>{item.customer || item.nextAction}</small>
-                  </span>
-                  <span className="mc-row-meta">
-                    <strong>{item.owner || "Unassigned"}</strong>
-                    <small>{item.nextAction || "Open"}</small>
-                  </span>
-                  <span className="mc-tag amber">{item.status || "Today"}</span>
-                </button>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="mc-panel">
-          <PanelHead
-            icon={IconCalendarEvent}
-            title="Field Schedule"
-            subtitle="Site visits, test fits, and installs"
-            action="View Schedule"
-            onAction={() => goToPage("fieldSchedule")}
-          />
-          <div className="mc-list">
-            {fieldItems.length === 0 ? (
-              <Empty text="No field work is scheduled in the next seven days." />
-            ) : (
-              fieldItems.map((item, index) => (
-                <button
-                  className="mc-row"
-                  key={item.id || index}
-                  onClick={() => item.sourceType === "prequoteSiteVisit" ? goToPage("quoteCenter") : openProjectById(item.projectId)}
-                >
-                  <span className="mc-row-main">
-                    <strong>
-                      {item.time} · {item.customer}
-                    </strong>
-                    <small>{item.job || item.location}</small>
-                  </span>
-                  <span className="mc-row-meta">
-                    <strong>{item.owner || "Unassigned"}</strong>
-                    <small>{item.date || item.day}</small>
-                  </span>
-                  <span className={`mc-tag ${item.isToday ? "green" : ""}`}>
-                    {item.isToday ? "Today" : item.status || "Scheduled"}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="mc-panel">
-          <PanelHead
-            icon={IconAlertTriangle}
-            title="Projects Requiring Action"
-            subtitle="Highest operational risk"
-            action="View All"
-            onAction={() => goToActionCenter("All")}
-          />
-          <div className="mc-list">
-            {riskItems.length === 0 ? (
-              <Empty text="No project risks or blockers are currently detected." />
-            ) : (
-              riskItems.map((item, index) => (
-                <button
-                  className="mc-row"
-                  key={item.id || index}
-                  onClick={() => openAction(item)}
-                >
-                  <span className="mc-row-main">
-                    <strong>{item.title}</strong>
-                    <small>
-                      {item.detail || item.issue || item.nextAction}
-                    </small>
-                  </span>
-                  <span className="mc-row-meta">
-                    <strong>{item.owner || "Unassigned"}</strong>
-                    <small>{item.next || "Needs action"}</small>
-                  </span>
-                  <span className="mc-tag">
-                    {item.tag || item.status || "Action"}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </section>
-      </section>
-
       <section className="mc-bottom">
         <section className="mc-panel">
           <PanelHead
@@ -1818,105 +1859,170 @@ function Dashboard({
       <section className="mc-panel">
         <PanelHead
           icon={IconFileDescription}
-          title="Leadership Project Updates"
-          subtitle="Latest update from every active outside project in one place"
+          title="Leadership Attention"
+          subtitle="Exceptions, missing updates, and decisions across outside projects"
           action="View Projects"
           onAction={() => goToPage("projects")}
         />
+        <div
+          className="mc-tabbar"
+          role="tablist"
+          aria-label="Leadership update filters"
+        >
+          {["Needs Attention", "Missing Update", "On Track", "All"].map(
+            (tab) => {
+              const count =
+                tab === "All"
+                  ? leadershipUpdates.length
+                  : leadershipUpdates.filter(({ update }) => {
+                      const needsAttention = Boolean(
+                        update?.leadership_attention_required ||
+                        update?.blockers ||
+                        update?.decisions_needed ||
+                        update?.schedule_change ||
+                        update?.budget_change,
+                      );
+                      if (tab === "Needs Attention")
+                        return needsAttention || !update;
+                      if (tab === "Missing Update") return !update;
+                      return Boolean(update) && !needsAttention;
+                    }).length;
+              return (
+                <button
+                  className={`mc-tab ${leadershipView === tab ? "active" : ""}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={leadershipView === tab}
+                  key={tab}
+                  onClick={() => setLeadershipView(tab)}
+                >
+                  {tab}
+                  <span className="mc-tab-count">{count}</span>
+                </button>
+              );
+            },
+          )}
+        </div>
         <div className="mc-leadership-updates">
-          {leadershipUpdates.length === 0 ? (
-            <Empty text="No active outside projects are available." />
-          ) : leadershipUpdates.map(({ project, update }) => {
-            const details = update ? [
-              ["Completed", update.work_completed, false],
-              ["In Progress", update.work_in_progress, false],
-              ["Next Steps", update.next_steps, false],
-              ["Blockers", update.blockers, true],
-              ["Materials Needed", update.materials_needed, true],
-              ["Labor / Help Needed", update.labor_needed, true],
-              ["Leadership Decision", update.decisions_needed, true],
-              ["Schedule Change", update.schedule_change, true],
-              ["Budget Change", update.budget_change, true],
-            ].filter(([, value]) => String(value || "").trim()) : [];
-            const needsAttention = Boolean(update?.leadership_attention_required || update?.blockers || update?.decisions_needed || update?.schedule_change || update?.budget_change);
-            const updateDate = update?.update_date
-              ? new Date(`${update.update_date}T12:00:00`).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" })
-              : "No update submitted";
-            return (
-              <article key={project.id} className={`mc-update-card ${needsAttention ? "attention" : ""}`}>
-                <div className="mc-update-head">
-                  <div>
-                    <strong>{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
-                    <small>{updateDate} · Lead: {update?.project_lead || project.assigned_to || "Unassigned"} · Stage: {project.workflowStage || project.status || "Not recorded"}</small>
+          {filteredLeadershipUpdates.length === 0 ? (
+            <Empty
+              text={
+                leadershipView === "All"
+                  ? "No active outside projects are available."
+                  : `No projects are in ${leadershipView.toLowerCase()}.`
+              }
+            />
+          ) : (
+            filteredLeadershipUpdates.map(({ project, update }) => {
+              const details = update
+                ? [
+                    ["Completed", update.work_completed, false],
+                    ["In Progress", update.work_in_progress, false],
+                    ["Next Steps", update.next_steps, false],
+                    ["Blockers", update.blockers, true],
+                    ["Materials Needed", update.materials_needed, true],
+                    ["Labor / Help Needed", update.labor_needed, true],
+                    ["Leadership Decision", update.decisions_needed, true],
+                    ["Schedule Change", update.schedule_change, true],
+                    ["Budget Change", update.budget_change, true],
+                  ].filter(([, value]) => String(value || "").trim())
+                : [];
+              const needsAttention = Boolean(
+                update?.leadership_attention_required ||
+                update?.blockers ||
+                update?.decisions_needed ||
+                update?.schedule_change ||
+                update?.budget_change,
+              );
+              const updateDate = update?.update_date
+                ? new Date(`${update.update_date}T12:00:00`).toLocaleDateString(
+                    "en-US",
+                    { month: "short", day: "numeric", year: "numeric" },
+                  )
+                : "No update submitted";
+              return (
+                <article
+                  key={project.id}
+                  className={`mc-update-card ${needsAttention ? "attention" : ""}`}
+                >
+                  <div className="mc-update-head">
+                    <div>
+                      <strong>
+                        {project.project_number || "Project"} —{" "}
+                        {project.project_name ||
+                          project.contact_name ||
+                          "Unnamed project"}
+                      </strong>
+                      <small>
+                        {updateDate} · Lead:{" "}
+                        {update?.project_lead ||
+                          project.assigned_to ||
+                          "Unassigned"}{" "}
+                        · Stage:{" "}
+                        {project.workflowStage ||
+                          project.status ||
+                          "Not recorded"}
+                      </small>
+                    </div>
+                    <span className="mc-update-status">
+                      {needsAttention
+                        ? "Needs Leadership"
+                        : update?.status || "No Update"}
+                    </span>
                   </div>
-                  <span className="mc-update-status">{needsAttention ? "Needs Leadership" : update?.status || "No Update"}</span>
-                </div>
-                {details.length ? (
-                  <div className="mc-update-details">
-                    {details.map(([label, value, alert]) => (
-                      <div className={`mc-update-detail ${alert ? "alert" : ""}`} key={label}>
-                        <span>{label}</span>
-                        <p>{value}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : <small className="mc-flow-context">{update ? "No detailed notes were entered for this update." : "This project has not received a daily update yet."}</small>}
-              </article>
-            );
-          })}
+                  {details.length ? (
+                    <div className="mc-update-details">
+                      {details.map(([label, value, alert]) => (
+                        <div
+                          className={`mc-update-detail ${alert ? "alert" : ""}`}
+                          key={label}
+                        >
+                          <span>{label}</span>
+                          <p>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <small className="mc-flow-context">
+                      {update
+                        ? "No detailed notes were entered for this update."
+                        : "This project has not received a daily update yet."}
+                    </small>
+                  )}
+                </article>
+              );
+            })
+          )}
         </div>
       </section>
 
       <section className="mc-panel">
         <PanelHead
           icon={IconUsers}
-          title="Morning Huddle"
-          subtitle="Today’s operating brief"
+          title="Leadership Briefing"
+          subtitle="Prepare a concise summary from today’s live operating data"
           action="Open Action Center"
           onAction={() => goToActionCenter("All")}
         />
-        <div className="mc-huddle-toolbar">
-          <button className="mc-button primary" type="button" onClick={prepareLeadershipNotes}>
-            <IconFileDescription /> Prepare Leadership Notes
-          </button>
-        </div>
-        <div className="mc-huddle-grid">
-          <div className="mc-huddle-card">
-            <span>Top Priority</span>
-            <strong>{commitments.length}</strong>
-            <small>
-              {commitments[0]?.title ||
-                "No immediate commitment is currently assigned."}
-            </small>
-          </div>
-          <div className="mc-huddle-card alert">
-            <span>Active Blockers</span>
-            <strong>{huddleSummary.blockers || 0}</strong>
-            <small>
-              {huddleSummary.blockers
-                ? "Escalate blockers before releasing new work."
-                : "No active blockers detected."}
-            </small>
-          </div>
-          <div className="mc-huddle-card field">
-            <span>Field Work Today</span>
-            <strong>{huddleSummary.todayFieldWork || 0}</strong>
-            <small>
-              Site visits, test fits, and installations scheduled today.
-            </small>
-          </div>
-          <div className="mc-huddle-card shop">
-            <span>Active Shop Jobs</span>
+        <div className="mc-compact-huddle">
+          <div className="mc-compact-huddle-copy">
             <strong>
-              {huddleSummary.activeShopJobs || stats.inProduction || 0}
+              {commitments.length} priorities · {huddleSummary.blockers || 0}{" "}
+              blockers · {huddleSummary.todayFieldWork || 0} field commitments
+              today
             </strong>
             <small>
-              Busiest station: {huddleSummary.busiestDepartment || "None"}
-              {huddleSummary.busiestDepartmentCount
-                ? ` (${huddleSummary.busiestDepartmentCount})`
-                : ""}
+              Use the live dashboard for execution, or prepare notes for a
+              leadership summary.
             </small>
           </div>
+          <button
+            className="mc-button primary"
+            type="button"
+            onClick={prepareLeadershipNotes}
+          >
+            <IconFileDescription /> Prepare Leadership Notes
+          </button>
         </div>
       </section>
 
@@ -1925,13 +2031,45 @@ function Dashboard({
       </footer>
 
       {briefOpen && (
-        <div className="mc-brief-backdrop" role="presentation" onMouseDown={() => setBriefOpen(false)}>
-          <section className="mc-brief-dialog" role="dialog" aria-modal="true" aria-label="Leadership notes" onMouseDown={(event) => event.stopPropagation()}>
-            <PanelHead icon={IconFileDescription} title="Leadership Notes for ChatGPT" subtitle="Review, copy, and paste into ChatGPT for the executive summary" />
-            <textarea className="mc-brief-textarea" value={briefLoading ? "Preparing leadership notes…" : briefText} onChange={(event) => setBriefText(event.currentTarget.value)} readOnly={briefLoading} />
+        <div
+          className="mc-brief-backdrop"
+          role="presentation"
+          onMouseDown={() => setBriefOpen(false)}
+        >
+          <section
+            className="mc-brief-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Leadership notes"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <PanelHead
+              icon={IconFileDescription}
+              title="Leadership Notes for ChatGPT"
+              subtitle="Review, copy, and paste into ChatGPT for the executive summary"
+            />
+            <textarea
+              className="mc-brief-textarea"
+              value={briefLoading ? "Preparing leadership notes…" : briefText}
+              onChange={(event) => setBriefText(event.currentTarget.value)}
+              readOnly={briefLoading}
+            />
             <div className="mc-brief-actions">
-              <button className="mc-button" type="button" onClick={() => setBriefOpen(false)}><IconX /> Close</button>
-              <button className="mc-button primary" type="button" disabled={briefLoading || !briefText} onClick={copyLeadershipNotes}><IconCopy /> {briefCopied ? "Copied" : "Copy for ChatGPT"}</button>
+              <button
+                className="mc-button"
+                type="button"
+                onClick={() => setBriefOpen(false)}
+              >
+                <IconX /> Close
+              </button>
+              <button
+                className="mc-button primary"
+                type="button"
+                disabled={briefLoading || !briefText}
+                onClick={copyLeadershipNotes}
+              >
+                <IconCopy /> {briefCopied ? "Copied" : "Copy for ChatGPT"}
+              </button>
             </div>
           </section>
         </div>
