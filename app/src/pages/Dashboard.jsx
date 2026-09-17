@@ -55,7 +55,7 @@ const styles = `
   .mc-button svg { width: 17px; height: 17px; }
   .mc-topbar {
     position: relative; display: grid; grid-template-columns: minmax(0, 1fr);
-    align-items: center; gap: 14px; min-height: 98px; padding: 15px 18px;
+    align-items: center; gap: 9px; min-height: 88px; padding: 10px 14px;
     border: 1px solid var(--mc-line); border-radius: 8px;
     background:
       linear-gradient(90deg, rgba(7,11,14,.94), rgba(13,19,23,.96)),
@@ -76,7 +76,7 @@ const styles = `
     margin: 0 auto;
   }
   .mc-logo {
-    width: 100%; height: 64px; padding: 0 26px; object-fit: contain; object-position: center;
+    width: 100%; height: 50px; padding: 2px 26px; object-fit: contain; object-position: center;
     border-right: 1px solid #3c454d;
   }
   .mc-title-block { min-width: 0; padding: 0 26px; text-align: center; }
@@ -84,7 +84,7 @@ const styles = `
     display: block; color: var(--mc-red); font-size: clamp(1.15rem, 1.55vw, 1.55rem);
     letter-spacing: .045em; text-transform: uppercase; line-height: 1.05; white-space: nowrap;
   }
-  .mc-title-block span { display: block; margin-top: 7px; color: #dce1e5; font-size: 1rem; white-space: nowrap; }
+  .mc-title-block span { display: block; margin-top: 5px; color: #dce1e5; font-size: .92rem; white-space: nowrap; }
   .mc-top-actions {
     position: relative; z-index: 1; display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -139,7 +139,8 @@ const styles = `
   .mc-kpi-copy { min-width: 0; }
   .mc-kpi-copy span { display: block; color: #d9dee2; font-size: .75rem; font-weight: 900; text-transform: uppercase; }
   .mc-kpi-copy strong { display: block; margin-top: 3px; font-size: 2rem; line-height: 1; }
-  .mc-kpi-copy small { display: block; margin-top: 5px; color: var(--mc-muted); font-size: .66rem; }
+  .mc-kpi-copy small { display: block; margin-top: 5px; color: var(--mc-muted); font-size: .66rem; line-height: 1.3; }
+  .mc-kpi-copy small.action { color: #b9c3ca; }
 
   .mc-panel { overflow: hidden; border: 1px solid var(--mc-line); border-radius: 7px; background: var(--mc-panel); }
   .mc-panel-head {
@@ -723,6 +724,11 @@ function Dashboard({
     setPage(pageName);
   }
 
+  function openOutsideWorkspace(workspace) {
+    window.localStorage.setItem("mw-outside-workspace", workspace);
+    setPage("projects");
+  }
+
   function goToActionCenter(filter = "All") {
     if (openActionCenter) openActionCenter(filter);
     else setPage("actionCenter");
@@ -787,29 +793,30 @@ function Dashboard({
   const unifiedCloseoutCount =
     officeCloseoutOrders.length + outsideCloseoutProjects.length;
 
-  const quoteApprovalCount = outsideProjects.filter((project) =>
-    ["Pre-Production / Quote", "Quote & Approval"].includes(project.workflowStage) ||
-    (["Required", "Pending", "Sent"].includes(project.approval_status) && project.approval_status !== "Approved"),
-  ).length;
+  const quotesNeededCount = Number(outsideSummary.quotesNeeded || 0);
+  const approvalsPendingCount = Number(stats.approvalsPending || 0);
+  const quoteApprovalCount = quotesNeededCount + approvalsPendingCount;
   const outsideProductionCount = outsideProjects.filter((project) =>
     ["Design", "Welding / Fabrication", "Finish / Corrections", "Assembly"].includes(project.workflowStage),
   ).length;
-  const fieldCommitmentCount = Number(stats.siteVisits || 0) + Number(stats.installs || 0);
+  const fieldCommitmentCount = outsideProjects.filter((project) =>
+    ["Test Fit", "Install Date Needed", "Ready for Installation", "Installation"].includes(project.workflowStage),
+  ).length;
 
   const statCards = [
     [
       "Estimates & Site Visits",
       stats.siteVisits || 0,
-      "Scheduled and unscheduled estimates",
+      `${stats.siteVisitsNeedScheduling || 0} need scheduling · ${stats.siteVisitsScheduled || 0} scheduled`,
       IconMapPin,
-      () => goToPage("projects"),
+      () => openOutsideWorkspace("estimates"),
     ],
     [
       "Quotes & Approvals",
       quoteApprovalCount,
-      `${outsideProjects.length} total outside projects`,
+      `${quotesNeededCount} quotes to finish · ${approvalsPendingCount} awaiting approval`,
       IconHammer,
-      () => goToPage("projects"),
+      () => openOutsideWorkspace("approvals"),
     ],
     [
       "Open Orders",
@@ -821,23 +828,23 @@ function Dashboard({
     [
       "In Production",
       Number(stats.inProduction || 0) + outsideProductionCount,
-      `${stats.openWorkOrders || 0} active work orders`,
+      `${stats.inProduction || 0} shop jobs · ${outsideProductionCount} outside projects`,
       IconBuildingFactory2,
       () => goToPage("productionControl"),
     ],
     [
       "Field Work & Installs",
       fieldCommitmentCount,
-      `${stats.siteVisits || 0} visits · ${stats.installs || 0} installs`,
+      `${stats.installs || 0} scheduled installs · ${stats.installsNeedScheduling || 0} need dates`,
       IconTruckDelivery,
-      () => goToPage("fieldSchedule"),
+      () => openOutsideWorkspace("field"),
     ],
     [
       "Closeout",
       unifiedCloseoutCount,
-      "Payment and final office completion",
+      `${outsideSummary.paymentsDue || 0} payment actions need attention`,
       IconClipboardList,
-      () => goToPage("customerOrders"),
+      () => openOutsideWorkspace("field"),
     ],
   ];
 
@@ -1248,7 +1255,7 @@ function Dashboard({
             <span className="mc-kpi-copy">
               <span>{label}</span>
               <strong>{value}</strong>
-              <small>{subtitle}</small>
+              <small className="action">{subtitle}</small>
             </span>
           </button>
         ))}
