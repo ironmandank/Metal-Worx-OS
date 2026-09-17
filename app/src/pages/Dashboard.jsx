@@ -176,6 +176,28 @@ const styles = `
   .mc-operating-stat { padding: 10px 12px; background: #11181d; }
   .mc-operating-stat span { display: block; color: #7f8c95; font-size: .56rem; font-weight: 900; text-transform: uppercase; }
   .mc-operating-stat strong { display: block; margin-top: 3px; font-size: 1.15rem; }
+  .mc-operating-list {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px;
+  }
+  .mc-operating-card {
+    display: grid; gap: 7px; min-width: 0; min-height: 104px; padding: 11px 12px;
+    border: 1px solid #344049; border-left: 4px solid #c70b1a; border-radius: 7px;
+    color: inherit; text-align: left; background: linear-gradient(145deg, #151d22, #0d1317);
+    cursor: pointer;
+  }
+  .mc-operating-card:hover { border-color: #7d151d; background: #182126; }
+  .mc-operating-card-head, .mc-operating-card-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0;
+  }
+  .mc-operating-card-title {
+    overflow: hidden; color: #f1f3f4; font-size: .76rem; line-height: 1.25;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mc-operating-card-detail {
+    overflow: hidden; color: #7f8b94; font-size: .61rem; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mc-operating-card-foot { padding-top: 6px; border-top: 1px solid #2e383f; color: #9da7ae; font-size: .59rem; }
+  .mc-operating-card-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mc-link {
     border: 0; color: #d9dfe3; background: transparent; font: inherit; font-size: .72rem;
     cursor: pointer; white-space: nowrap;
@@ -400,6 +422,7 @@ const styles = `
   }
   @media (max-width: 760px) {
     .mc-operating-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mc-operating-list { grid-template-columns: 1fr; }
     .mc-compact-huddle { align-items: stretch; flex-direction: column; }
     .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
     .mc-logo { width: 100%; padding: 0 14px; }
@@ -1306,7 +1329,7 @@ function Dashboard({
             );
           })}
         </div>
-        <div className="mc-list">
+        <div className="mc-operating-list">
           {todayItems.length === 0 ? (
             <Empty
               text={`No ${todayView === "All" ? "operating items" : todayView.toLowerCase()} need attention.`}
@@ -1314,7 +1337,7 @@ function Dashboard({
           ) : (
             todayItems.map((item, index) => (
               <button
-                className="mc-row"
+                className="mc-operating-card"
                 type="button"
                 key={`${item.dashboardGroup}-${item.id || item.sourceId || index}`}
                 onClick={() => {
@@ -1333,39 +1356,15 @@ function Dashboard({
                   openAction(item);
                 }}
               >
-                <span
-                  className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}
-                >
-                  {item.dashboardGroup}
+                <span className="mc-operating-card-head">
+                  <span className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}>{item.dashboardGroup}</span>
+                  <span className={`mc-tag ${item.isToday ? "green" : ""}`}>{item.status || item.tag || (item.isToday ? "Today" : "Open")}</span>
                 </span>
-                <span className="mc-row-main">
-                  <strong>
-                    {item.title || item.customer || item.job || "Work item"}
-                  </strong>
-                  <small>
-                    {item.customer ||
-                      item.detail ||
-                      item.issue ||
-                      item.location ||
-                      item.type ||
-                      "Metal Worx work item"}
-                  </small>
-                </span>
-                <span className="mc-row-meta">
-                  <strong>{item.owner || "Unassigned"}</strong>
-                  <small>
-                    {item.nextAction ||
-                      item.notes ||
-                      item.date ||
-                      item.day ||
-                      "Open"}
-                  </small>
-                </span>
-                <span className={`mc-tag ${item.isToday ? "green" : ""}`}>
-                  {item.status ||
-                    item.tag ||
-                    item.dueDisplay ||
-                    (item.isToday ? "Today" : "Open")}
+                <strong className="mc-operating-card-title">{item.title || item.customer || item.job || "Work item"}</strong>
+                <span className="mc-operating-card-detail">{item.customer || item.detail || item.issue || item.location || item.type || "Metal Worx work item"}</span>
+                <span className="mc-operating-card-foot">
+                  <span>Owner: {item.owner || "Unassigned"}</span>
+                  <span>{item.dueDisplay || item.nextAction || item.notes || item.date || item.day || "Date not set"}</span>
                 </span>
               </button>
             ))
