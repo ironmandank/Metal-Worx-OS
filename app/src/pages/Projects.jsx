@@ -45,6 +45,7 @@ import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import OutsideWorkspaceNav from "../components/OutsideWorkspaceNav";
 import { supabase } from "../lib/supabase";
+import { releaseProject } from "../lib/productionWorkflow";
 import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../lib/calendar";
 import { OUTSIDE_PHASES, getOutsideNextDate, getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
@@ -628,10 +629,19 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         .eq("id", visit.id);
       if (visitError) throw visitError;
 
+      let productionJob = null;
+      let readinessMessage = "The project is waiting for its production-readiness requirements.";
+      try {
+        productionJob = await releaseProject(project.id, activeUserName);
+        readinessMessage = `${productionJob.production_job_number} is ready in ${productionJob.current_department}.`;
+      } catch (releaseError) {
+        readinessMessage = releaseError.message;
+      }
+
       notifications.show({
-        title: "Released to Production",
-        message: `${project.project_number} was created from the approved quote.`,
-        color: "green",
+        title: productionJob ? "Project Released to Production" : "Project Created — Readiness Check Required",
+        message: `${project.project_number} was created. ${readinessMessage}`,
+        color: productionJob ? "green" : "orange",
       });
       setActiveWorkspace("production");
       await loadProjects(false);

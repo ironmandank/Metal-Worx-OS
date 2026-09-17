@@ -269,7 +269,11 @@ function ProductionControlCenter({
   const [refreshing, setRefreshing] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
   const [search, setSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState(() => {
+    const requested = window.sessionStorage.getItem("mw-production-department");
+    window.sessionStorage.removeItem("mw-production-department");
+    return requested || "all";
+  });
   const [boardMode, setBoardMode] = useState("shop");
   const [outsideProjects, setOutsideProjects] = useState([]);
   const [outsideJobs, setOutsideJobs] = useState([]);

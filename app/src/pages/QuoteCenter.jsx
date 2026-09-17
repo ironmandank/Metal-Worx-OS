@@ -21,6 +21,7 @@ import {
 import { notifications } from "@mantine/notifications";
 
 import { supabase } from "../lib/supabase";
+import { releaseProject } from "../lib/productionWorkflow";
 import { generateNumber } from "../lib/generateNumber";
 import { emptyOrganizedQuote, organizeQuoteText } from "../lib/quoteOrganizer";
 import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
@@ -983,10 +984,19 @@ function QuoteCenter({
       );
       setConversionQuote(null);
 
+      let productionJob = null;
+      let readinessMessage = "Open the project to complete its production-readiness requirements.";
+      try {
+        productionJob = await releaseProject(project.id, actor);
+        readinessMessage = `${productionJob.production_job_number} is ready in ${productionJob.current_department}.`;
+      } catch (releaseError) {
+        readinessMessage = releaseError.message;
+      }
+
       notifications.show({
-        title: "Outside Project Created",
-        message: `${project.project_number} was created from ${conversionQuote.quote_number}.`,
-        color: "green",
+        title: productionJob ? "Project Created and Released" : "Project Created — Readiness Check Required",
+        message: `${project.project_number} was created from ${conversionQuote.quote_number}. ${readinessMessage}`,
+        color: productionJob ? "green" : "orange",
       });
     } catch (error) {
       notifications.show({

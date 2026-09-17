@@ -1475,6 +1475,10 @@ function Dashboard({
                     }, 0);
                     return;
                   }
+                  window.sessionStorage.setItem(
+                    "mw-production-department",
+                    item.name,
+                  );
                   goToPage("productionControl");
                 }}
               >
