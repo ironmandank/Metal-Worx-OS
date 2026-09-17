@@ -127,6 +127,7 @@ function QuoteCenter({
   const [customers, setCustomers] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [siteVisits, setSiteVisits] = useState([]);
+  const [advancingSiteVisitId, setAdvancingSiteVisitId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -282,6 +283,43 @@ function QuoteCenter({
     }
     setSiteVisits((current) => current.map((item) => item.id === visit.id ? data : item));
     notifications.show({ title: "Site Visit Updated", message: `${visit.customer_name} is now ${status}.`, color: "green" });
+  }
+
+  async function moveSiteVisitToQuote(visit) {
+    setAdvancingSiteVisitId(visit.id);
+    try {
+      const { data, error } = await supabase.rpc("mw_advance_prequote_site_visit", {
+        p_visit_id: visit.id,
+        p_action: "quote",
+        p_actor: activeUserName,
+        p_bypass_reason: null,
+      });
+      if (error) throw error;
+
+      const { data: quote, error: quoteError } = await supabase
+        .from("project_quotes")
+        .select("*")
+        .eq("id", data.quote_id)
+        .single();
+      if (quoteError) throw quoteError;
+
+      setSiteVisits((current) => current.map((item) => item.id === visit.id
+        ? { ...item, quote_id: quote.id, status: "Converted to Quote", converted_at: new Date().toISOString() }
+        : item));
+      setQuotes((current) => current.some((item) => item.id === quote.id) ? current : [quote, ...current]);
+      setSelectedQuote(quote);
+      setSelectedProject(null);
+      setPage("quoteBuilder");
+      notifications.show({
+        title: data?.existing ? "Quote Already Started" : "Draft Quote Created",
+        message: `${quote.quote_number} is linked to ${visit.customer_name}.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({ title: "Could Not Move to Quote", message: error.message, color: "red" });
+    } finally {
+      setAdvancingSiteVisitId(null);
+    }
   }
 
   function clearSiteEstimate() {
@@ -1384,7 +1422,7 @@ function QuoteCenter({
         <MWSection title="Site Visit, Google Maps & Mileage" subtitle="Use this before a potential job becomes a formal quote.">
           <Stack gap="md">
             <Alert color="blue">
-              This worksheet does <b>not</b> create a quote. It stays saved on this device while you gather the address, mileage, measurements, photos, labor, and material requirements.
+              This worksheet creates a tracked pre-quote estimate. After the site information is complete, use <b>Move to Quote</b> to create a linked editable draft.
             </Alert>
             <SimpleGrid cols={{ base: 1, md: 2 }}>
               <TextInput label="Potential Customer / Job" placeholder="Customer, company, or project name" value={siteEstimate.customer} onChange={(event) => updateSiteEstimate("customer", event.currentTarget.value)} />
@@ -1429,7 +1467,7 @@ function QuoteCenter({
                   </Stack>
                   <Group gap="xs">
                     <Button size="xs" color="green" onClick={() => updateSiteVisitStatus(visit, "Completed")}>Mark Complete</Button>
-                    <Button size="xs" color="blue" onClick={() => updateSiteVisitStatus(visit, "Converted to Quote")}>Converted to Quote</Button>
+                    <Button size="xs" color="blue" loading={advancingSiteVisitId === visit.id} onClick={() => moveSiteVisitToQuote(visit)}>Move to Quote</Button>
                     <Button size="xs" variant="subtle" color="gray" onClick={() => updateSiteVisitStatus(visit, "Cancelled")}>Cancel</Button>
                   </Group>
                 </Group>

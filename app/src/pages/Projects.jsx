@@ -15,9 +15,11 @@ import {
   Stack,
   Text,
   TextInput,
+  Textarea,
   ThemeIcon,
   Title,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle,
   IconArrowRight,
@@ -198,10 +200,12 @@ function getCalendarEntryType(entry) {
   return getCalendarType(entry.project || {});
 }
 
-function Projects({ setPage, setSelectedProject }) {
+function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel }) {
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
   const [siteVisits, setSiteVisits] = useState([]);
+  const [quotesById, setQuotesById] = useState({});
+  const [approvalsByQuote, setApprovalsByQuote] = useState({});
   const [viewMode, setViewMode] = useState("active");
   const [workspaceView, setWorkspaceView] = useState("board");
   const [activeWorkspace, setActiveWorkspace] = useState("estimates");
@@ -213,6 +217,14 @@ function Projects({ setPage, setSelectedProject }) {
   const [trackingByProject, setTrackingByProject] = useState({});
   const [calendarMonth, setCalendarMonth] = useState(() => firstOfMonth());
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(null);
+  const [advancingVisitId, setAdvancingVisitId] = useState(null);
+  const [bypassVisit, setBypassVisit] = useState(null);
+  const [bypassReason, setBypassReason] = useState("");
+
+  const activeUserName = typeof activeUser === "string"
+    ? activeUser
+    : activeUser?.full_name || activeUser?.name || activeUser?.display_name || "Metal Worx";
+  const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
   const loadProjects = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -221,7 +233,7 @@ function Projects({ setPage, setSelectedProject }) {
     setErrorMessage("");
 
     try {
-      const [projectResult, customerResult, siteVisitResult] = await Promise.all([
+      const [projectResult, customerResult, siteVisitResult, allQuoteResult, allApprovalResult] = await Promise.all([
         supabase
           .from("projects")
           .select("*")
@@ -231,11 +243,21 @@ function Projects({ setPage, setSelectedProject }) {
           .from("prequote_site_visits")
           .select("*")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("project_quotes")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("customer_quote_approvals")
+          .select("id, quote_id, status, approved_at, signer_name, document_version, created_at")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
       if (siteVisitResult.error) throw siteVisitResult.error;
+      if (allQuoteResult.error) throw allQuoteResult.error;
+      if (allApprovalResult.error) throw allApprovalResult.error;
 
       const allProjects = projectResult.data || [];
       const loadedProjects = allProjects.filter(
@@ -248,11 +270,13 @@ function Projects({ setPage, setSelectedProject }) {
       const projectIds = trackedProjects.map((project) => project.id);
       let checklistRows = [];
       let updateRows = [];
-      let quoteRows = [];
-      let approvalRows = [];
+      const allQuoteRows = allQuoteResult.data || [];
+      const allApprovalRows = allApprovalResult.data || [];
+      let quoteRows = allQuoteRows.filter((quote) => projectIds.includes(quote.project_id));
+      let approvalRows = allApprovalRows.filter((approval) => quoteRows.some((quote) => quote.id === approval.quote_id));
 
       if (projectIds.length) {
-        const [checklistResult, updateResult, quoteResult] = await Promise.all([
+        const [checklistResult, updateResult] = await Promise.all([
           supabase
             .from("project_checklist_items")
             .select("project_id, status")
@@ -265,29 +289,12 @@ function Projects({ setPage, setSelectedProject }) {
             .in("project_id", projectIds)
             .order("update_date", { ascending: false })
             .order("created_at", { ascending: false }),
-          supabase
-            .from("project_quotes")
-            .select("id, project_id, status, created_at")
-            .in("project_id", projectIds)
-            .order("created_at", { ascending: false }),
         ]);
 
         if (checklistResult.error) throw checklistResult.error;
         if (updateResult.error) throw updateResult.error;
-        if (quoteResult.error) throw quoteResult.error;
         checklistRows = checklistResult.data || [];
         updateRows = updateResult.data || [];
-        quoteRows = quoteResult.data || [];
-        const quoteIds = quoteRows.map((quote) => quote.id);
-        if (quoteIds.length) {
-          const approvalResult = await supabase
-            .from("customer_quote_approvals")
-            .select("id, quote_id, status, approved_at, signer_name, document_version, created_at")
-            .in("quote_id", quoteIds)
-            .order("created_at", { ascending: false });
-          if (approvalResult.error) throw approvalResult.error;
-          approvalRows = approvalResult.data || [];
-        }
       }
 
       const trackingMap = Object.fromEntries(
@@ -332,8 +339,13 @@ function Projects({ setPage, setSelectedProject }) {
       setProjects(loadedProjects);
       setCompletedProjects(loadedCompletedProjects);
       setSiteVisits((siteVisitResult.data || []).filter(
-        (visit) => !["Completed", "Converted to Quote", "Cancelled"].includes(visit.status)
+        (visit) => !["Completed", "Cancelled"].includes(visit.status)
       ));
+      setQuotesById(Object.fromEntries(allQuoteRows.map((quote) => [quote.id, quote])));
+      setApprovalsByQuote(allApprovalRows.reduce((latest, approval) => {
+        if (!latest[approval.quote_id]) latest[approval.quote_id] = approval;
+        return latest;
+      }, {}));
       setTrackingByProject(trackingMap);
       setCustomers(
         Object.fromEntries(
@@ -406,6 +418,20 @@ function Projects({ setPage, setSelectedProject }) {
     ].filter(Boolean).join(" ").toLowerCase().includes(term));
   }, [search, siteVisits]);
 
+  const activeSiteVisits = useMemo(
+    () => filteredSiteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)),
+    [filteredSiteVisits]
+  );
+
+  const linkedQuoteVisits = useMemo(
+    () => filteredSiteVisits.filter((visit) => {
+      if (!visit.quote_id || visit.bypassed_to_production) return false;
+      const quote = quotesById[visit.quote_id];
+      return quote && !quote.project_id && !quote.converted_project_id;
+    }),
+    [filteredSiteVisits, quotesById]
+  );
+
   const leadershipSummary = useMemo(() => {
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 86400000);
@@ -442,10 +468,14 @@ function Projects({ setPage, setSelectedProject }) {
         (total, phase) => total + (projectsByPhase[phase]?.length || 0),
         0
       );
-      const visitCount = workspace.key === "estimates" ? filteredSiteVisits.length : 0;
+      const visitCount = workspace.key === "estimates"
+        ? activeSiteVisits.length
+        : workspace.key === "approvals"
+          ? linkedQuoteVisits.length
+          : 0;
       return [workspace.key, projectCount + visitCount];
     })
-  ), [filteredSiteVisits, projectsByPhase]);
+  ), [activeSiteVisits, linkedQuoteVisits, projectsByPhase]);
 
   const selectedWorkspace = OUTSIDE_WORKSPACES.find(
     (workspace) => workspace.key === activeWorkspace
@@ -455,7 +485,7 @@ function Projects({ setPage, setSelectedProject }) {
     (phase) => projectsByPhase[phase] || []
   ), [projectsByPhase, selectedWorkspace]);
 
-  const siteVisitCount = siteVisits.length + projects.filter(
+  const siteVisitCount = siteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)).length + projects.filter(
     (project) =>
       project.site_visit_required &&
       project.site_visit_status !== "Completed"
@@ -481,7 +511,7 @@ function Projects({ setPage, setSelectedProject }) {
       if (!result[key].some((item) => item.id === entry.id)) result[key].push(entry);
     };
 
-    siteVisits.forEach((visit) => addEntry(visit.requested_visit_date, {
+    siteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)).forEach((visit) => addEntry(visit.requested_visit_date, {
       id: `estimate-${visit.id}`,
       kind: "estimate",
       label: visit.customer_name || "Estimate Visit",
@@ -525,6 +555,122 @@ function Projects({ setPage, setSelectedProject }) {
     () => Object.values(calendarEntriesByDay).reduce((total, entries) => total + entries.length, 0),
     [calendarEntriesByDay]
   );
+
+  async function moveVisitToQuote(visit) {
+    setAdvancingVisitId(visit.id);
+    try {
+      const { data, error } = await supabase.rpc("mw_advance_prequote_site_visit", {
+        p_visit_id: visit.id,
+        p_action: "quote",
+        p_actor: activeUserName,
+        p_bypass_reason: null,
+      });
+      if (error) throw error;
+
+      const quoteId = data?.quote_id;
+      const { data: quote, error: quoteError } = await supabase
+        .from("project_quotes")
+        .select("*")
+        .eq("id", quoteId)
+        .single();
+      if (quoteError) throw quoteError;
+
+      notifications.show({
+        title: data?.existing ? "Quote Already Started" : "Draft Quote Created",
+        message: `${quote.quote_number} is linked to ${visit.customer_name} and ready for pricing.`,
+        color: "green",
+      });
+      setSelectedQuote(quote);
+      setSelectedProject(null);
+      setPage("quoteBuilder");
+    } catch (error) {
+      notifications.show({ title: "Could Not Move to Quote", message: error.message, color: "red" });
+    } finally {
+      setAdvancingVisitId(null);
+    }
+  }
+
+  function openLinkedQuote(visit) {
+    const quote = quotesById[visit.quote_id];
+    if (!quote) return;
+    setSelectedQuote(quote);
+    setSelectedProject(quote.project_id ? projects.find((project) => project.id === quote.project_id) || null : null);
+    setPage("quoteBuilder");
+  }
+
+  async function releaseApprovedQuote(visit) {
+    const quote = quotesById[visit.quote_id];
+    if (!quote) return;
+    setAdvancingVisitId(visit.id);
+    try {
+      const { data, error } = await supabase.rpc("mw_convert_quote_to_project", {
+        p_quote_id: Number(quote.id),
+        p_converted_by: activeUserName,
+        p_fabrication_required: true,
+        p_test_fit_required: true,
+        p_finish_required: true,
+        p_assembly_required: false,
+        p_install_required: true,
+        p_design_required: false,
+        p_down_payment_required: Number(quote.total_amount || 0) > 0,
+      });
+      if (error) throw error;
+      const project = Array.isArray(data) ? data[0] : data;
+      if (!project?.id) throw new Error("The outside project was not returned.");
+
+      const { error: visitError } = await supabase
+        .from("prequote_site_visits")
+        .update({
+          project_id: project.id,
+          status: "Released to Production",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", visit.id);
+      if (visitError) throw visitError;
+
+      notifications.show({
+        title: "Released to Production",
+        message: `${project.project_number} was created from the approved quote.`,
+        color: "green",
+      });
+      setActiveWorkspace("production");
+      await loadProjects(false);
+    } catch (error) {
+      notifications.show({ title: "Could Not Release Project", message: error.message, color: "red" });
+    } finally {
+      setAdvancingVisitId(null);
+    }
+  }
+
+  async function bypassToProduction() {
+    if (!bypassVisit || !bypassReason.trim()) {
+      notifications.show({ title: "Bypass Reason Required", message: "Explain why the quote and approval are being bypassed.", color: "orange" });
+      return;
+    }
+    setAdvancingVisitId(bypassVisit.id);
+    try {
+      const { data, error } = await supabase.rpc("mw_advance_prequote_site_visit", {
+        p_visit_id: bypassVisit.id,
+        p_action: "bypass",
+        p_actor: activeUserName,
+        p_bypass_reason: bypassReason.trim(),
+      });
+      if (error) throw error;
+      notifications.show({
+        title: "Administrator Bypass Recorded",
+        message: `${data?.project_number || "The project"} is ready for production.`,
+        color: "orange",
+      });
+      setBypassVisit(null);
+      setBypassReason("");
+      setActiveWorkspace("production");
+      await loadProjects(false);
+    } catch (error) {
+      notifications.show({ title: "Could Not Bypass Workflow", message: error.message, color: "red" });
+    } finally {
+      setAdvancingVisitId(null);
+    }
+  }
 
   function printDailyUpdateSheets(prefilled = true) {
     const printableProjects = prefilled ? projects : [null];
@@ -854,18 +1000,48 @@ function Projects({ setPage, setSelectedProject }) {
             {selectedWorkspace.key === "estimates" && <Button color="red" onClick={() => setPage("quoteCenter")}>Open Site Visit Tracker</Button>}
           </Group>
 
-          {selectedWorkspace.key === "estimates" && filteredSiteVisits.length > 0 && (
+          {selectedWorkspace.key === "estimates" && activeSiteVisits.length > 0 && (
             <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md" mb="lg">
-              {filteredSiteVisits.map((visit) => <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: "5px solid #f59f00" }}>
+              {activeSiteVisits.map((visit) => <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: "5px solid #f59f00" }}>
                 <Stack gap="xs">
                   <Group justify="space-between"><Badge color={visit.requested_visit_date ? "blue" : "orange"}>{visit.requested_visit_date ? "Scheduled Estimate" : "Needs Scheduling"}</Badge><Badge color="cyan" variant="light">Pre-Quote</Badge></Group>
                   <Text fw={900}>{visit.customer_name || "Potential Customer"}</Text>
                   <Text size="sm">{visit.job_site_address || "Address not entered"}</Text>
                   <Text size="sm" c="dimmed">Assigned: {visit.assigned_estimator || "Unassigned"}</Text>
                   <Text size="sm" c="dimmed">Visit: {formatDate(visit.requested_visit_date)}</Text>
-                  <Button variant="light" color="red" onClick={() => setPage("quoteCenter")}>Open Estimate</Button>
+                  <Group grow>
+                    <Button color="blue" loading={advancingVisitId === visit.id} onClick={() => moveVisitToQuote(visit)}>Move to Quote</Button>
+                    {isAdministrator && <Button variant="light" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Bypass</Button>}
+                  </Group>
                 </Stack>
               </Card>)}
+            </SimpleGrid>
+          )}
+
+          {selectedWorkspace.key === "approvals" && linkedQuoteVisits.length > 0 && (
+            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md" mb="lg">
+              {linkedQuoteVisits.map((visit) => {
+                const quote = quotesById[visit.quote_id];
+                const approval = approvalsByQuote[visit.quote_id];
+                const approved = quote?.status === "Approved" || approval?.status === "Approved";
+                return <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: `5px solid ${approved ? "#2f9e44" : "#7950f2"}` }}>
+                  <Stack gap="xs">
+                    <Group justify="space-between">
+                      <Badge color={quote?.status === "Draft" ? "gray" : quote?.status === "Sent" ? "blue" : approved ? "green" : "orange"}>Quote: {quote?.status || "Not Started"}</Badge>
+                      <Badge color={approved ? "green" : approval?.status === "Changes Requested" ? "red" : "orange"}>Approval: {approved ? "Approved" : approval?.status || "Not Sent"}</Badge>
+                    </Group>
+                    <Text fw={900}>{visit.customer_name || quote?.customer_name || "Potential Customer"}</Text>
+                    <Text size="sm" c="dimmed">{quote?.quote_number || "Quote number pending"}</Text>
+                    <Text size="sm">{visit.job_site_address || quote?.job_site_address || "Address not entered"}</Text>
+                    <Text size="sm" fw={800}>{approved ? "Ready to release into production" : quote?.status === "Draft" ? "Complete pricing and send the quote" : "Waiting for customer approval"}</Text>
+                    <Group grow>
+                      <Button variant="light" color="violet" onClick={() => openLinkedQuote(visit)}>Open Quote</Button>
+                      {approved && <Button color="green" loading={advancingVisitId === visit.id} onClick={() => releaseApprovedQuote(visit)}>Release to Production</Button>}
+                    </Group>
+                    {isAdministrator && !approved && <Button variant="subtle" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Administrator Bypass</Button>}
+                  </Stack>
+                </Card>;
+              })}
             </SimpleGrid>
           )}
 
@@ -898,11 +1074,37 @@ function Projects({ setPage, setSelectedProject }) {
             </SimpleGrid>
           )}
 
-          {!selectedWorkspaceProjects.length && !(selectedWorkspace.key === "estimates" && filteredSiteVisits.length) && (
+          {!selectedWorkspaceProjects.length && !(selectedWorkspace.key === "estimates" && activeSiteVisits.length) && !(selectedWorkspace.key === "approvals" && linkedQuoteVisits.length) && (
             <Alert color="green">No active work is currently in {selectedWorkspace.label.toLowerCase()}.</Alert>
           )}
         </MWPanel>
       )}
+
+      <Modal
+        opened={Boolean(bypassVisit)}
+        onClose={() => { setBypassVisit(null); setBypassReason(""); }}
+        title="Administrator Bypass to Production"
+        centered
+      >
+        <Stack>
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
+            This skips the formal quote and customer-approval gates. The reason and administrator will be saved permanently with the project.
+          </Alert>
+          <Text fw={900}>{bypassVisit?.customer_name}</Text>
+          <Textarea
+            label="Required Bypass Reason"
+            placeholder="Example: Internal company project, warranty correction, or management-authorized emergency work"
+            minRows={4}
+            required
+            value={bypassReason}
+            onChange={(event) => setBypassReason(event.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => { setBypassVisit(null); setBypassReason(""); }}>Cancel</Button>
+            <Button color="orange" loading={advancingVisitId === bypassVisit?.id} onClick={bypassToProduction}>Bypass & Create Project</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {errorMessage && (
         <Alert

@@ -602,7 +602,13 @@ function App() {
 
     if (page === "projects") {
       return (
-        <Projects setPage={setPage} setSelectedProject={setSelectedProject} />
+        <Projects
+          setPage={setPage}
+          setSelectedProject={setSelectedProject}
+          setSelectedQuote={setSelectedQuote}
+          activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
+        />
       );
     }
 
