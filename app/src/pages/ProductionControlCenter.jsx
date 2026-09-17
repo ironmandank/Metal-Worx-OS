@@ -28,6 +28,7 @@ import {
   IconPlayerPlay,
   IconRefresh,
   IconSearch,
+  IconTimeline,
   IconTool,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,6 +38,7 @@ import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
 import {
+  bypassProductionStep,
   completeProductionStep,
   releaseProject,
   startProductionStep,
@@ -156,6 +158,7 @@ function getOrderDisplayName(customer, items) {
 function getStatusColor(status) {
   if (status === "Ready") return "red";
   if (status === "In Progress") return "green";
+  if (status === "Blocked") return "red";
   if (status === "Queued") return "gray";
   if (status === "On Hold") return "orange";
   if (status === "Completed") return "green";
@@ -258,6 +261,7 @@ function ProductionControlCenter({
   setPage,
   setSelectedProductionJob,
   activeUser = "",
+  accessLevel = "",
 }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [jobs, setJobs] = useState({});
@@ -284,6 +288,11 @@ function ProductionControlCenter({
   const [scheduleEnd, setScheduleEnd] = useState(null);
   const [scheduleNotes, setScheduleNotes] = useState("");
   const [scheduleError, setScheduleError] = useState("");
+  const [activity, setActivity] = useState([]);
+  const [completionTarget, setCompletionTarget] = useState(null);
+  const [completionNotes, setCompletionNotes] = useState("");
+  const [bypassTarget, setBypassTarget] = useState(null);
+  const [bypassReason, setBypassReason] = useState("");
 
   const loadBoard = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -331,7 +340,7 @@ function ProductionControlCenter({
         ...new Set(jobData.map((job) => job.project_id).filter(Boolean)),
       ];
 
-      const [orderResult, customerResult, itemResult, projectResult] =
+      const [orderResult, customerResult, itemResult, projectResult, activityResult] =
         await Promise.all([
           orderIds.length
             ? supabase.from("customer_orders").select("*").in("id", orderIds)
@@ -346,12 +355,18 @@ function ProductionControlCenter({
           projectIds.length
             ? supabase.from("projects").select("*").in("id", projectIds)
             : Promise.resolve({ data: [], error: null }),
+          supabase
+            .from("work_order_activity")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(20),
         ]);
 
       if (orderResult.error) throw orderResult.error;
       if (customerResult.error) throw customerResult.error;
       if (itemResult.error) throw itemResult.error;
       if (projectResult.error) throw projectResult.error;
+      if (activityResult.error) throw activityResult.error;
 
       const { data: outsideProjectData, error: outsideProjectError } =
         await supabase
@@ -428,6 +443,7 @@ function ProductionControlCenter({
         validWorkOrders.filter((workOrder) => workOrder.project_id),
       );
       setItemsByOrderId(groupedItems);
+      setActivity(activityResult.data || []);
     } catch (error) {
       notifications.show({
         title: "Production Control Failed to Load",
@@ -558,8 +574,30 @@ function ProductionControlCenter({
     (workOrder) => workOrder.status === "In Progress",
   ).length;
   const holdCount = shopWorkOrders.filter(
-    (workOrder) => workOrder.status === "On Hold",
+    (workOrder) => ["On Hold", "Blocked"].includes(workOrder.status),
   ).length;
+  const unassignedCount = shopWorkOrders.filter(
+    (workOrder) => !workOrder.assigned_to && ["Ready", "In Progress", "Blocked"].includes(workOrder.status),
+  ).length;
+  const overdueCount = shopWorkOrders.filter((workOrder) => {
+    const dueDate = jobs[workOrder.production_job_id]?.due_date;
+    if (!dueDate || !["Ready", "In Progress", "Blocked"].includes(workOrder.status)) return false;
+    return new Date(`${dueDate}T23:59:59`) < new Date();
+  }).length;
+  const stationWorkload = departments.map((department) => {
+    const stationOrders = shopWorkOrders.filter(
+      (workOrder) => workOrder.department === department && ["Ready", "In Progress", "Blocked", "On Hold"].includes(workOrder.status),
+    );
+    return {
+      department,
+      total: stationOrders.length,
+      ready: stationOrders.filter((item) => item.status === "Ready").length,
+      active: stationOrders.filter((item) => item.status === "In Progress").length,
+      blocked: stationOrders.filter((item) => ["Blocked", "On Hold"].includes(item.status)).length,
+    };
+  }).sort((a, b) => b.total - a.total || departmentRank(a.department) - departmentRank(b.department));
+  const bottleneck = stationWorkload[0] || null;
+  const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
   const outsideCards = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
@@ -647,17 +685,10 @@ function ProductionControlCenter({
         ]
       : [
           {
-            label: "Active Departments",
-            value: departments.length,
-            description: "Departments with current work",
-            icon: IconTool,
-            color: "red",
-          },
-          {
             label: "Ready",
             value: readyCount,
             description: "Can be started now",
-            icon: IconPlayerPlay,
+            icon: IconTool,
             color: "red",
           },
           {
@@ -668,11 +699,32 @@ function ProductionControlCenter({
             color: "green",
           },
           {
-            label: "On Hold",
+            label: "Blocked",
             value: holdCount,
             description: "Needs management attention",
             icon: IconAlertTriangle,
             color: "orange",
+          },
+          {
+            label: "Overdue",
+            value: overdueCount,
+            description: "Past the promised date",
+            icon: IconClock,
+            color: "red",
+          },
+          {
+            label: "Unassigned",
+            value: unassignedCount,
+            description: "Needs an owner",
+            icon: IconTool,
+            color: "orange",
+          },
+          {
+            label: "Busiest Station",
+            value: bottleneck?.total || 0,
+            description: bottleneck?.department || "No active station",
+            icon: IconFlame,
+            color: "red",
           },
         ];
 
@@ -932,13 +984,53 @@ function ProductionControlCenter({
     }
   }
 
-  async function completeWorkOrder(workOrder) {
+  function getNextStation(workOrder) {
+    return workOrders
+      .filter(
+        (candidate) =>
+          candidate.production_job_id === workOrder.production_job_id &&
+          candidate.id !== workOrder.id &&
+          candidate.step_order > workOrder.step_order &&
+          candidate.status !== "Completed" &&
+          (workOrder.customer_order_item_id
+            ? candidate.customer_order_item_id === workOrder.customer_order_item_id
+            : candidate.customer_order_item_id == null),
+      )
+      .sort((a, b) => a.step_order - b.step_order || a.id - b.id)[0]?.department;
+  }
+
+  function openCompletion(workOrder) {
+    setCompletionTarget(workOrder);
+    setCompletionNotes("");
+  }
+
+  function closeCompletion() {
+    setCompletionTarget(null);
+    setCompletionNotes("");
+  }
+
+  function openBypass(workOrder) {
+    setBypassTarget(workOrder);
+    setBypassReason("");
+  }
+
+  function closeBypass() {
+    setBypassTarget(null);
+    setBypassReason("");
+  }
+
+  async function completeWorkOrder(workOrder, notes = completionNotes) {
     if (workOrder.status !== "In Progress" || updatingId) return;
+    if (!notes.trim()) {
+      notifications.show({ title: "Completion Note Required", message: "Tell the next station what was completed.", color: "orange" });
+      return;
+    }
 
     try {
       setUpdatingId(workOrder.id);
 
-      const result = await completeProductionStep(workOrder.id, activeUser);
+      const result = await completeProductionStep(workOrder.id, activeUser, notes.trim());
+      closeCompletion();
       await loadBoard(false);
 
       notifications.show({
@@ -955,6 +1047,28 @@ function ProductionControlCenter({
         message: error.message,
         color: "red",
       });
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function bypassWorkOrder(workOrder) {
+    if (!isAdministrator || !bypassReason.trim() || updatingId) return;
+    try {
+      setUpdatingId(workOrder.id);
+      const result = await bypassProductionStep(workOrder.id, activeUser, bypassReason.trim());
+      closeBypass();
+      await loadBoard(false);
+      notifications.show({
+        title: "Station Bypassed",
+        message: result?.completed
+          ? "The production route is complete."
+          : `${result?.next_department || "The next station"} is now ready.`,
+        color: "orange",
+        icon: <IconAlertTriangle size={18} />,
+      });
+    } catch (error) {
+      notifications.show({ title: "Station Could Not Be Bypassed", message: error.message, color: "red" });
     } finally {
       setUpdatingId(null);
     }
@@ -1000,9 +1114,35 @@ function ProductionControlCenter({
 
       <MWKpiStrip
         compact
-        columns={{ base: 1, sm: 2, xl: 4 }}
+        columns={{ base: 1, sm: 2, xl: boardMode === "shop" ? 3 : 4 }}
         items={boardKpis}
       />
+
+      {boardMode === "shop" && stationWorkload.length > 0 && (
+        <MWPanel
+          title="Station Workload"
+          subtitle="Open work by station; the busiest station is shown first"
+          icon={IconFlame}
+        >
+          <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }}>
+            {stationWorkload.map((station) => (
+              <Button
+                key={station.department}
+                variant={departmentFilter === station.department ? "filled" : "light"}
+                color={station.blocked ? "orange" : "gray"}
+                h="auto"
+                py="sm"
+                onClick={() => setDepartmentFilter(station.department)}
+              >
+                <Stack gap={2} align="center">
+                  <Text fw={900}>{station.department}: {station.total}</Text>
+                  <Text size="xs">{station.ready} ready · {station.active} active · {station.blocked} blocked</Text>
+                </Stack>
+              </Button>
+            ))}
+          </SimpleGrid>
+        </MWPanel>
+      )}
 
       <MWPanel
         title="Board Controls"
@@ -1268,7 +1408,7 @@ function ProductionControlCenter({
                                   color="green"
                                   leftSection={<IconCheck size={17} />}
                                   loading={updatingId === workOrder.id}
-                                  onClick={() => completeWorkOrder(workOrder)}
+                                  onClick={() => openCompletion(workOrder)}
                                 >
                                   Complete Step
                                 </Button>
@@ -1283,6 +1423,17 @@ function ProductionControlCenter({
                               {workOrder.status === "On Hold" && (
                                 <Button variant="light" color="orange" disabled>
                                   Management Hold
+                                </Button>
+                              )}
+
+                              {isAdministrator && workOrder.status !== "Completed" && (
+                                <Button
+                                  variant="subtle"
+                                  color="orange"
+                                  leftSection={<IconAlertTriangle size={17} />}
+                                  onClick={() => openBypass(workOrder)}
+                                >
+                                  Admin Bypass
                                 </Button>
                               )}
                             </Group>
@@ -1407,9 +1558,15 @@ function ProductionControlCenter({
                         color="green"
                         leftSection={<IconCheck size={17} />}
                         loading={busy}
-                        onClick={() => completeWorkOrder(stage.workOrder)}
+                        onClick={() => openCompletion(stage.workOrder)}
                       >
                         Complete {stage.label}
+                      </Button>
+                    )}
+
+                    {isAdministrator && stage.workOrder && stage.workOrder.status !== "Completed" && (
+                      <Button variant="subtle" color="orange" onClick={() => openBypass(stage.workOrder)}>
+                        Admin Bypass
                       </Button>
                     )}
 
@@ -1538,6 +1695,109 @@ function ProductionControlCenter({
           })}
         </SimpleGrid>
       )}
+
+      {boardMode === "shop" && (
+        <MWPanel
+          title="Recent Workflow Activity"
+          subtitle="Started, completed, and bypassed station movements"
+          icon={IconTimeline}
+        >
+          {activity.length === 0 ? (
+            <Text c="dimmed">No production movement has been recorded yet.</Text>
+          ) : (
+            <Stack gap="xs">
+              {activity.slice(0, 10).map((event) => (
+                <Paper key={event.id} p="sm" radius="md" withBorder>
+                  <Group justify="space-between" align="flex-start" wrap="wrap">
+                    <Box>
+                      <Group gap="xs">
+                        <Badge color={event.event_type === "Administrator Bypass" ? "orange" : event.event_type === "Completed" ? "green" : "blue"}>
+                          {event.event_type}
+                        </Badge>
+                        <Text fw={850}>{event.from_department || "Production"}</Text>
+                        {event.to_department && <Text size="sm" c="dimmed">→ {event.to_department}</Text>}
+                      </Group>
+                      <Text size="sm" mt={4}>{event.notes || "No note recorded"}</Text>
+                      <Text size="xs" c="dimmed" mt={2}>By {event.actor || "Team member"}</Text>
+                    </Box>
+                    <Text size="xs" c="dimmed">{new Date(event.created_at).toLocaleString()}</Text>
+                  </Group>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </MWPanel>
+      )}
+
+      <Modal
+        opened={Boolean(completionTarget)}
+        onClose={closeCompletion}
+        title="Complete Station & Hand Off Work"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <Alert color="blue" icon={<IconCheck size={18} />}>
+            {completionTarget
+              ? `${completionTarget.department} will be completed and ${getNextStation(completionTarget) || "the production route"} will be ${getNextStation(completionTarget) ? "made ready" : "completed"}.`
+              : "Confirm the next production handoff."}
+          </Alert>
+          <Textarea
+            label="Completion Notes"
+            description="Required: tell the next station what was completed, checked, or needs attention."
+            placeholder="Example: Cut complete; verified quantity and dimensions. Ready for Prep."
+            minRows={4}
+            value={completionNotes}
+            onChange={(event) => setCompletionNotes(event.currentTarget.value)}
+            required
+          />
+          <Group justify="flex-end">
+            <Button variant="light" color="gray" onClick={closeCompletion}>Cancel</Button>
+            <Button
+              color="green"
+              leftSection={<IconCheck size={17} />}
+              loading={updatingId === completionTarget?.id}
+              disabled={!completionNotes.trim()}
+              onClick={() => completionTarget && completeWorkOrder(completionTarget)}
+            >
+              Complete & Move Forward
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={Boolean(bypassTarget)}
+        onClose={closeBypass}
+        title="Administrator Station Bypass"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />} title="This action is recorded">
+            The current station will be marked complete and the next required station will become ready. Use this only when the work is not required or was completed outside the normal station flow.
+          </Alert>
+          <Textarea
+            label="Bypass Reason"
+            placeholder="Explain why this station is being skipped."
+            minRows={4}
+            value={bypassReason}
+            onChange={(event) => setBypassReason(event.currentTarget.value)}
+            required
+          />
+          <Group justify="flex-end">
+            <Button variant="light" color="gray" onClick={closeBypass}>Cancel</Button>
+            <Button
+              color="orange"
+              loading={updatingId === bypassTarget?.id}
+              disabled={!bypassReason.trim()}
+              onClick={() => bypassTarget && bypassWorkOrder(bypassTarget)}
+            >
+              Confirm Administrator Bypass
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={Boolean(scheduleProject)}
