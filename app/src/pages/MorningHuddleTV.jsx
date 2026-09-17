@@ -32,9 +32,9 @@ const styles = `
   .tv-summary label { color:#ff5965; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
   .tv-summary p { margin:10px 0 0; font-size:clamp(18px,1.45vw,28px); line-height:1.42; font-weight:700; }
   .tv-kpis { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; margin-top:14px; }
-  .tv-kpi { min-height:108px; padding:15px; border:1px solid #354047; border-radius:10px; background:#11181c; }
-  .tv-kpi span { display:block; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
-  .tv-kpi strong { display:block; margin-top:8px; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
+  .tv-kpi { display:flex; min-width:0; min-height:140px; padding:15px; border:1px solid #354047; border-radius:10px; background:#11181c; flex-direction:column; align-items:center; text-align:center; }
+  .tv-kpi span { display:flex; width:100%; min-height:48px; align-items:flex-start; justify-content:center; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
+  .tv-kpi strong { display:flex; min-height:58px; margin-top:auto; align-items:center; justify-content:center; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
   .tv-grid { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:12px; margin-top:14px; }
   .tv-panel { min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
@@ -53,7 +53,7 @@ const styles = `
     .tv-brand{align-items:center;gap:10px}.tv-brand img{width:92px;height:40px}.tv-brand h1{font-size:20px;line-height:1.1}.tv-brand p{font-size:13px}
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
     .tv-summary{padding:14px}.tv-summary p{font-size:17px;line-height:1.42}
-    .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:92px;padding:12px}.tv-kpi span{font-size:12px}.tv-kpi strong{font-size:36px}
+    .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
     .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel:first-child{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-list li{padding:12px;font-size:15px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
@@ -61,13 +61,13 @@ const styles = `
 const text = (value, fallback = "Not assigned") => String(value || fallback);
 const dateOnly = (value) => value ? new Date(String(value).length === 10 ? `${value}T12:00:00` : value).toLocaleDateString() : "Date not set";
 
-function buildExecutiveSummary(data) {
+function buildExecutiveSummary(data, openSiteVisitCount = 0) {
   const h = data?.morningHuddle || {};
   const s = h.summary || {};
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.combined || [];
   const artHotItems = data?.artHotItems || [];
-  const sentences = [`Metal Worx begins today with ${priorityItems.length} Hot Today or quick-turnaround priorit${priorityItems.length === 1 ? "y" : "ies"}, ${artHotItems.length} hot artwork or approaching dated order${artHotItems.length === 1 ? "" : "s"}, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, ${projects.length} active outside project${projects.length === 1 ? "" : "s"}, and ${s.todayFieldWork || 0} scheduled field activit${s.todayFieldWork === 1 ? "y" : "ies"}.`];
+  const sentences = [`Metal Worx begins today with ${priorityItems.length} Hot Today or quick-turnaround priorit${priorityItems.length === 1 ? "y" : "ies"}, ${artHotItems.length} hot artwork or approaching dated order${artHotItems.length === 1 ? "" : "s"}, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, and ${projects.length} active outside project${projects.length === 1 ? "" : "s"}. There ${openSiteVisitCount === 1 ? "is" : "are"} ${openSiteVisitCount} open site visit${openSiteVisitCount === 1 ? "" : "s"} awaiting or holding a schedule, with ${s.todayFieldWork || 0} field activit${s.todayFieldWork === 1 ? "y" : "ies"} scheduled for today.`];
   if (s.blockers) sentences.push(`${s.blockers} active blocker${s.blockers === 1 ? " requires" : "s require"} leadership attention before new work is released.`);
   else sentences.push("No active operational blockers are currently recorded.");
   if (s.overdueActions) sentences.push(`${s.overdueActions} overdue action${s.overdueActions === 1 ? " must" : "s must"} be assigned and recovered today.`);
@@ -107,7 +107,7 @@ export default function MorningHuddleTV({ setPage }) {
   const artHotItems = (data?.artHotItems || []).slice(0,10);
   const projectLeadCount = new Set(projects.map((project) => String(project.owner || project.assigned_to || "").trim()).filter(Boolean)).size;
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
-  const executive = useMemo(() => buildExecutiveSummary(data), [data]);
+  const executive = useMemo(() => buildExecutiveSummary(data, siteVisits.length), [data, siteVisits.length]);
   const priorities = [...priorityItems, ...(huddle.todayFocus || [])].filter((item,index,all) => all.findIndex((candidate) => String(candidate.sourceType || candidate.type) === String(item.sourceType || item.type) && String(candidate.sourceId || candidate.id) === String(item.sourceId || item.id)) === index).slice(0,8);
   const field = (huddle.todayFieldWork || []).slice(0,6);
   const blockers = [...(huddle.blockers || []), ...blockerTasks.map((b) => ({ title: b.blocker || "Blocked checklist task", detail: "Checklist blocker" }))].slice(0,6);
