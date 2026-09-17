@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Card,
+  FileButton,
   Group,
   Loader,
   Modal,
@@ -29,7 +30,9 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconMapPin,
+  IconMail,
   IconPackage,
+  IconPhone,
   IconPrinter,
   IconRefresh,
   IconRotateClockwise,
@@ -37,6 +40,7 @@ import {
   IconTool,
   IconTrash,
   IconTruckDelivery,
+  IconUpload,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -221,6 +225,11 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [advancingVisitId, setAdvancingVisitId] = useState(null);
   const [bypassVisit, setBypassVisit] = useState(null);
   const [bypassReason, setBypassReason] = useState("");
+  const [visitEditor, setVisitEditor] = useState(null);
+  const [visitDraft, setVisitDraft] = useState({});
+  const [visitFilesById, setVisitFilesById] = useState({});
+  const [savingVisit, setSavingVisit] = useState(false);
+  const [uploadingVisitFile, setUploadingVisitFile] = useState(false);
 
   const activeUserName = typeof activeUser === "string"
     ? activeUser
@@ -234,7 +243,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     setErrorMessage("");
 
     try {
-      const [projectResult, customerResult, siteVisitResult, allQuoteResult, allApprovalResult] = await Promise.all([
+      const [projectResult, customerResult, siteVisitResult, visitFileResult, allQuoteResult, allApprovalResult] = await Promise.all([
         supabase
           .from("projects")
           .select("*")
@@ -242,6 +251,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         supabase.from("customers").select("*"),
         supabase
           .from("prequote_site_visits")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("prequote_site_visit_files")
           .select("*")
           .order("created_at", { ascending: false }),
         supabase
@@ -257,6 +270,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       if (projectResult.error) throw projectResult.error;
       if (customerResult.error) throw customerResult.error;
       if (siteVisitResult.error) throw siteVisitResult.error;
+      if (visitFileResult.error) throw visitFileResult.error;
       if (allQuoteResult.error) throw allQuoteResult.error;
       if (allApprovalResult.error) throw allApprovalResult.error;
 
@@ -340,8 +354,13 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       setProjects(loadedProjects);
       setCompletedProjects(loadedCompletedProjects);
       setSiteVisits((siteVisitResult.data || []).filter(
-        (visit) => !["Completed", "Cancelled"].includes(visit.status)
+        (visit) => visit.status !== "Cancelled" && !visit.project_id
       ));
+      setVisitFilesById((visitFileResult.data || []).reduce((grouped, file) => {
+        if (!grouped[file.visit_id]) grouped[file.visit_id] = [];
+        grouped[file.visit_id].push(file);
+        return grouped;
+      }, {}));
       setQuotesById(Object.fromEntries(allQuoteRows.map((quote) => [quote.id, quote])));
       setApprovalsByQuote(allApprovalRows.reduce((latest, approval) => {
         if (!latest[approval.quote_id]) latest[approval.quote_id] = approval;
@@ -420,7 +439,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   }, [search, siteVisits]);
 
   const activeSiteVisits = useMemo(
-    () => filteredSiteVisits.filter((visit) => ["Open", "Scheduled"].includes(visit.status)),
+    () => filteredSiteVisits.filter((visit) => !visit.quote_id && ["Open", "Scheduled", "Completed"].includes(visit.status)),
     [filteredSiteVisits]
   );
 
@@ -556,6 +575,164 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     () => Object.values(calendarEntriesByDay).reduce((total, entries) => total + entries.length, 0),
     [calendarEntriesByDay]
   );
+
+  function openVisitEditor(visit) {
+    setVisitEditor(visit);
+    setVisitDraft({
+      customer_name: visit.customer_name || "",
+      contact_name: visit.contact_name || "",
+      contact_phone: visit.contact_phone || "",
+      contact_email: visit.contact_email || "",
+      job_site_address: visit.job_site_address || "",
+      requested_visit_date: visit.requested_visit_date || "",
+      requested_visit_time: visit.requested_visit_time?.slice(0, 5) || "",
+      assigned_estimator: visit.assigned_estimator || "",
+      one_way_miles: visit.one_way_miles || 0,
+      notes: visit.notes || "",
+      access_instructions: visit.access_instructions || "",
+      site_conditions: visit.site_conditions || "",
+      measurements: visit.measurements || "",
+      labor_requirements: visit.labor_requirements || "",
+      material_requirements: visit.material_requirements || "",
+      customer_decisions: visit.customer_decisions || "",
+      recommended_next_step: visit.recommended_next_step || "",
+    });
+  }
+
+  function updateVisitDraft(field, value) {
+    setVisitDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveVisitEditor(closeAfterSave = true) {
+    if (!visitEditor) return null;
+    if (!visitDraft.customer_name?.trim() || !visitDraft.job_site_address?.trim()) {
+      notifications.show({ title: "Customer and Address Required", message: "Enter the customer/job name and job-site address before saving.", color: "orange" });
+      return null;
+    }
+    setSavingVisit(true);
+    try {
+      const updates = {
+        ...visitDraft,
+        customer_name: visitDraft.customer_name.trim(),
+        job_site_address: visitDraft.job_site_address.trim(),
+        requested_visit_date: visitDraft.requested_visit_date || null,
+        requested_visit_time: visitDraft.requested_visit_time || null,
+        one_way_miles: Number(visitDraft.one_way_miles || 0),
+        status: visitEditor.status === "Completed" ? "Completed" : visitDraft.requested_visit_date ? "Scheduled" : "Open",
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabase
+        .from("prequote_site_visits")
+        .update(updates)
+        .eq("id", visitEditor.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      setSiteVisits((current) => current.map((visit) => visit.id === data.id ? data : visit));
+      setVisitEditor(data);
+      if (closeAfterSave) setVisitEditor(null);
+      notifications.show({ title: "Estimate Updated", message: `${data.customer_name} was saved.`, color: "green" });
+      return data;
+    } catch (error) {
+      notifications.show({ title: "Estimate Could Not Save", message: error.message, color: "red" });
+      return null;
+    } finally {
+      setSavingVisit(false);
+    }
+  }
+
+  function completionMissing(visit, files) {
+    return [
+      [visit.notes, "estimate notes"],
+      [visit.measurements, "measurements"],
+      [visit.labor_requirements, "labor requirements"],
+      [visit.material_requirements, "material requirements"],
+      [visit.customer_decisions, "customer decisions"],
+      [visit.recommended_next_step, "recommended next step"],
+      [files.length, "at least one site photo or attachment"],
+    ].filter(([value]) => !String(value || "").trim()).map(([, label]) => label);
+  }
+
+  async function completeVisit() {
+    const saved = await saveVisitEditor(false);
+    if (!saved) return;
+    const files = visitFilesById[saved.id] || [];
+    const missing = completionMissing(saved, files);
+    if (missing.length) {
+      notifications.show({
+        title: "Site Visit Is Not Ready to Complete",
+        message: `Add ${missing.join(", ")}. Enter “Not needed” when a category does not apply.`,
+        color: "orange",
+      });
+      return;
+    }
+    setSavingVisit(true);
+    try {
+      const timestamp = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("prequote_site_visits")
+        .update({ status: "Completed", completed_at: timestamp, completed_by: activeUserName, updated_at: timestamp })
+        .eq("id", saved.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      setSiteVisits((current) => current.map((visit) => visit.id === data.id ? data : visit));
+      setVisitEditor(data);
+      notifications.show({ title: "Site Visit Completed", message: "The estimate is ready to become a quote.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Site Visit Could Not Complete", message: error.message, color: "red" });
+    } finally {
+      setSavingVisit(false);
+    }
+  }
+
+  async function uploadVisitFile(file) {
+    if (!file || !visitEditor) return;
+    setUploadingVisitFile(true);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+    const storagePath = `prequote-site-visits/${visitEditor.id}/${Date.now()}-${safeName}`;
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("project-files")
+        .upload(storagePath, file, { contentType: file.type || undefined, upsert: false });
+      if (uploadError) throw uploadError;
+      const { data, error } = await supabase.from("prequote_site_visit_files").insert({
+        visit_id: visitEditor.id,
+        file_name: file.name,
+        storage_path: storagePath,
+        file_type: file.type || null,
+        file_size: file.size,
+        uploaded_by: activeUserName,
+      }).select("*").single();
+      if (error) {
+        await supabase.storage.from("project-files").remove([storagePath]);
+        throw error;
+      }
+      setVisitFilesById((current) => ({ ...current, [visitEditor.id]: [data, ...(current[visitEditor.id] || [])] }));
+      notifications.show({ title: "File Attached", message: file.name, color: "green" });
+    } catch (error) {
+      notifications.show({ title: "File Could Not Upload", message: error.message, color: "red" });
+    } finally {
+      setUploadingVisitFile(false);
+    }
+  }
+
+  async function openVisitFile(file) {
+    const { data, error } = await supabase.storage.from("project-files").createSignedUrl(file.storage_path, 900);
+    if (error) {
+      notifications.show({ title: "File Could Not Open", message: error.message, color: "red" });
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  function printSiteVisit(visit) {
+    const popup = window.open("", "_blank");
+    if (!popup) return;
+    const line = (label, value) => `<div><b>${label}</b><span>${String(value || "Not entered").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</span></div>`;
+    popup.document.write(`<!doctype html><html><head><title>Site Visit — ${visit.customer_name}</title><style>@page{size:letter;margin:.45in}body{font:13px Arial;color:#111}header{border-top:8px solid #b00012;border-bottom:2px solid #111;padding:12px 0;margin-bottom:14px}h1{margin:0}section{display:grid;grid-template-columns:1fr 1fr;gap:10px}section div{border:1px solid #777;padding:9px;min-height:54px}b,span{display:block}b{font-size:10px;color:#666;text-transform:uppercase;margin-bottom:5px}.wide{grid-column:1/-1;min-height:90px}</style></head><body><header><h1>METAL WORX — SITE VISIT</h1><p>Estimate field sheet</p></header><section>${line("Customer / Job", visit.customer_name)}${line("Assigned Estimator", visit.assigned_estimator)}${line("Address", visit.job_site_address)}${line("Scheduled", `${formatDate(visit.requested_visit_date)} ${visit.requested_visit_time || ""}`)}${line("Contact", `${visit.contact_name || ""} ${visit.contact_phone || ""}`)}${line("Email", visit.contact_email)}${line("Access Instructions", visit.access_instructions)}${line("Site Conditions", visit.site_conditions)}${line("Estimate Notes", visit.notes)}${line("Measurements", visit.measurements)}${line("Labor Requirements", visit.labor_requirements)}${line("Material Requirements", visit.material_requirements)}${line("Customer Decisions", visit.customer_decisions)}${line("Recommended Next Step", visit.recommended_next_step)}</section><script>window.onload=()=>window.print()</script></body></html>`);
+    popup.document.close();
+  }
 
   async function moveVisitToQuote(visit) {
     setAdvancingVisitId(visit.id);
@@ -1012,19 +1189,34 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
           {selectedWorkspace.key === "estimates" && activeSiteVisits.length > 0 && (
             <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md" mb="lg">
-              {activeSiteVisits.map((visit) => <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: "5px solid #f59f00" }}>
+              {activeSiteVisits.map((visit) => {
+                const files = visitFilesById[visit.id] || [];
+                const nextAction = visit.status === "Completed" ? "Create the formal quote" : visit.requested_visit_date ? "Complete the site visit" : "Schedule the site visit";
+                return <Card key={visit.id} withBorder p="md" radius="lg" style={{ borderLeft: `5px solid ${visit.status === "Completed" ? "#2f9e44" : "#f59f00"}` }}>
                 <Stack gap="xs">
-                  <Group justify="space-between"><Badge color={visit.requested_visit_date ? "blue" : "orange"}>{visit.requested_visit_date ? "Scheduled Estimate" : "Needs Scheduling"}</Badge><Badge color="cyan" variant="light">Pre-Quote</Badge></Group>
+                  <Group justify="space-between"><Badge color={visit.status === "Completed" ? "green" : visit.requested_visit_date ? "blue" : "orange"}>{visit.status === "Completed" ? "Visit Completed" : visit.requested_visit_date ? "Scheduled Estimate" : "Needs Scheduling"}</Badge><Badge color="cyan" variant="light">Pre-Quote</Badge></Group>
                   <Text fw={900}>{visit.customer_name || "Potential Customer"}</Text>
                   <Text size="sm">{visit.job_site_address || "Address not entered"}</Text>
                   <Text size="sm" c="dimmed">Assigned: {visit.assigned_estimator || "Unassigned"}</Text>
-                  <Text size="sm" c="dimmed">Visit: {formatDate(visit.requested_visit_date)}</Text>
+                  <Text size="sm" c="dimmed">Visit: {formatDate(visit.requested_visit_date)}{visit.requested_visit_time ? ` at ${String(visit.requested_visit_time).slice(0, 5)}` : ""}</Text>
+                  {(visit.contact_phone || visit.contact_email) && <Text size="xs" c="dimmed">{[visit.contact_phone, visit.contact_email].filter(Boolean).join(" · ")}</Text>}
+                  <Group gap="xs"><Badge color={files.length ? "green" : "gray"} variant="light">{files.length} file{files.length === 1 ? "" : "s"}</Badge><Badge color="gray" variant="light">Updated {formatDate(visit.updated_at)}</Badge></Group>
+                  <Text size="sm" fw={800}>Next: {nextAction}</Text>
                   <Stack gap={8} mt={4}>
-                    <Button fullWidth color="blue" loading={advancingVisitId === visit.id} onClick={() => moveVisitToQuote(visit)}>Move to Quote</Button>
+                    <Button fullWidth variant="light" color="cyan" onClick={() => openVisitEditor(visit)}>{visit.requested_visit_date ? "Open / Edit Estimate" : "Schedule Site Visit"}</Button>
+                    <SimpleGrid cols={2} spacing={8}>
+                      <Button size="xs" variant="default" leftSection={<IconMapPin size={15} />} disabled={!visit.job_site_address} onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(visit.job_site_address)}`, "_blank", "noopener,noreferrer")}>Maps</Button>
+                      <Button size="xs" variant="default" leftSection={<IconPrinter size={15} />} onClick={() => printSiteVisit(visit)}>Print Sheet</Button>
+                      {visit.contact_phone && <Button size="xs" variant="default" leftSection={<IconPhone size={15} />} component="a" href={`tel:${visit.contact_phone}`}>Call</Button>}
+                      {visit.contact_email && <Button size="xs" variant="default" leftSection={<IconMail size={15} />} component="a" href={`mailto:${visit.contact_email}`}>Email</Button>}
+                    </SimpleGrid>
+                    {visit.status !== "Completed" && <Button fullWidth color="green" onClick={() => openVisitEditor(visit)}>Complete Site Visit</Button>}
+                    <Button fullWidth color="blue" loading={advancingVisitId === visit.id} onClick={() => moveVisitToQuote(visit)}>{visit.status === "Completed" ? "Create Quote" : "Move to Quote"}</Button>
                     {isAdministrator && <Button fullWidth variant="light" color="orange" onClick={() => { setBypassVisit(visit); setBypassReason(""); }}>Skip Quote &amp; Approval</Button>}
                   </Stack>
                 </Stack>
-              </Card>)}
+              </Card>;
+              })}
             </SimpleGrid>
           )}
 
@@ -1089,6 +1281,77 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           )}
         </MWPanel>
       )}
+
+      <Modal
+        opened={Boolean(visitEditor)}
+        onClose={() => setVisitEditor(null)}
+        title={visitEditor ? `Estimate & Site Visit — ${visitEditor.customer_name}` : "Estimate & Site Visit"}
+        size="xl"
+        centered
+        scrollAreaComponent={ScrollArea.Autosize}
+      >
+        <Stack gap="md">
+          <Alert color={visitEditor?.status === "Completed" ? "green" : "blue"}>
+            {visitEditor?.status === "Completed"
+              ? "This site visit is complete and ready to become a formal quote."
+              : "Save the scheduling and field information here. Required completion items are marked below."}
+          </Alert>
+
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <TextInput label="Customer / Job" required value={visitDraft.customer_name || ""} onChange={(event) => updateVisitDraft("customer_name", event.currentTarget.value)} />
+            <TextInput label="Job-Site Address" required value={visitDraft.job_site_address || ""} onChange={(event) => updateVisitDraft("job_site_address", event.currentTarget.value)} />
+            <TextInput label="Contact Name" value={visitDraft.contact_name || ""} onChange={(event) => updateVisitDraft("contact_name", event.currentTarget.value)} />
+            <TextInput label="Contact Phone" value={visitDraft.contact_phone || ""} onChange={(event) => updateVisitDraft("contact_phone", event.currentTarget.value)} />
+            <TextInput label="Contact Email" type="email" value={visitDraft.contact_email || ""} onChange={(event) => updateVisitDraft("contact_email", event.currentTarget.value)} />
+            <TextInput label="Assigned Estimator" placeholder="Chad, Kory, etc." value={visitDraft.assigned_estimator || ""} onChange={(event) => updateVisitDraft("assigned_estimator", event.currentTarget.value)} />
+            <TextInput label="Visit Date" type="date" value={visitDraft.requested_visit_date || ""} onChange={(event) => updateVisitDraft("requested_visit_date", event.currentTarget.value)} />
+            <TextInput label="Visit Time" type="time" value={visitDraft.requested_visit_time || ""} onChange={(event) => updateVisitDraft("requested_visit_time", event.currentTarget.value)} />
+          </SimpleGrid>
+
+          <Group grow wrap="wrap">
+            <Button variant="light" color="blue" leftSection={<IconMapPin size={17} />} disabled={!visitDraft.job_site_address} onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(visitDraft.job_site_address || "")}`, "_blank", "noopener,noreferrer")}>Open Google Maps</Button>
+            {visitDraft.contact_phone && <Button variant="light" color="gray" leftSection={<IconPhone size={17} />} component="a" href={`tel:${visitDraft.contact_phone}`}>Call Customer</Button>}
+            {visitDraft.contact_email && <Button variant="light" color="gray" leftSection={<IconMail size={17} />} component="a" href={`mailto:${visitDraft.contact_email}`}>Email Customer</Button>}
+          </Group>
+
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Textarea label="Access Instructions" minRows={3} value={visitDraft.access_instructions || ""} onChange={(event) => updateVisitDraft("access_instructions", event.currentTarget.value)} />
+            <Textarea label="Site Conditions" minRows={3} value={visitDraft.site_conditions || ""} onChange={(event) => updateVisitDraft("site_conditions", event.currentTarget.value)} />
+            <Textarea label="Estimate Notes *" description="Scope, customer request, installation concerns, and other field notes." minRows={4} value={visitDraft.notes || ""} onChange={(event) => updateVisitDraft("notes", event.currentTarget.value)} />
+            <Textarea label="Measurements *" description="Enter all verified dimensions." minRows={4} value={visitDraft.measurements || ""} onChange={(event) => updateVisitDraft("measurements", event.currentTarget.value)} />
+            <Textarea label="Labor Requirements *" description="Crew size, hours, equipment, or enter Not needed." minRows={3} value={visitDraft.labor_requirements || ""} onChange={(event) => updateVisitDraft("labor_requirements", event.currentTarget.value)} />
+            <Textarea label="Material Requirements *" description="Material, quantity, finish, or enter Not needed." minRows={3} value={visitDraft.material_requirements || ""} onChange={(event) => updateVisitDraft("material_requirements", event.currentTarget.value)} />
+            <Textarea label="Customer Decisions *" description="Choices, approvals, open questions, or enter None." minRows={3} value={visitDraft.customer_decisions || ""} onChange={(event) => updateVisitDraft("customer_decisions", event.currentTarget.value)} />
+            <Textarea label="Recommended Next Step *" description="Example: Prepare formal quote, return for measurements, or close lead." minRows={3} value={visitDraft.recommended_next_step || ""} onChange={(event) => updateVisitDraft("recommended_next_step", event.currentTarget.value)} />
+          </SimpleGrid>
+
+          <Card withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <Group justify="space-between" wrap="wrap">
+                <div><Text fw={900}>Site Photos & Attachments *</Text><Text size="xs" c="dimmed">Photos, sketches, drawings, measurements, or reference documents.</Text></div>
+                <FileButton onChange={uploadVisitFile} accept="image/jpeg,image/png,image/webp,application/pdf">
+                  {(props) => <Button {...props} loading={uploadingVisitFile} leftSection={<IconUpload size={17} />}>Attach File</Button>}
+                </FileButton>
+              </Group>
+              {(visitFilesById[visitEditor?.id] || []).length ? (
+                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  {(visitFilesById[visitEditor?.id] || []).map((file) => <Button key={file.id} variant="default" justify="space-between" onClick={() => openVisitFile(file)}>{file.file_name}</Button>)}
+                </SimpleGrid>
+              ) : <Text size="sm" c="dimmed">No files attached yet.</Text>}
+            </Stack>
+          </Card>
+
+          <Group justify="space-between" wrap="wrap">
+            <Button variant="default" leftSection={<IconPrinter size={17} />} onClick={() => printSiteVisit({ ...visitEditor, ...visitDraft })}>Print Site-Visit Sheet</Button>
+            <Group wrap="wrap">
+              <Button variant="default" onClick={() => setVisitEditor(null)}>Close</Button>
+              <Button color="blue" loading={savingVisit} onClick={() => saveVisitEditor(true)}>Save Estimate</Button>
+              {visitEditor?.status !== "Completed" && <Button color="green" loading={savingVisit} onClick={completeVisit}>Complete Site Visit</Button>}
+              {visitEditor?.status === "Completed" && <Button color="violet" loading={advancingVisitId === visitEditor.id} onClick={() => moveVisitToQuote(visitEditor)}>Create Quote</Button>}
+            </Group>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={Boolean(bypassVisit)}

@@ -64,8 +64,10 @@ function loadSavedSiteEstimate() {
     customer: "",
     contact: "",
     phone: "",
+    email: "",
     destination: "",
     visitDate: "",
+    visitTime: "",
     assignedTo: "",
     oneWayMiles: 0,
     ratePerMile: 0,
@@ -201,8 +203,9 @@ function QuoteCenter({
       `Potential Customer / Job: ${siteEstimate.customer || "Not entered"}`,
       `Contact: ${siteEstimate.contact || "Not entered"}`,
       `Phone: ${siteEstimate.phone || "Not entered"}`,
+      `Email: ${siteEstimate.email || "Not entered"}`,
       `Job-Site Address: ${siteEstimate.destination || "Not entered"}`,
-      `Requested Site Visit: ${formatDate(siteEstimate.visitDate)}`,
+      `Requested Site Visit: ${formatDate(siteEstimate.visitDate)}${siteEstimate.visitTime ? ` at ${siteEstimate.visitTime}` : ""}`,
       `Assigned To: ${siteEstimate.assignedTo || "Not assigned"}`,
       `Google Maps Route: ${googleMapsDirectionsUrl(siteEstimate.destination)}`,
       `Estimated Mileage: ${oneWay || "Confirm"} one way / ${roundTrip || "Confirm"} round trip`,
@@ -232,8 +235,10 @@ function QuoteCenter({
           customer_name: siteEstimate.customer.trim() || siteEstimate.destination.trim(),
           contact_name: siteEstimate.contact.trim() || null,
           contact_phone: siteEstimate.phone.trim() || null,
+          contact_email: siteEstimate.email.trim() || null,
           job_site_address: siteEstimate.destination.trim(),
           requested_visit_date: siteEstimate.visitDate || null,
+          requested_visit_time: siteEstimate.visitTime || null,
           assigned_estimator: siteEstimate.assignedTo.trim() || null,
           one_way_miles: Number(siteEstimate.oneWayMiles || 0),
           rate_per_mile: Number(siteEstimate.ratePerMile || 0),
@@ -1439,7 +1444,9 @@ function QuoteCenter({
               <TextInput label="Job-Site Address" placeholder="Street, city, state, ZIP" required value={siteEstimate.destination} onChange={(event) => updateSiteEstimate("destination", event.currentTarget.value)} />
               <TextInput label="Contact Name" value={siteEstimate.contact} onChange={(event) => updateSiteEstimate("contact", event.currentTarget.value)} />
               <TextInput label="Contact Phone" value={siteEstimate.phone} onChange={(event) => updateSiteEstimate("phone", event.currentTarget.value)} />
+              <TextInput type="email" label="Contact Email" value={siteEstimate.email} onChange={(event) => updateSiteEstimate("email", event.currentTarget.value)} />
               <TextInput type="date" label="Requested Site-Visit Date" value={siteEstimate.visitDate} onChange={(event) => updateSiteEstimate("visitDate", event.currentTarget.value)} />
+              <TextInput type="time" label="Requested Site-Visit Time" value={siteEstimate.visitTime} onChange={(event) => updateSiteEstimate("visitTime", event.currentTarget.value)} />
               <TextInput label="Assigned Estimator" placeholder="Chad, Kory, etc." value={siteEstimate.assignedTo} onChange={(event) => updateSiteEstimate("assignedTo", event.currentTarget.value)} />
             </SimpleGrid>
             <Group align="flex-end" grow wrap="wrap">
