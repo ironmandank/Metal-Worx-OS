@@ -2227,6 +2227,41 @@ export async function getDashboardData() {
             ) !== "completed"
         ).length + prequoteSiteVisits.length,
 
+      siteVisitsNeedScheduling:
+        openProjects.filter(
+          (project) =>
+            project.site_visit_required === true &&
+            normalizeStatus(project.site_visit_status) !== "completed" &&
+            !project.site_visit_date
+        ).length +
+        prequoteSiteVisits.filter(
+          (visit) => !visit.requested_visit_date
+        ).length,
+
+      siteVisitsScheduled:
+        openProjects.filter(
+          (project) =>
+            project.site_visit_required === true &&
+            normalizeStatus(project.site_visit_status) !== "completed" &&
+            Boolean(project.site_visit_date)
+        ).length +
+        prequoteSiteVisits.filter(
+          (visit) => Boolean(visit.requested_visit_date)
+        ).length,
+
+      approvalsPending:
+        openProjects.filter(
+          (project) =>
+            project.customer_approval_required !== false &&
+            normalizeStatus(project.approval_status) !== "approved" &&
+            (
+              normalizeStatus(project.quote_status) === "sent" ||
+              ["sent", "pending", "required"].includes(
+                normalizeStatus(project.approval_status)
+              )
+            )
+        ).length,
+
       installs:
         openProjects.filter(
           (project) =>
@@ -2242,6 +2277,18 @@ export async function getDashboardData() {
                 project.install_status
               )
             )
+        ).length,
+
+      installsNeedScheduling:
+        openProjects.filter(
+          (project) =>
+            project.install_required === true &&
+            !Boolean(project.install_start || project.install_date) &&
+            ![
+              "completed",
+              "complete",
+              "not required",
+            ].includes(normalizeStatus(project.install_status))
         ).length,
 
       inProduction:
