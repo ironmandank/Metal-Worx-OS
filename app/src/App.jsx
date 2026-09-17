@@ -697,6 +697,7 @@ function App() {
           setSelectedProductionJob={setSelectedProductionJob}
           setSelectedProject={setSelectedProject}
           activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
         />
       );
     }
