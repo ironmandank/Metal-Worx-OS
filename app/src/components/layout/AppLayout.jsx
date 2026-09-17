@@ -678,16 +678,6 @@ function AppLayout({
                 </button>
               </div>
 
-              {selectedGroup.id === "outside" && (
-                <div className="mw-outside-flow" aria-label="Outside project workflow">
-                  <span>Estimate</span><i />
-                  <span>Approve</span><i />
-                  <span>Build</span><i />
-                  <span>Install</span><i />
-                  <span>Close</span>
-                </div>
-              )}
-
               <div className="mw-flyout-items">
                 {selectedGroup.items.map((item, index) => {
                   const ItemIcon = item.icon;
@@ -699,6 +689,7 @@ function AppLayout({
                       {showSection && <div className="mw-flyout-section-label">{item.section}</div>}
                       <button
                         type="button"
+                        title={item.description || item.label}
                         className={active ? "mw-nav-active" : ""}
                         onClick={() =>
                           item.department
@@ -708,9 +699,7 @@ function AppLayout({
                       >
                         <ItemIcon />
                         <span className="mw-flyout-item-copy">
-                          {item.step && <small>{item.step}</small>}
                           <strong>{item.label}</strong>
-                          {item.description && <em>{item.description}</em>}
                         </span>
                         <IconChevronRight />
                       </button>
