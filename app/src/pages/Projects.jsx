@@ -213,7 +213,12 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [approvalsByQuote, setApprovalsByQuote] = useState({});
   const [viewMode, setViewMode] = useState("active");
   const [workspaceView, setWorkspaceView] = useState("board");
-  const [activeWorkspace, setActiveWorkspace] = useState("estimates");
+  const [activeWorkspace, setActiveWorkspace] = useState(() => {
+    const savedWorkspace = window.localStorage.getItem("mw-outside-workspace");
+    return OUTSIDE_WORKSPACES.some((workspace) => workspace.key === savedWorkspace)
+      ? savedWorkspace
+      : "estimates";
+  });
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -230,6 +235,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [visitFilesById, setVisitFilesById] = useState({});
   const [savingVisit, setSavingVisit] = useState(false);
   const [uploadingVisitFile, setUploadingVisitFile] = useState(false);
+
+  useEffect(() => {
+    window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
+  }, [activeWorkspace]);
 
   const activeUserName = typeof activeUser === "string"
     ? activeUser
