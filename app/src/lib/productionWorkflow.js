@@ -52,7 +52,7 @@ export async function releaseCustomerOrder(orderId, station, actor = "") {
 }
 
 export async function startProductionStep(workOrderId, actor = "") {
-  const { data, error } = await supabase.rpc("mw_start_work_order", {
+  const { data, error } = await supabase.rpc("mw_start_work_order_with_history", {
     p_work_order_id: Number(workOrderId),
     p_actor: String(actor || "").trim() || null,
   });
@@ -60,10 +60,21 @@ export async function startProductionStep(workOrderId, actor = "") {
   return data;
 }
 
-export async function completeProductionStep(workOrderId, actor = "") {
-  const { data, error } = await supabase.rpc("mw_complete_work_order", {
+export async function completeProductionStep(workOrderId, actor = "", completionNotes = "") {
+  const { data, error } = await supabase.rpc("mw_complete_work_order_with_history", {
     p_work_order_id: Number(workOrderId),
     p_actor: String(actor || "").trim() || null,
+    p_completion_notes: String(completionNotes || "").trim() || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function bypassProductionStep(workOrderId, actor = "", reason = "") {
+  const { data, error } = await supabase.rpc("mw_bypass_work_order", {
+    p_work_order_id: Number(workOrderId),
+    p_actor: String(actor || "").trim() || null,
+    p_reason: String(reason || "").trim() || null,
   });
   if (error) throw error;
   return data;
