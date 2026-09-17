@@ -412,7 +412,11 @@ function DepartmentQueue({
     const detail = jobDetails[workOrder.production_job_id];
     if (!detail?.order?.id) return;
     try {
-      const result = await completeProductionStep(workOrder.id, activeUser);
+      const result = await completeProductionStep(
+        workOrder.id,
+        activeUser,
+        "Customer approval confirmed and design released to the next station."
+      );
       const note = `Customer approval confirmed by ${activeUser || "Administrator"} on ${new Date().toLocaleString()}.`;
       const { error } = await supabase
         .from("customer_orders")
@@ -434,8 +438,16 @@ function DepartmentQueue({
   }
 
   async function completeWorkOrder(workOrder) {
+    const completionNotes = window.prompt(
+      "Enter a short completion note for the next station:"
+    );
+    if (!completionNotes?.trim()) return;
     try {
-      const result = await completeProductionStep(workOrder.id, activeUser);
+      const result = await completeProductionStep(
+        workOrder.id,
+        activeUser,
+        completionNotes.trim()
+      );
       notifications.show({
         title: result?.completed ? "Production Route Completed" : "Step Completed",
         message: result?.completed
