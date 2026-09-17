@@ -238,10 +238,11 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="New Design / Production Intake" size="xl" centered>
+    <Modal opened={opened} onClose={onClose} title="Add Design Work" size="xl" centered>
       <Stack>
         <Alert icon={<IconInfoCircle />} color="blue">
-          Choose <b>Design Already on File</b> to skip Design and release the order directly to Laser.
+          Start here for new artwork, changes to an existing design, or a customer-supplied file.
+          Choose <b>Design Already on File</b> when the approved cut file already exists; that sends the order directly to Laser.
         </Alert>
 
         <SimpleGrid cols={{ base: 1, md: 3 }}>
@@ -295,7 +296,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
 
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancel</Button>
-          <Button color="red" loading={saving} onClick={saveIntake}>Save and Route Order</Button>
+          <Button color="red" loading={saving} onClick={saveIntake}>Add to Workflow</Button>
         </Group>
       </Stack>
     </Modal>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -11,6 +12,7 @@ import {
   Text,
   Title,
 } from "@mantine/core";
+import { IconInfoCircle } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import MWPageHeader from "../components/ui/MWPageHeader";
@@ -413,9 +415,23 @@ function DepartmentQueue({
       <Card key={workOrder.id} withBorder radius="lg" p="lg">
         <Stack gap="sm">
           <Group justify="space-between">
-            <Badge color={getStatusColor(workOrder.status)} variant="light">
-              {workOrder.status}
-            </Badge>
+            <Group gap="xs">
+              <Badge color={getStatusColor(workOrder.status)} variant="light">
+                {workOrder.status}
+              </Badge>
+              {department === "Design" && (
+                <Badge
+                  color={order?.design_fee_required
+                    ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "green" : "orange")
+                    : "gray"}
+                  variant="light"
+                >
+                  {order?.design_fee_required
+                    ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "$50 Fee Paid" : "$50 Fee Pending")
+                    : "No Design Fee"}
+                </Badge>
+              )}
+            </Group>
 
             {job?.rush && <Badge color="red">Rush</Badge>}
           </Group>
@@ -426,6 +442,14 @@ function DepartmentQueue({
 
           <Stack gap={2}>
             {companyName && <Text fw={700}>{companyName}</Text>}
+            {department === "Design" && order?.design_notes && (
+              <Text size="sm"><b>Artwork:</b> {String(order.design_notes).split("\n")[0]}</Text>
+            )}
+            {department === "Design" && (customer?.phone || customer?.email) && (
+              <Text size="sm" c="dimmed">
+                {[customer.phone, customer.email].filter(Boolean).join(" • ")}
+              </Text>
+            )}
             <Text size="sm" c="dimmed">
               {orderNumber}
               {job?.production_job_number
@@ -502,16 +526,19 @@ function DepartmentQueue({
   return (
     <>
       <MWPageHeader
-        title={`${department} Queue`}
-        subtitle={`Only work currently ready or in progress for ${department}.`}
-        buttonText={department === "Design" ? "New Design Intake" : "Production Control"}
+        title={department === "Design" ? "Design Intake & Queue" : `${department} Queue`}
+        subtitle={department === "Design"
+          ? "Add customer design work, track Kory's progress, and hold finished proofs for customer approval."
+          : `Only work currently ready or in progress for ${department}.`}
+        buttonText={department === "Design" ? "Add Design Work" : "Production Control"}
         onButtonClick={department === "Design" ? onCreateDesign : () => setPage("productionControl")}
       />
 
       {department === "Design" && (
-        <Group justify="flex-end" mb="md">
-          <Button variant="subtle" color="gray" onClick={() => setPage("productionControl")}>Open Production Control</Button>
-        </Group>
+        <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="How design work moves">
+          Add the customer request here. New artwork waits for the $50 design fee, Kory or the design team uploads the proof,
+          an administrator records customer approval, and the approved job moves to Laser. Artwork already on file skips Design.
+        </Alert>
       )}
 
       {loading ? (

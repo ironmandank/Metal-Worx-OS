@@ -307,7 +307,7 @@ const NAV_GROUPS = [
       },
       {
         page: "designQueue",
-        label: "Design Queue",
+        label: "Design Intake & Queue",
         section: "Design Work",
         icon: IconPalette,
       },
@@ -320,8 +320,8 @@ const NAV_GROUPS = [
     icon: IconColumns,
     items: [
       {
-        department: "Design",
-        label: "Design Station",
+        page: "designQueue",
+        label: "Design Intake & Queue",
         icon: IconPalette,
       },
       {

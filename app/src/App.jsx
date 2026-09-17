@@ -702,6 +702,7 @@ function App() {
           setPage={setPage}
           setSelectedProductionJob={setSelectedProductionJob}
           activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
         />
       );
     }
@@ -764,6 +765,7 @@ function App() {
           setSelectedCustomerOrder={setSelectedCustomerOrder}
           setSelectedProductionJob={setSelectedProductionJob}
           activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
         />
       );
     }
