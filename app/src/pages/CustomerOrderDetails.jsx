@@ -300,6 +300,12 @@ function CustomerOrderDetails({
   }, [loadOrder]);
 
   const remainingBalance = getRemainingBalance(order);
+  const designFeePending = Boolean(
+    order?.design_fee_required &&
+    !order?.design_fee_paid &&
+    order?.design_fee_status !== "Paid",
+  );
+  const designFeeAmount = Number(order?.design_fee_amount || 50);
   const paymentIsSatisfied = remainingBalance <= 0;
   const closeoutCompletedCount = useMemo(
     () =>
@@ -330,7 +336,11 @@ function CustomerOrderDetails({
   const orderIsCompleted = order?.status === "Completed";
 
   function openPaymentModal(type = "Partial Payment") {
-    const suggestedAmount = type === "Final Payment" ? remainingBalance : "";
+    const suggestedAmount = type === "Design Fee"
+      ? designFeeAmount
+      : type === "Final Payment"
+        ? remainingBalance
+        : "";
 
     setPaymentForm({
       paymentType: type,
@@ -356,7 +366,7 @@ function CustomerOrderDetails({
       return;
     }
 
-    if (amount > remainingBalance + 0.005) {
+    if (paymentForm.paymentType !== "Design Fee" && amount > remainingBalance + 0.005) {
       notifications.show({
         title: "Payment Exceeds Balance",
         message: `The most that can be recorded is ${formatMoney(remainingBalance)}.`,
@@ -957,10 +967,12 @@ function CustomerOrderDetails({
               <Button
                 color="green"
                 leftSection={<IconCash size={18} />}
-                disabled={remainingBalance <= 0}
+                disabled={remainingBalance <= 0 && !designFeePending}
                 onClick={() =>
                   openPaymentModal(
-                    remainingBalance > 0 && remainingBalance < orderTotal
+                    designFeePending
+                      ? "Design Fee"
+                      : remainingBalance > 0 && remainingBalance < orderTotal
                       ? "Final Payment"
                       : "Partial Payment",
                   )
@@ -1400,7 +1412,8 @@ function CustomerOrderDetails({
       >
         <Stack gap="md">
           <Alert color="blue" icon={<IconCash size={20} />}>
-            Remaining balance: <strong>{formatMoney(remainingBalance)}</strong>
+            Product balance: <strong>{formatMoney(remainingBalance)}</strong>
+            {designFeePending ? ` • Design fee due: ${formatMoney(designFeeAmount)}` : ""}
           </Alert>
 
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -1419,8 +1432,9 @@ function CustomerOrderDetails({
                 setPaymentForm((current) => ({
                   ...current,
                   paymentType,
-                  amount:
-                    paymentType === "Final Payment"
+                  amount: paymentType === "Design Fee"
+                    ? designFeeAmount
+                    : paymentType === "Final Payment"
                       ? remainingBalance
                       : current.amount,
                 }));
@@ -1432,7 +1446,7 @@ function CustomerOrderDetails({
               required
               prefix="$"
               min={0.01}
-              max={remainingBalance}
+              max={paymentForm.paymentType === "Design Fee" ? undefined : remainingBalance}
               decimalScale={2}
               fixedDecimalScale
               value={paymentForm.amount}
