@@ -18,11 +18,17 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle,
   IconArchive,
+  IconCamera,
+  IconCircleCheck,
   IconClipboardCopy,
   IconDownload,
   IconFile,
+  IconFileDescription,
+  IconFileInvoice,
   IconPackage,
+  IconPencil,
   IconRefresh,
+  IconSettingsAutomation,
   IconTrash,
   IconUpload,
 } from "@tabler/icons-react";
@@ -31,15 +37,80 @@ import JSZip from "jszip";
 import { supabase } from "../lib/supabase";
 
 const FILE_CATEGORIES = [
+  "Estimate / Site Photo",
+  "Customer File",
   "Drawing / Design",
   "Quote / Proposal",
+  "Signed Approval / Contract",
+  "Production File",
   "Material Document",
-  "Site Photo",
-  "Fabrication Photo",
-  "Installation Photo",
+  "Completion Photo",
   "Completion Document",
-  "Project File",
+  "Other Project File",
 ];
+
+const FILE_SECTIONS = [
+  {
+    key: "estimate",
+    title: "Estimate & Site Photos",
+    description: "Customer reference images, job-site conditions, measurements, and estimate photos.",
+    color: "blue",
+    icon: IconCamera,
+    categories: ["Estimate / Site Photo", "Site Photo"],
+  },
+  {
+    key: "customer",
+    title: "Customer Files",
+    description: "Photos, sketches, specifications, and documents received from the customer.",
+    color: "cyan",
+    icon: IconFileDescription,
+    categories: ["Customer File"],
+  },
+  {
+    key: "design",
+    title: "Drawings & Design",
+    description: "Approved layouts, shop drawings, CAD exports, and design revisions.",
+    color: "violet",
+    icon: IconPencil,
+    categories: ["Drawing / Design"],
+  },
+  {
+    key: "commercial",
+    title: "Quotes & Signed Approvals",
+    description: "Proposals, contracts, signed approvals, and customer authorization records.",
+    color: "green",
+    icon: IconFileInvoice,
+    categories: ["Quote / Proposal", "Signed Approval / Contract"],
+  },
+  {
+    key: "production",
+    title: "Production & Material Files",
+    description: "Cut files, fabrication references, material documents, and in-process photos.",
+    color: "orange",
+    icon: IconSettingsAutomation,
+    categories: ["Production File", "Material Document", "Fabrication Photo"],
+  },
+  {
+    key: "completion",
+    title: "Completion Photos & Records",
+    description: "Installation photos, final inspection records, and completed-project documents.",
+    color: "teal",
+    icon: IconCircleCheck,
+    categories: ["Completion Photo", "Completion Document", "Installation Photo"],
+  },
+  {
+    key: "other",
+    title: "Other Project Files",
+    description: "General project records that do not belong in another section.",
+    color: "gray",
+    icon: IconFile,
+    categories: ["Other Project File", "Project File"],
+  },
+];
+
+function sectionForFile(file) {
+  return FILE_SECTIONS.find((section) => section.categories.includes(file.category)) || FILE_SECTIONS[FILE_SECTIONS.length - 1];
+}
 
 function safeFileName(value) {
   return String(value || "project-file")
@@ -60,7 +131,7 @@ function ProjectPackageWorkspace({ project, activeUser }) {
   const [checklist, setChecklist] = useState([]);
   const [targets, setTargets] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]);
-  const [category, setCategory] = useState("Project File");
+  const [category, setCategory] = useState("Estimate / Site Photo");
   const [description, setDescription] = useState("");
   const [targetProjectId, setTargetProjectId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +177,12 @@ function ProjectPackageWorkspace({ project, activeUser }) {
     () => checklist.filter((item) => item.status === "Complete").length,
     [checklist],
   );
+
+  const filesBySection = useMemo(() => {
+    const grouped = Object.fromEntries(FILE_SECTIONS.map((section) => [section.key, []]));
+    files.forEach((file) => grouped[sectionForFile(file).key].push(file));
+    return grouped;
+  }, [files]);
 
   async function uploadFiles() {
     if (!selectedFiles.length) return;
@@ -169,7 +246,8 @@ function ProjectPackageWorkspace({ project, activeUser }) {
       for (const file of files) {
         const response = await fetch(await getSignedUrl(file));
         if (!response.ok) throw new Error(`Could not download ${file.file_name}.`);
-        zip.file(file.file_name, await response.blob());
+        const section = sectionForFile(file);
+        zip.folder(section.title).file(`${file.id}-${safeFileName(file.file_name)}`, await response.blob());
       }
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
@@ -247,23 +325,45 @@ function ProjectPackageWorkspace({ project, activeUser }) {
       </SimpleGrid>
 
       <Card withBorder radius="lg" p="lg">
-        <Group justify="space-between" mb="md"><div><Group gap="xs"><IconPackage size={22} /><Title order={3}>Project Files & Package</Title></Group><Text size="sm" c="dimmed">Drawings, quotes, spreadsheets, photos, and completion records remain with this project.</Text></div><Button variant="light" color="gray" leftSection={<IconRefresh size={16} />} onClick={loadPackage}>Refresh</Button></Group>
+        <Group justify="space-between" mb="md"><div><Group gap="xs"><IconPackage size={22} /><Title order={3}>Project Files & Photos</Title></Group><Text size="sm" c="dimmed">Upload each item into the section that tells the team when and how it should be used.</Text></div><Button variant="light" color="gray" leftSection={<IconRefresh size={16} />} onClick={loadPackage}>Refresh</Button></Group>
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-          <FileInput multiple clearable label="Choose Files" placeholder="PDF, Word, Excel, images, text or CSV" value={selectedFiles} onChange={(value) => setSelectedFiles(value || [])} leftSection={<IconFile size={17} />} />
-          <Select label="File Category" data={FILE_CATEGORIES} value={category} onChange={(value) => setCategory(value || "Project File")} />
-          <Textarea label="Description" placeholder="What is this file and why should it be kept?" value={description} onChange={(event) => setDescription(event.currentTarget.value)} minRows={2} />
+          <FileInput multiple clearable label="Choose Photos or Documents" placeholder="Select one or more files" value={selectedFiles} onChange={(value) => setSelectedFiles(value || [])} leftSection={<IconFile size={17} />} />
+          <Select label="Save In" data={FILE_CATEGORIES} value={category} onChange={(value) => setCategory(value || "Other Project File")} />
+          <Textarea label="File Notes" placeholder="Example: Customer sketch received by email, final railing layout, or completed north-side installation." value={description} onChange={(event) => setDescription(event.currentTarget.value)} minRows={2} />
           <Group align="end"><Button color="red" leftSection={<IconUpload size={17} />} loading={uploading} disabled={!selectedFiles.length} onClick={uploadFiles}>Add to Project Package</Button><Button variant="light" color="blue" leftSection={<IconArchive size={17} />} loading={downloadingAll} disabled={!files.length} onClick={downloadAllFiles}>Download All Files</Button></Group>
         </SimpleGrid>
 
-        <Stack gap="sm" mt="lg">
-          {files.length === 0 ? <Alert color="gray" icon={<IconFile size={18} />}>No general project files have been added yet. Existing quote images remain available in their quote records.</Alert> : files.map((file) => (
-            <Card key={file.id} withBorder radius="md" p="md">
-              <Group justify="space-between" align="flex-start">
-                <div><Text fw={800}>{file.file_name}</Text><Group gap="xs" mt={5}><Badge color="blue" variant="light">{file.category}</Badge><Text size="xs" c="dimmed">{formatBytes(file.file_size)} · {new Date(file.created_at).toLocaleDateString()} · {file.uploaded_by || "Metal Worx"}</Text></Group>{file.description && <Text size="sm" mt="xs">{file.description}</Text>}</div>
-                <Group gap="xs"><Button size="xs" variant="light" leftSection={<IconDownload size={15} />} onClick={() => downloadFile(file)}>Download</Button>{isAdministrator && <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={15} />} onClick={() => deleteFile(file)}>Delete</Button>}</Group>
-              </Group>
-            </Card>
-          ))}
+        <Stack gap="md" mt="lg">
+          {files.length === 0 ? <Alert color="gray" icon={<IconFile size={18} />}>No project photos or documents have been uploaded yet. Use the form above to add customer images, drawings, approvals, production files, or completion photos.</Alert> : FILE_SECTIONS.map((section) => {
+            const SectionIcon = section.icon;
+            const sectionFiles = filesBySection[section.key];
+            return (
+              <Card key={section.key} withBorder radius="lg" p="md">
+                <Group justify="space-between" align="flex-start" mb={sectionFiles.length ? "md" : 0} wrap="wrap">
+                  <Group gap="sm" align="flex-start" wrap="nowrap">
+                    <SectionIcon size={21} color={`var(--mantine-color-${section.color}-5)`} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <Text fw={900}>{section.title}</Text>
+                      <Text size="xs" c="dimmed">{section.description}</Text>
+                    </div>
+                  </Group>
+                  <Badge color={section.color} variant="light">{sectionFiles.length} {sectionFiles.length === 1 ? "file" : "files"}</Badge>
+                </Group>
+                {sectionFiles.length > 0 && (
+                  <Stack gap="xs">
+                    {sectionFiles.map((file) => (
+                      <Card key={file.id} withBorder radius="md" p="sm">
+                        <Group justify="space-between" align="flex-start" wrap="wrap">
+                          <div style={{ minWidth: 0, flex: "1 1 320px" }}><Text fw={800} style={{ overflowWrap: "anywhere" }}>{file.file_name}</Text><Group gap="xs" mt={5} wrap="wrap"><Badge color={section.color} variant="light">{file.category || "Project File"}</Badge><Text size="xs" c="dimmed">{formatBytes(file.file_size)} · {new Date(file.created_at).toLocaleDateString()} · {file.uploaded_by || "Metal Worx"}</Text></Group>{file.description && <Text size="sm" mt="xs" style={{ whiteSpace: "pre-wrap" }}>{file.description}</Text>}</div>
+                          <Group gap="xs" wrap="wrap"><Button size="xs" variant="light" leftSection={<IconDownload size={15} />} onClick={() => downloadFile(file)}>Download</Button>{isAdministrator && <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={15} />} onClick={() => deleteFile(file)}>Delete</Button>}</Group>
+                        </Group>
+                      </Card>
+                    ))}
+                  </Stack>
+                )}
+              </Card>
+            );
+          })}
         </Stack>
       </Card>
 
