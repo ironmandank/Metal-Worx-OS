@@ -109,8 +109,8 @@ const PRIMARY_NAV = [
   },
   {
     page: "quickTurnaround",
-    label: "Commit",
-    fullLabel: "Today’s Commitments",
+    label: "Hot",
+    fullLabel: "Hot Artwork",
     icon: IconBolt,
   },
   {
