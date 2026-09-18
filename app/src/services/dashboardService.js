@@ -676,6 +676,22 @@ function buildArtHotItems(manualItems, customerOrders, customerMap) {
     .slice(0, 10);
 }
 
+function businessDaysSince(value) {
+  if (!value) return 0;
+  const received = new Date(String(value).length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(received.getTime())) return 0;
+  received.setHours(0, 0, 0, 0);
+  const today = startOfToday();
+  let days = 0;
+  const cursor = new Date(received);
+  while (cursor < today) {
+    cursor.setDate(cursor.getDate() + 1);
+    const weekday = cursor.getDay();
+    if (weekday !== 0 && weekday !== 6) days += 1;
+  }
+  return days;
+}
+
 function getProjectName(project) {
   return (
     project.project_name ||
@@ -1513,6 +1529,22 @@ export async function getDashboardData() {
   const openOrders =
     customerOrders.filter(isOrderOpen);
 
+  const artworkOrders = openOrders.map((order) => {
+    const receivedDate = order.date_received || order.order_date || order.date_ordered || order.created_at;
+    return {
+      id: order.id,
+      sourceId: order.id,
+      sourceType: "customerOrder",
+      title: [order.order_number, order.order_type || order.title].filter(Boolean).join(" — ") || `Artwork Order #${order.id}`,
+      customer: getCustomerName(order.customer_id),
+      owner: order.order_owner || order.assigned_to || "Unassigned",
+      department: getCustomerOrderShopStage(order) || "Not released",
+      receivedDate,
+      businessDaysInShop: businessDaysSince(receivedDate),
+      dueDate: order.due_date || null,
+    };
+  });
+
   const openProjects =
     projects.filter(isProjectOpen);
 
@@ -2345,6 +2377,7 @@ export async function getDashboardData() {
     morningHuddle,
     priorityFeed,
     artHotItems,
+    artworkOrders,
     operationsHealth,
   };
 }
