@@ -257,6 +257,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [quickUpdate, setQuickUpdate] = useState({ status: "On Track", work_completed: "", work_in_progress: "", next_steps: "", blockers: "", leadership_attention_required: false });
   const [savingQuickUpdate, setSavingQuickUpdate] = useState(false);
   const [restoringProjectId, setRestoringProjectId] = useState(null);
+  const [selectedAlertKey, setSelectedAlertKey] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -514,6 +515,87 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       balance: projects.reduce((sum, project) => sum + Math.max(Number(project.balance_due || 0), 0), 0),
     };
   }, [projects, trackingByProject]);
+
+  const projectAlertGroups = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const effectiveProject = (project) => {
+      const approval = trackingByProject[project.id]?.latestApproval;
+      return approval?.status === "Approved"
+        ? { ...project, approval_status: "Approved", quote_status: "Approved" }
+        : project;
+    };
+    const isOverdue = (project) => {
+      const value = project.next_action_date || project.due_date || project.target_completion_date;
+      if (!value) return false;
+      const date = new Date(value);
+      date.setHours(0, 0, 0, 0);
+      return date < today;
+    };
+    const materialNeedsAttention = (project) => [
+      "Pricing Needed",
+      "Ready to Order",
+      "Ordered",
+      "Partially Received",
+      "Waiting",
+      "Pending",
+    ].includes(project.material_status);
+
+    return [
+      {
+        key: "quote_waiting",
+        label: "Awaiting Customer",
+        description: "Sent quotes still waiting for approval",
+        color: "violet",
+        icon: IconMail,
+        projects: projects.filter((project) => {
+          const effective = effectiveProject(project);
+          const quoteStatus = trackingByProject[project.id]?.latestQuote?.status || effective.quote_status;
+          return quoteStatus === "Sent" && effective.approval_status !== "Approved";
+        }),
+      },
+      {
+        key: "stale_update",
+        label: "Update Needed",
+        description: "No project update within three days",
+        color: "red",
+        icon: IconNotes,
+        projects: projects.filter((project) => updateAgeLabel(trackingByProject[project.id]?.latestUpdate).color === "red"),
+      },
+      {
+        key: "unscheduled_install",
+        label: "Install Not Scheduled",
+        description: "Field-ready work without an install date",
+        color: "blue",
+        icon: IconTruckDelivery,
+        projects: projects.filter((project) => {
+          const effective = effectiveProject(project);
+          return project.install_required &&
+            project.install_status !== "Completed" &&
+            getOutsidePhase(effective).key === "field" &&
+            !(project.install_start || project.install_date);
+        }),
+      },
+      {
+        key: "overdue",
+        label: "Overdue",
+        description: "Past-due project action dates",
+        color: "orange",
+        icon: IconAlertTriangle,
+        projects: projects.filter(isOverdue),
+      },
+      {
+        key: "materials",
+        label: "Materials Attention",
+        description: "Pricing, ordering, or delivery required",
+        color: "yellow",
+        icon: IconPackage,
+        projects: projects.filter(materialNeedsAttention),
+      },
+    ];
+  }, [projects, trackingByProject]);
+
+  const selectedAlertGroup = projectAlertGroups.find((group) => group.key === selectedAlertKey);
 
   const projectsByPhase = useMemo(() => Object.fromEntries(
     OUTSIDE_PHASES.map((phase) => [phase.key, filteredProjects.filter((project) => {
@@ -1144,6 +1226,85 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Next 7 Days</Text><Text fz={28} fw={900}>{leadershipSummary.upcoming}</Text></Paper>
           <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Outstanding Balance</Text><Text fz={28} fw={900}>{money(leadershipSummary.balance)}</Text></Paper>
         </SimpleGrid>
+      </MWPanel>
+
+      <MWPanel
+        title="Outside Project Alerts"
+        subtitle="Automatic follow-up list for customer decisions, project updates, installation scheduling, overdue dates, and materials."
+        icon={IconAlertTriangle}
+      >
+        <SimpleGrid cols={{ base: 1, sm: 2, xl: 5 }} spacing="sm">
+          {projectAlertGroups.map((group) => {
+            const AlertIcon = group.icon;
+            const active = selectedAlertKey === group.key;
+            return (
+              <Paper
+                key={group.key}
+                role="button"
+                tabIndex={0}
+                withBorder
+                radius="lg"
+                p="md"
+                onClick={() => setSelectedAlertKey(active ? null : group.key)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") setSelectedAlertKey(active ? null : group.key);
+                }}
+                style={{
+                  cursor: "pointer",
+                  borderColor: active ? `var(--mantine-color-${group.color}-6)` : undefined,
+                  background: active ? `var(--mantine-color-${group.color}-light)` : "rgba(255,255,255,.02)",
+                }}
+              >
+                <Group justify="space-between" align="flex-start" wrap="nowrap">
+                  <div style={{ minWidth: 0 }}>
+                    <Group gap={7} wrap="nowrap">
+                      <AlertIcon size={17} style={{ flexShrink: 0 }} />
+                      <Text fw={900} size="sm" style={{ lineHeight: 1.2 }}>{group.label}</Text>
+                    </Group>
+                    <Text size="xs" c="dimmed" mt={5}>{group.description}</Text>
+                  </div>
+                  <Badge color={group.projects.length ? group.color : "green"} variant={active ? "filled" : "light"} size="lg">
+                    {group.projects.length}
+                  </Badge>
+                </Group>
+              </Paper>
+            );
+          })}
+        </SimpleGrid>
+
+        {selectedAlertGroup && (
+          <Stack gap="sm" mt="lg">
+            <Group justify="space-between" align="center">
+              <div>
+                <Text fw={900}>{selectedAlertGroup.label}</Text>
+                <Text size="xs" c="dimmed">Select a project to review and resolve the alert.</Text>
+              </div>
+              <Button size="xs" variant="subtle" color="gray" onClick={() => setSelectedAlertKey(null)}>Hide List</Button>
+            </Group>
+            {selectedAlertGroup.projects.length === 0 ? (
+              <Alert color="green">No projects currently need attention in this category.</Alert>
+            ) : (
+              <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="sm">
+                {selectedAlertGroup.projects.map((project) => {
+                  const customer = customers[project.customer_id];
+                  return (
+                    <Card key={project.id} withBorder radius="md" p="md">
+                      <Stack gap="xs">
+                        <Group justify="space-between" align="flex-start" wrap="nowrap">
+                          <Text fw={900} style={{ overflowWrap: "anywhere" }}>{getProjectIdentity(project, customer)}</Text>
+                          <Badge color={selectedAlertGroup.color} variant="light">{project.project_number || "Project"}</Badge>
+                        </Group>
+                        <Text size="sm" c="dimmed">Owner: {project.assigned_to || project.intake_owner || "Unassigned"}</Text>
+                        <Text size="sm">{project.next_action || getSuggestedNextAction(project)}</Text>
+                        <Button size="xs" color="red" fullWidth onClick={() => openProject(project)}>Open Project</Button>
+                      </Stack>
+                    </Card>
+                  );
+                })}
+              </SimpleGrid>
+            )}
+          </Stack>
+        )}
       </MWPanel>
 
       {workspaceView === "calendar" && <>
