@@ -1286,6 +1286,32 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                       {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"}>Deposit</Badge>}
                       {Number(project.balance_due || 0) > 0 && <Badge color="yellow">{money(project.balance_due)} due</Badge>}
                     </Group>
+                    <Group grow gap="xs" mt={6}>
+                      <Button
+                        size="xs"
+                        color="red"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openProject(project);
+                        }}
+                      >
+                        Open Project
+                      </Button>
+                      {isAdministrator && (
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="orange"
+                          leftSection={<IconTrash size={14} />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeProject(project);
+                          }}
+                        >
+                          Archive
+                        </Button>
+                      )}
+                    </Group>
                   </Stack>
                 </Card>;
               })}
