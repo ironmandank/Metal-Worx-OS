@@ -208,6 +208,7 @@ function getCalendarEntryType(entry) {
 function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel }) {
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
+  const [archivedProjects, setArchivedProjects] = useState([]);
   const [siteVisits, setSiteVisits] = useState([]);
   const [quotesById, setQuotesById] = useState({});
   const [approvalsByQuote, setApprovalsByQuote] = useState({});
@@ -235,6 +236,9 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [visitFilesById, setVisitFilesById] = useState({});
   const [savingVisit, setSavingVisit] = useState(false);
   const [uploadingVisitFile, setUploadingVisitFile] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archivingProject, setArchivingProject] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -288,7 +292,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         (project) => project.is_active === true && !["Completed", "Cancelled"].includes(project.status)
       );
       const loadedCompletedProjects = allProjects.filter(
-        (project) => project.status === "Completed"
+        (project) => project.status === "Completed" && !project.archived_at
+      );
+      const loadedArchivedProjects = allProjects.filter(
+        (project) => Boolean(project.archived_at)
       );
       const trackedProjects = [...loadedProjects, ...loadedCompletedProjects];
       const projectIds = trackedProjects.map((project) => project.id);
@@ -362,6 +369,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
       setProjects(loadedProjects);
       setCompletedProjects(loadedCompletedProjects);
+      setArchivedProjects(loadedArchivedProjects);
       setSiteVisits((siteVisitResult.data || []).filter(
         (visit) => visit.status !== "Cancelled" && !visit.project_id
       ));
@@ -401,7 +409,11 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
   const filteredProjects = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const source = workspaceView === "completed" ? completedProjects : projects;
+    const source = workspaceView === "completed"
+      ? completedProjects
+      : workspaceView === "archived"
+        ? archivedProjects
+        : projects;
     if (!term) return source;
 
     return source.filter((project) => {
@@ -425,13 +437,15 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         project.job_address,
         project.next_action,
         project.notes,
+        project.archive_reason,
+        project.archived_by,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(term);
     });
-  }, [completedProjects, customers, projects, search, workspaceView]);
+  }, [archivedProjects, completedProjects, customers, projects, search, workspaceView]);
 
   const filteredSiteVisits = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -938,41 +952,33 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   }
 
   async function removeProject(project) {
-    if (!window.confirm(`Delete/archive "${project.project_name || project.project_number}"? Linked business records will be preserved.`)) return;
-    try {
-      const linkedTables = [
-        "project_quotes",
-        "project_material_requests",
-        "project_payments",
-        "project_checklist_items",
-        "project_daily_updates",
-      ];
-      const counts = await Promise.all(
-        linkedTables.map((table) =>
-          supabase.from(table).select("id", { count: "exact", head: true }).eq("project_id", project.id)
-        )
-      );
-      const failedCount = counts.find((result) => result.error);
-      if (failedCount?.error) throw failedCount.error;
-      const hasHistory = counts.some((result) => Number(result.count || 0) > 0);
+    if (!isAdministrator) return;
+    setArchiveTarget(project);
+    setArchiveReason("");
+  }
 
-      if (hasHistory) {
-        const { error } = await supabase
-          .from("projects")
-          .update({
-            is_active: false,
-            status: project.status === "Completed" ? "Completed" : "Cancelled",
-            next_action: "Archived",
-          })
-          .eq("id", project.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("projects").delete().eq("id", project.id);
-        if (error) throw error;
-      }
+  async function confirmArchiveProject() {
+    if (!archiveTarget?.id || !archiveReason.trim() || archivingProject) return;
+    setArchivingProject(true);
+    try {
+      const { error } = await supabase.rpc("mw_archive_project", {
+        p_project_id: Number(archiveTarget.id),
+        p_reason: archiveReason.trim(),
+        p_archived_by: activeUserName,
+      });
+      if (error) throw error;
+      notifications.show({
+        title: "Project Archived",
+        message: "The project was removed from active work and remains searchable in Archived.",
+        color: "green",
+      });
+      setArchiveTarget(null);
+      setArchiveReason("");
       await loadProjects();
     } catch (error) {
-      setErrorMessage(error.message || "The project could not be removed.");
+      setErrorMessage(error.message || "The project could not be archived.");
+    } finally {
+      setArchivingProject(false);
     }
   }
 
@@ -1053,13 +1059,14 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           value={workspaceView}
           onChange={(value) => {
             setWorkspaceView(value);
-            setViewMode(value === "completed" ? "completed" : "active");
+            setViewMode(value === "completed" ? "completed" : value === "archived" ? "archived" : "active");
           }}
           data={[
             { label: "Operations Board", value: "board" },
             { label: "Project List", value: "list" },
             { label: "Calendar", value: "calendar" },
             { label: `Completed (${completedProjects.length})`, value: "completed" },
+            { label: `Archived (${archivedProjects.length})`, value: "archived" },
           ]}
         />
         <SimpleGrid cols={{ base: 2, lg: 4 }} mt="lg">
@@ -1388,6 +1395,45 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         </Stack>
       </Modal>
 
+      <Modal
+        opened={Boolean(archiveTarget)}
+        onClose={() => {
+          if (!archivingProject) {
+            setArchiveTarget(null);
+            setArchiveReason("");
+          }
+        }}
+        title="Archive Outside Project"
+        centered
+      >
+        <Stack>
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
+            This removes the project from active boards and calendars. It does
+            not delete the project, quotes, payments, files, or history.
+          </Alert>
+          <Text fw={900}>
+            {archiveTarget?.project_name || archiveTarget?.project_number}
+          </Text>
+          <Textarea
+            label="Reason for archiving"
+            description="Required and saved with the project record."
+            placeholder="Example: Customer never responded after estimate follow-ups."
+            minRows={4}
+            required
+            value={archiveReason}
+            onChange={(event) => setArchiveReason(event.currentTarget.value)}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" disabled={archivingProject} onClick={() => setArchiveTarget(null)}>
+              Keep Active
+            </Button>
+            <Button color="orange" loading={archivingProject} disabled={!archiveReason.trim()} onClick={confirmArchiveProject}>
+              Archive Project
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       {errorMessage && (
         <Alert
           color="red"
@@ -1398,11 +1444,13 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         </Alert>
       )}
 
-      {(workspaceView === "list" || workspaceView === "completed") && <MWPanel
-        title={viewMode === "completed" ? "Completed Project Library" : "Project Tracker"}
+      {(workspaceView === "list" || workspaceView === "completed" || workspaceView === "archived") && <MWPanel
+        title={viewMode === "completed" ? "Completed Project Library" : viewMode === "archived" ? "Archived Project Library" : "Project Tracker"}
         subtitle={
           viewMode === "completed"
             ? `${filteredProjects.length} of ${completedProjects.length} completed project packages shown`
+            : viewMode === "archived"
+              ? `${filteredProjects.length} of ${archivedProjects.length} archived projects shown`
             : `${filteredProjects.length} of ${projects.length} active projects shown`
         }
         icon={IconTool}
@@ -1430,7 +1478,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
         {!filteredProjects.length ? (
           <Alert color="gray" icon={<IconTool size={18} />}>
-            No {viewMode === "completed" ? "completed project packages" : "active projects"} match the current search.
+            No {viewMode === "completed" ? "completed project packages" : viewMode === "archived" ? "archived projects" : "active projects"} match the current search.
           </Alert>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg">
@@ -1723,15 +1771,15 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           Mark Complete
                         </Button>
                       )}
-                      <Button
+                      {isAdministrator && viewMode !== "archived" && <Button
                         fullWidth
                         variant="subtle"
                         color="red"
                         leftSection={<IconTrash size={17} />}
                         onClick={() => removeProject(project)}
                       >
-                        Delete / Archive
-                      </Button>
+                        Archive Project
+                      </Button>}
                     </Stack>
                   </Stack>
                 </Paper>
