@@ -1285,7 +1285,7 @@ function Dashboard({
             className="mc-button primary mc-executive-commitment"
             onClick={() => goToPage("quickTurnaround")}
           >
-            <IconBolt /> Today&apos;s Commitments
+            <IconBolt /> Hot Artwork
           </button>
           <button
             className="mc-button mc-refresh-button"
