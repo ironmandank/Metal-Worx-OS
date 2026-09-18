@@ -24,6 +24,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { getDashboardData } from "../services/dashboardService";
 import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
+import PersonalFollowUps from "../components/PersonalFollowUps";
 
 const styles = `
   .mc-page, .mc-page * { box-sizing: border-box; }
@@ -1344,6 +1345,8 @@ function Dashboard({
           )}
         </div>
       </section>
+
+      <PersonalFollowUps onOpenProject={openProjectById} />
 
       <section className="mc-panel">
         <PanelHead
