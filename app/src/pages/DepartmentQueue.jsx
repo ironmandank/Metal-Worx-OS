@@ -6,11 +6,14 @@ import {
   Card,
   FileButton,
   Group,
+  Image,
+  Modal,
+  Paper,
   Progress,
-  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
+  Textarea,
   Title,
 } from "@mantine/core";
 import {
@@ -18,6 +21,9 @@ import {
   IconClock,
   IconFlag,
   IconInfoCircle,
+  IconNotes,
+  IconPhoto,
+  IconRoute,
   IconUserCheck,
 } from "@tabler/icons-react";
 
@@ -27,6 +33,7 @@ import MWSection from "../components/ui/MWSection";
 import { notifications } from "@mantine/notifications";
 import {
   canonicalStation,
+  bypassProductionStep,
   completeProductionStep,
   startProductionStep,
 } from "../lib/productionWorkflow";
@@ -45,6 +52,11 @@ function DepartmentQueue({
   const [jobDetails, setJobDetails] = useState({});
   const [loading, setLoading] = useState(true);
   const [queueFilter, setQueueFilter] = useState("All");
+  const [noteTarget, setNoteTarget] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const [bypassTarget, setBypassTarget] = useState(null);
+  const [bypassReason, setBypassReason] = useState("");
+  const [savingAction, setSavingAction] = useState(false);
 
   useEffect(() => {
     loadQueue();
@@ -93,7 +105,7 @@ function DepartmentQueue({
 
       if (!job) continue;
 
-      const [orderResult, itemsResult] = await Promise.all([
+      const [orderResult, itemsResult, imageResult] = await Promise.all([
         job.customer_order_id
           ? supabase
               .from("customer_orders")
@@ -107,6 +119,13 @@ function DepartmentQueue({
               .select("*")
               .eq("order_id", job.customer_order_id)
           : Promise.resolve({ data: [], error: null }),
+        job.customer_order_id
+          ? supabase
+              .from("customer_order_reference_images")
+              .select("*")
+              .eq("customer_order_id", job.customer_order_id)
+              .order("sort_order", { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (orderResult.error) console.error(orderResult.error);
@@ -114,6 +133,7 @@ function DepartmentQueue({
 
       const order = orderResult.data || null;
       const items = itemsResult.data || [];
+      const images = imageResult.data || [];
       let project = null;
       if (job.project_id) {
         const { data: projectData, error: projectError } = await supabase
@@ -140,6 +160,15 @@ function DepartmentQueue({
       }
 
       let products = [];
+      const { data: materialData, error: materialError } = await supabase
+        .from("material_requests")
+        .select("*")
+        .in(
+          "source_id",
+          [job.id, job.customer_order_id].filter(Boolean).map(String)
+        )
+        .order("created_at", { ascending: false });
+      if (materialError) console.error(materialError);
 
       if (items.length) {
         const productIds = [
@@ -167,6 +196,8 @@ function DepartmentQueue({
         items,
         products,
         project,
+        images,
+        materials: materialData || [],
       };
     }
 
@@ -254,8 +285,69 @@ function DepartmentQueue({
       notifications.show({ title: "Update Failed", message: error.message, color: "red" });
       return;
     }
+    await supabase.from("work_order_activity").insert({
+      work_order_id: workOrder.id,
+      production_job_id: workOrder.production_job_id,
+      event_type: title,
+      from_status: workOrder.status,
+      to_status: changes.status || workOrder.status,
+      from_department: workOrder.department,
+      to_department: workOrder.department,
+      actor: activeUser || "Production Team",
+      notes: changes.blocked_reason || message,
+    });
     notifications.show({ title, message, color: "green" });
     await loadQueue();
+  }
+
+  async function saveNote() {
+    if (!noteTarget || !noteText.trim() || savingAction) return;
+    setSavingAction(true);
+    try {
+      const nextNotes = [noteTarget.notes, `${activeUser || "Production Team"}: ${noteText.trim()}`]
+        .filter(Boolean)
+        .join("\n");
+      await updateWorkOrder(
+        noteTarget,
+        { notes: nextNotes },
+        "Station Note Added",
+        noteText.trim()
+      );
+      setNoteTarget(null);
+      setNoteText("");
+    } finally {
+      setSavingAction(false);
+    }
+  }
+
+  async function confirmBypass() {
+    if (!bypassTarget || !bypassReason.trim() || savingAction) return;
+    setSavingAction(true);
+    try {
+      const result = await bypassProductionStep(
+        bypassTarget.id,
+        activeUser,
+        bypassReason.trim()
+      );
+      notifications.show({
+        title: "Administrator Bypass Recorded",
+        message: result?.completed
+          ? "The production route is complete."
+          : `${result?.next_department || "The next station"} is now ready.`,
+        color: "orange",
+      });
+      setBypassTarget(null);
+      setBypassReason("");
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Station Could Not Be Bypassed",
+        message: error?.message || "The bypass could not be recorded.",
+        color: "red",
+      });
+    } finally {
+      setSavingAction(false);
+    }
   }
 
   async function claimWorkOrder(workOrder) {
@@ -493,6 +585,8 @@ function DepartmentQueue({
     const items = detail?.items || [];
     const products = detail?.products || [];
     const project = detail?.project;
+    const images = detail?.images || [];
+    const materials = detail?.materials || [];
     const customerName = project?.contact_name || getCustomerName(customer);
     const companyName = getCustomerCompany(customer);
     const productNames = getProductNames(items, products);
@@ -503,6 +597,13 @@ function DepartmentQueue({
       "Order not linked";
     const priority = job?.rush ? "Rush" : workOrder.priority || "Normal";
     const overdue = isPastDue(job?.due_date);
+    const materialBlockers = materials.filter(
+      (request) =>
+        request.blocked_work ||
+        Number(request.shortage_count || 0) > 0 ||
+        !["Fulfilled", "Received", "Completed", "Cancelled"].includes(request.status)
+    );
+    const materialsReady = materials.length === 0 || materialBlockers.length === 0;
 
     return (
       <Card key={workOrder.id} withBorder radius="lg" p="lg">
@@ -602,6 +703,77 @@ function DepartmentQueue({
             />
           </Card>
 
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            <Paper withBorder radius="md" p="sm">
+              <Text size="xs" fw={900} c="dimmed">MATERIALS</Text>
+              <Group justify="space-between" mt={4}>
+                <Text size="sm" fw={700}>
+                  {materials.length ? `${materials.length} request${materials.length === 1 ? "" : "s"}` : "No request required"}
+                </Text>
+                <Badge color={materialsReady ? "green" : "orange"} variant="light">
+                  {materialsReady ? "Ready" : `${materialBlockers.length} need attention`}
+                </Badge>
+              </Group>
+            </Paper>
+            <Paper withBorder radius="md" p="sm">
+              <Text size="xs" fw={900} c="dimmed">ARTWORK / FILES</Text>
+              <Group justify="space-between" mt={4}>
+                <Text size="sm" fw={700}>{images.length} attached</Text>
+                <Badge color={images.length ? "blue" : "gray"} variant="light">
+                  {images.length ? "Available" : "None"}
+                </Badge>
+              </Group>
+            </Paper>
+          </SimpleGrid>
+
+          {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
+            <Paper withBorder radius="md" p="sm">
+              <Text size="xs" fw={900} c="dimmed">SPECIAL INSTRUCTIONS</Text>
+              <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>
+                {[order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
+                  .filter(Boolean)
+                  .join("\n")}
+              </Text>
+            </Paper>
+          )}
+
+          {images.length > 0 && (
+            <div>
+              <Group gap="xs" mb="xs">
+                <IconPhoto size={16} />
+                <Text size="sm" fw={800}>Artwork & Reference Files</Text>
+              </Group>
+              <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
+                {images.slice(0, 3).map((image) => (
+                  <Card
+                    key={image.id}
+                    component="a"
+                    href={image.image_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    withBorder
+                    radius="md"
+                    p={4}
+                  >
+                    <Image
+                      src={image.image_url}
+                      alt={image.caption || image.image_type || "Order reference"}
+                      h={96}
+                      fit="contain"
+                      radius="sm"
+                    />
+                    <Text size="xs" fw={700} mt={4} lineClamp={1}>
+                      {image.caption || image.image_type || "Reference"}
+                    </Text>
+                  </Card>
+                ))}
+              </SimpleGrid>
+              {images.length > 3 && (
+                <Text size="xs" c="dimmed" mt={4}>Open Job to view all {images.length} files.</Text>
+              )}
+            </div>
+          )}
+
           {workOrder.status === "Blocked" && (
             <Alert icon={<IconAlertTriangle size={18} />} color="red" title="Work is blocked">
               {workOrder.blocked_reason || "No blocker reason was recorded."}
@@ -617,6 +789,32 @@ function DepartmentQueue({
             {isAdministrator && (
               <Button size="xs" variant="subtle" color="orange" leftSection={<IconFlag size={15} />} onClick={() => togglePriority(workOrder)}>
                 {workOrder.priority === "High" ? "Normal Priority" : "Mark High Priority"}
+              </Button>
+            )}
+            <Button
+              size="xs"
+              variant="subtle"
+              color="gray"
+              leftSection={<IconNotes size={15} />}
+              onClick={() => {
+                setNoteTarget(workOrder);
+                setNoteText("");
+              }}
+            >
+              Add Note
+            </Button>
+            {isAdministrator && (
+              <Button
+                size="xs"
+                variant="subtle"
+                color="orange"
+                leftSection={<IconRoute size={15} />}
+                onClick={() => {
+                  setBypassTarget(workOrder);
+                  setBypassReason("");
+                }}
+              >
+                Admin Bypass
               </Button>
             )}
             {workOrder.status === "Blocked" ? (
@@ -686,16 +884,24 @@ function DepartmentQueue({
             <Text fw={800}>Queue View</Text>
             <Text size="sm" c="dimmed">Focus the station team on the work that needs attention now.</Text>
           </Stack>
-          <SegmentedControl
-            value={queueFilter}
-            onChange={setQueueFilter}
-            data={[
-              { label: `All (${workOrders.length})`, value: "All" },
-              { label: `Ready (${readyOrders.length})`, value: "Ready" },
-              { label: `In Progress (${inProgressOrders.length})`, value: "In Progress" },
-              { label: `Blocked (${blockedOrders.length})`, value: "Blocked" },
-            ]}
-          />
+          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" style={{ flex: "1 1 520px" }}>
+            {[
+              ["All", workOrders.length],
+              ["Ready", readyOrders.length],
+              ["In Progress", inProgressOrders.length],
+              ["Blocked", blockedOrders.length],
+            ].map(([label, count]) => (
+              <Button
+                key={label}
+                size="sm"
+                color={label === "Blocked" && count > 0 ? "orange" : "red"}
+                variant={queueFilter === label ? "filled" : "light"}
+                onClick={() => setQueueFilter(label)}
+              >
+                {label} ({count})
+              </Button>
+            ))}
+          </SimpleGrid>
         </Group>
       </Card>
 
@@ -742,6 +948,62 @@ function DepartmentQueue({
           )}
         </SimpleGrid>
       )}
+
+      <Modal
+        opened={Boolean(noteTarget)}
+        onClose={() => {
+          setNoteTarget(null);
+          setNoteText("");
+        }}
+        title="Add Station Note"
+        centered
+      >
+        <Stack>
+          <Text size="sm" c="dimmed">
+            The note will stay with this job and appear in its workflow history.
+          </Text>
+          <Textarea
+            label="Note"
+            placeholder="What was completed, checked, changed, or needs attention?"
+            minRows={4}
+            value={noteText}
+            onChange={(event) => setNoteText(event.currentTarget.value)}
+            autoFocus
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setNoteTarget(null)}>Cancel</Button>
+            <Button color="red" loading={savingAction} disabled={!noteText.trim()} onClick={saveNote}>Save Note</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={Boolean(bypassTarget)}
+        onClose={() => {
+          setBypassTarget(null);
+          setBypassReason("");
+        }}
+        title="Administrator Station Bypass"
+        centered
+      >
+        <Stack>
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
+            This marks the current station complete and releases the next required station. The administrator, reason, and time are permanently recorded.
+          </Alert>
+          <Textarea
+            label="Required bypass reason"
+            placeholder="Explain why this work is not required or was completed outside the normal station flow."
+            minRows={4}
+            value={bypassReason}
+            onChange={(event) => setBypassReason(event.currentTarget.value)}
+            autoFocus
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setBypassTarget(null)}>Cancel</Button>
+            <Button color="orange" loading={savingAction} disabled={!bypassReason.trim()} onClick={confirmBypass}>Confirm Bypass</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   );
 }
