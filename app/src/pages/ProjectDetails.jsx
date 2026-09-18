@@ -1207,7 +1207,7 @@ function ProjectDetails({
     : { key: "overview" };
 
   function openNextActionWorkspace() {
-    if (["ready", "production"].includes(phaseForNavigation.key)) {
+    if (["quote_approval", "ready", "production"].includes(phaseForNavigation.key)) {
       setActiveTab("workflow");
       return;
     }
@@ -1246,9 +1246,14 @@ function ProjectDetails({
     0,
   );
 
+  const effectiveApprovalStatus =
+    customerApproval?.status === "Approved"
+      ? "Approved"
+      : project?.approval_status || "Pending";
+
   const approvalReady =
     project?.customer_approval_required === false ||
-    project?.approval_status === "Approved";
+    effectiveApprovalStatus === "Approved";
 
   const paymentReady =
     !project?.down_payment_required ||
@@ -2590,7 +2595,7 @@ function ProjectDetails({
                     <Select
                       label="Approval Status"
                       data={["Pending", "Approved", "Declined", "On Hold"]}
-                      value={project.approval_status || "Pending"}
+                      value={effectiveApprovalStatus}
                       onChange={(value) => {
                         if (!value) {
                           return;
@@ -2946,27 +2951,47 @@ function ProjectDetails({
                     )}
 
                     {project.install_required && (
-                      <Select
-                        label="Install Status"
-                        data={[
-                          "Not Required",
-                          "Not Started",
-                          "Ready to Schedule",
-                          "Scheduled",
-                          "In Progress",
-                          "Completed",
-                        ]}
-                        value={project.install_status || "Not Started"}
-                        onChange={(value) => {
-                          if (!value) {
-                            return;
-                          }
+                      <Stack gap="xs">
+                        <Select
+                          label="Install Status"
+                          data={[
+                            "Not Required",
+                            "Not Started",
+                            "Ready to Schedule",
+                            "Scheduled",
+                            "In Progress",
+                            "Completed",
+                          ]}
+                          value={project.install_status || "Not Started"}
+                          onChange={(value) => {
+                            if (!value) {
+                              return;
+                            }
 
-                          updateProject({
-                            install_status: value,
-                          });
-                        }}
-                      />
+                            updateProject({ install_status: value });
+                          }}
+                        />
+                        {project.install_status !== "Completed" && (
+                          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                            <Button
+                              variant="light"
+                              color="blue"
+                              leftSection={<IconCalendarEvent size={16} />}
+                              onClick={() => setActiveTab("schedule")}
+                            >
+                              Schedule Installation
+                            </Button>
+                            <Button
+                              variant="light"
+                              color="green"
+                              leftSection={<IconClipboardCheck size={16} />}
+                              onClick={() => updateProject({ install_status: "Completed" })}
+                            >
+                              Mark Install Complete
+                            </Button>
+                          </SimpleGrid>
+                        )}
+                      </Stack>
                     )}
 
                     <Select
@@ -3504,6 +3529,12 @@ function ProjectDetails({
                         test_fit_end: project.test_fit_end || null,
                         install_start: project.install_start || null,
                         install_end: project.install_end || null,
+                        install_status:
+                          project.install_required &&
+                          project.install_start &&
+                          project.install_status !== "Completed"
+                            ? "Scheduled"
+                            : project.install_status,
                         target_completion_date:
                           project.target_completion_date || null,
                         scheduled_notes: project.scheduled_notes || null,
