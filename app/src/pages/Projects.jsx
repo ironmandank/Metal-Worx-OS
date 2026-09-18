@@ -256,10 +256,6 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [updateTarget, setUpdateTarget] = useState(null);
   const [quickUpdate, setQuickUpdate] = useState({ status: "On Track", work_completed: "", work_in_progress: "", next_steps: "", blockers: "", leadership_attention_required: false });
   const [savingQuickUpdate, setSavingQuickUpdate] = useState(false);
-  const [declineTarget, setDeclineTarget] = useState(null);
-  const [declineReason, setDeclineReason] = useState("");
-  const [declineAction, setDeclineAction] = useState("Follow Up");
-  const [savingDecline, setSavingDecline] = useState(false);
   const [restoringProjectId, setRestoringProjectId] = useState(null);
 
   useEffect(() => {
@@ -1040,38 +1036,6 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     }
   }
 
-  async function recordQuoteDecline() {
-    if (!declineTarget?.id || !declineReason.trim() || savingDecline) return;
-    setSavingDecline(true);
-    try {
-      const quoteId = trackingByProject[declineTarget.id]?.latestQuote?.id;
-      if (quoteId) {
-        const { error } = await supabase.from("project_quotes").update({ status: "Declined" }).eq("id", quoteId);
-        if (error) throw error;
-      }
-      const note = `[Quote declined ${new Date().toLocaleString()}] Recorded by ${activeUserName}. Reason: ${declineReason.trim()}`;
-      const { error } = await supabase.from("projects").update({
-        quote_status: "Declined",
-        approval_status: "Declined",
-        next_action: declineAction === "Revise Quote" ? "Revise and resend customer quote" : "Follow up on declined quote",
-        notes: [declineTarget.notes, note].filter(Boolean).join("\n"),
-      }).eq("id", declineTarget.id);
-      if (error) throw error;
-      if (declineAction === "Archive Project") {
-        const { error: archiveError } = await supabase.rpc("mw_archive_project", { p_project_id: Number(declineTarget.id), p_reason: `Customer declined quote: ${declineReason.trim()}`, p_archived_by: activeUserName });
-        if (archiveError) throw archiveError;
-      }
-      setDeclineTarget(null);
-      setDeclineReason("");
-      await loadProjects();
-      notifications.show({ title: "Quote Decision Recorded", message: declineAction === "Archive Project" ? "The project was moved to Archived." : `The project is ready to ${declineAction.toLowerCase()}.`, color: "green" });
-    } catch (error) {
-      notifications.show({ title: "Decision Could Not Be Saved", message: error.message, color: "red" });
-    } finally {
-      setSavingDecline(false);
-    }
-  }
-
   async function restoreArchivedProject(project) {
     if (!isAdministrator || restoringProjectId) return;
     setRestoringProjectId(project.id);
@@ -1439,21 +1403,6 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Button>
                       )}
                     </SimpleGrid>
-                    {phase.key === "quote_approval" && (
-                      <Button
-                        size="xs"
-                        variant="subtle"
-                        color="orange"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setDeclineTarget(project);
-                          setDeclineReason("");
-                          setDeclineAction("Follow Up");
-                        }}
-                      >
-                        Record Quote Declined
-                      </Button>
-                    )}
                   </Stack>
                 </Card>;
               })}
@@ -1622,26 +1571,6 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           <Group justify="flex-end">
             <Button variant="default" disabled={savingQuickUpdate} onClick={() => setUpdateTarget(null)}>Cancel</Button>
             <Button color="red" loading={savingQuickUpdate} onClick={saveQuickProjectUpdate}>Save Today’s Update</Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={Boolean(declineTarget)}
-        onClose={() => !savingDecline && setDeclineTarget(null)}
-        title="Record Customer Quote Decision"
-        centered
-      >
-        <Stack>
-          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
-            Record why the quote was declined and choose what should happen next.
-          </Alert>
-          <Text fw={900}>{declineTarget?.project_name || declineTarget?.project_number}</Text>
-          <Textarea label="Reason quote was declined" required minRows={4} placeholder="Price, timing, scope changed, no response, chose another vendor…" value={declineReason} onChange={(event) => setDeclineReason(event.currentTarget.value)} />
-          <Select label="Next action" allowDeselect={false} value={declineAction} data={["Follow Up", "Revise Quote", ...(isAdministrator ? ["Archive Project"] : [])]} onChange={(value) => setDeclineAction(value || "Follow Up")} />
-          <Group justify="flex-end">
-            <Button variant="default" disabled={savingDecline} onClick={() => setDeclineTarget(null)}>Cancel</Button>
-            <Button color="orange" loading={savingDecline} disabled={!declineReason.trim()} onClick={recordQuoteDecline}>Save Decision</Button>
           </Group>
         </Stack>
       </Modal>
