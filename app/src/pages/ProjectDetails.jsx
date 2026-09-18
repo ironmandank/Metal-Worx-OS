@@ -12,7 +12,6 @@ import {
   NumberInput,
   Paper,
   ScrollArea,
-  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -28,6 +27,7 @@ import { DateInput, DateTimePicker } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity,
+  IconArrowRight,
   IconBuilding,
   IconBolt,
   IconCalendar,
@@ -1198,6 +1198,30 @@ function ProjectDetails({
     ? calculateNextAction(project, materialRequests)
     : "No next action";
 
+  const phaseForNavigation = project
+    ? getOutsidePhase(
+        customerApproval?.status === "Approved"
+          ? { ...project, approval_status: "Approved", quote_status: "Approved" }
+          : project,
+      )
+    : { key: "overview" };
+
+  function openNextActionWorkspace() {
+    if (["ready", "production"].includes(phaseForNavigation.key)) {
+      setActiveTab("workflow");
+      return;
+    }
+    if (["field", "closeout"].includes(phaseForNavigation.key)) {
+      setActiveTab("schedule");
+      return;
+    }
+    if (phaseForNavigation.key === "hold") {
+      setActiveTab("tracking");
+      return;
+    }
+    setActiveTab("overview");
+  }
+
   const materialProfit =
     procurementSummary.customerPrice - procurementSummary.internalCost;
 
@@ -2023,6 +2047,39 @@ function ProjectDetails({
 
         <MWActionBar actions={actionItems} />
 
+        <Card
+          withBorder
+          radius="lg"
+          p="lg"
+          style={{
+            borderColor: "rgba(230, 0, 35, 0.55)",
+            background: "linear-gradient(135deg, rgba(230,0,35,.16), rgba(255,255,255,.025))",
+          }}
+        >
+          <Group justify="space-between" align="center" wrap="wrap" gap="md">
+            <Box style={{ flex: "1 1 360px", minWidth: 0 }}>
+              <Text size="xs" c="red.3" fw={900} tt="uppercase" lts={1}>
+                Next Required Action
+              </Text>
+              <Text fw={900} fz="xl" style={{ overflowWrap: "anywhere" }}>
+                {nextActionText}
+              </Text>
+              <Text size="sm" c="dimmed" mt={3}>
+                Current stage: {phaseForNavigation.label || project.status || "Project"} · Owner: {project.assigned_to || project.intake_owner || "Unassigned"}
+              </Text>
+            </Box>
+            <Button
+              color="red"
+              size="md"
+              rightSection={<IconArrowRight size={18} />}
+              onClick={openNextActionWorkspace}
+              styles={{ label: { whiteSpace: "normal", textAlign: "center" } }}
+            >
+              Open Next Action
+            </Button>
+          </Group>
+        </Card>
+
         <MWSection title="Project Workspace">
           <Stack gap="md">
             <SimpleGrid cols={{ base: 1, md: 3 }}>
@@ -2030,17 +2087,28 @@ function ProjectDetails({
               <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Suggested Next Action</Text><Text fw={900}>{getSuggestedNextAction(customerApproval?.status === "Approved" ? { ...project, approval_status: "Approved", quote_status: "Approved" } : project)}</Text></Paper>
               <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Assigned Owner</Text><Text fw={900}>{project.assigned_to || project.intake_owner || "Unassigned"}</Text></Paper>
             </SimpleGrid>
-            <SegmentedControl
-              fullWidth
-              value={tabGroup}
-              onChange={(value) => setActiveTab({ command: "overview", work: "workflow", financial: "procurement", records: "activity" }[value])}
-              data={[
-                { label: "Command Center", value: "command" },
-                { label: "Work Plan", value: "work" },
-                { label: "Financial & Materials", value: "financial" },
-                { label: "Project Records", value: "records" },
-              ]}
-            />
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="xs">
+              {[
+                ["command", "Overview", "overview"],
+                ["work", "Work & Schedule", "workflow"],
+                ["financial", "Money & Materials", "procurement"],
+                ["records", "Updates & Files", "activity"],
+              ].map(([group, label, target]) => (
+                <Button
+                  key={group}
+                  fullWidth
+                  color={tabGroup === group ? "red" : "gray"}
+                  variant={tabGroup === group ? "filled" : "light"}
+                  onClick={() => setActiveTab(target)}
+                  styles={{
+                    root: { minHeight: 44, height: "auto", paddingTop: 8, paddingBottom: 8 },
+                    label: { whiteSpace: "normal", textAlign: "center", lineHeight: 1.2 },
+                  }}
+                >
+                  {label}
+                </Button>
+              ))}
+            </SimpleGrid>
           </Stack>
         </MWSection>
 
@@ -2050,6 +2118,7 @@ function ProjectDetails({
           keepMounted={false}
         >
           <Tabs.List
+            grow
             mb="lg"
             style={{
               gap: 4,
@@ -2057,6 +2126,7 @@ function ProjectDetails({
               borderRadius: "var(--mantine-radius-lg)",
               border: "1px solid rgba(255,255,255,0.08)",
               background: "rgba(255,255,255,0.025)",
+              flexWrap: "wrap",
             }}
           >
             {tabGroup === "command" && <Tabs.Tab value="overview" leftSection={<IconBuilding size={16} />}>
@@ -2094,26 +2164,26 @@ function ProjectDetails({
             </Tabs.Tab>}
 
             {tabGroup === "work" && <Tabs.Tab value="schedule" leftSection={<IconCalendar size={16} />}>
-              Schedule
+              Field Schedule
             </Tabs.Tab>}
 
             {tabGroup === "records" && <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
-              Activity
+              Activity History
             </Tabs.Tab>}
 
             {tabGroup === "records" && <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
-              Notes
+              Project Notes
             </Tabs.Tab>}
 
             {tabGroup === "work" && <Tabs.Tab
               value="tracking"
               leftSection={<IconClipboardCheck size={16} />}
             >
-              Checklist & Updates
+              Daily Updates
             </Tabs.Tab>}
 
             {tabGroup === "records" && <Tabs.Tab value="package" leftSection={<IconPackage size={16} />}>
-              Files & Package
+              Files & Photos
             </Tabs.Tab>}
           </Tabs.List>
 
