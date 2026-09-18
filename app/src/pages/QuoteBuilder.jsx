@@ -28,6 +28,7 @@ import { notifications } from "@mantine/notifications";
 
 import { supabase } from "../lib/supabase";
 import { generateNumber } from "../lib/generateNumber";
+import { organizeQuoteText } from "../lib/quoteOrganizer";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -231,6 +232,10 @@ function QuoteBuilder({
   const [templateBusy, setTemplateBusy] = useState(false);
 
   const [templateValidDays, setTemplateValidDays] = useState(15);
+
+  const [pasteQuoteText, setPasteQuoteText] = useState("");
+
+  const [organizingPaste, setOrganizingPaste] = useState(false);
 
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -515,6 +520,82 @@ function QuoteBuilder({
       ...current,
       [field]: value,
     }));
+  }
+
+  async function fillQuoteFromPastedText() {
+    if (!quote?.id || !pasteQuoteText.trim()) {
+      notifications.show({
+        title: "Paste Quote Details",
+        message: "Paste the customer and project write-up before organizing it.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setOrganizingPaste(true);
+
+    try {
+      const organized = organizeQuoteText(pasteQuoteText);
+      const fieldMap = {
+        quote_title: organized.quote_title,
+        project_name: organized.quote_title,
+        customer_name: organized.customer_name,
+        job_site_address: organized.address,
+        scope_of_work: organized.scope_of_work,
+        specifications: organized.specifications,
+        included_services: organized.included_services,
+        exclusions: organized.exclusions,
+        project_schedule: organized.project_schedule,
+        down_payment_terms: organized.down_payment_terms,
+        payment_terms: organized.payment_terms,
+        price_notes: organized.price_notes,
+      };
+
+      setQuote((current) => {
+        const next = { ...current };
+        Object.entries(fieldMap).forEach(([field, value]) => {
+          if (String(value || "").trim()) next[field] = value;
+        });
+        if (Number.isFinite(Number(organized.tax_rate))) {
+          next.tax_rate = Number(organized.tax_rate);
+        }
+        return next;
+      });
+
+      if (organized.items.length > 0) {
+        const payload = organized.items.map((item, index) => ({
+          quote_id: quote.id,
+          item_type: item.item_type || "Base",
+          title: item.title || "Quoted Work",
+          description: item.description || "",
+          quantity: Number(item.quantity || 1),
+          unit_price: Number(item.unit_price || 0),
+          line_total: Number(item.quantity || 1) * Number(item.unit_price || 0),
+          is_optional: false,
+          is_selected: true,
+          show_on_pdf: true,
+          sort_order: items.length + index + 1,
+        }));
+        const { error } = await supabase.from("project_quote_items").insert(payload);
+        if (error) throw error;
+        await loadItems(quote.id);
+      }
+
+      notifications.show({
+        title: "Quote Details Organized",
+        message: `${organized.items.length} line item${organized.items.length === 1 ? " was" : "s were"} added. Review every field, then save the quote.`,
+        color: "green",
+      });
+      setPasteQuoteText("");
+    } catch (error) {
+      notifications.show({
+        title: "Quote Text Could Not Be Organized",
+        message: error.message || "Review the pasted text and try again.",
+        color: "red",
+      });
+    } finally {
+      setOrganizingPaste(false);
+    }
   }
 
   const procurementSummary = useMemo(() => {
@@ -1938,6 +2019,43 @@ function QuoteBuilder({
           should be verified before sending the customer quote.
         </Alert>
       )}
+
+      <MWSection
+        title="Paste & Organize Quote"
+        subtitle="Paste a customer request, project write-up, or rough quote. Metal Worx OS will fill the matching quote fields and create any recognized line items."
+      >
+        <Stack gap="md">
+          <Alert color="blue" title="Review before saving">
+            Existing quote fields stay editable. Imported details do not send or approve the quote.
+          </Alert>
+          <Textarea
+            label="Quote text"
+            placeholder={"Customer: Anna Perez\nProject: Custom railing\nAddress: 123 Main Street\n\nScope of Work\nFabricate and install...\n\nItem: 40 ft aluminum railing\nRate: $125 per foot"}
+            value={pasteQuoteText}
+            onChange={(event) => setPasteQuoteText(event.currentTarget.value)}
+            autosize
+            minRows={5}
+            maxRows={12}
+          />
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              disabled={!pasteQuoteText}
+              onClick={() => setPasteQuoteText("")}
+            >
+              Clear
+            </Button>
+            <Button
+              color="green"
+              loading={organizingPaste}
+              disabled={!pasteQuoteText.trim()}
+              onClick={fillQuoteFromPastedText}
+            >
+              Fill Quote From Text
+            </Button>
+          </Group>
+        </Stack>
+      </MWSection>
 
       <MWSection title="Saved Quote Templates">
         <Stack gap="lg">

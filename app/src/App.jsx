@@ -578,6 +578,7 @@ function App() {
       return (
         <QuickTurnaroundDashboard
           setPage={setPage}
+          setSelectedCustomerOrder={setSelectedCustomerOrder}
           activeUser={activeUser}
           readOnly={isReadOnly}
         />
@@ -761,6 +762,9 @@ function App() {
         <CustomerOrders
           setPage={setPage}
           setSelectedCustomerOrder={setSelectedCustomerOrder}
+          setSelectedProductionJob={setSelectedProductionJob}
+          activeUser={activeUser}
+          accessLevel={authenticatedProfile?.access_level}
         />
       );
     }

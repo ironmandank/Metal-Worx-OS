@@ -21,6 +21,7 @@ import {
   IconClock,
   IconFlag,
   IconInfoCircle,
+  IconHistory,
   IconNotes,
   IconPhoto,
   IconRoute,
@@ -38,6 +39,7 @@ import {
   startProductionStep,
 } from "../lib/productionWorkflow";
 import { uploadOrderImages } from "../components/design/DesignIntakeModal";
+import { notifyTeam } from "../services/teamNotificationService";
 
 function DepartmentQueue({
   department,
@@ -57,6 +59,9 @@ function DepartmentQueue({
   const [bypassTarget, setBypassTarget] = useState(null);
   const [bypassReason, setBypassReason] = useState("");
   const [savingAction, setSavingAction] = useState(false);
+  const [activityTarget, setActivityTarget] = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
 
   useEffect(() => {
     loadQueue();
@@ -300,6 +305,23 @@ function DepartmentQueue({
     await loadQueue();
   }
 
+  async function openHistory(workOrder) {
+    setActivityTarget(workOrder);
+    setActivityLoading(true);
+    const { data, error } = await supabase
+      .from("work_order_activity")
+      .select("*")
+      .eq("work_order_id", workOrder.id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      notifications.show({ title: "History Could Not Load", message: error.message, color: "red" });
+      setActivities([]);
+    } else {
+      setActivities(data || []);
+    }
+    setActivityLoading(false);
+  }
+
   async function saveNote() {
     if (!noteTarget || !noteText.trim() || savingAction) return;
     setSavingAction(true);
@@ -460,6 +482,14 @@ function DepartmentQueue({
         })
         .eq("id", detail.order.id);
       if (error) throw error;
+      await notifyTeam({
+        names: ["Dan"],
+        title: "Artwork Is Ready for Customer Approval",
+        message: `${detail.order.order_number || "Artwork order"} has a new proof ready for approval.`,
+        sourceId: detail.order.id,
+        targetPage: "designQueue",
+        priority: "High",
+      }).catch(console.warn);
       notifications.show({
         title: "Ready for Customer Approval",
         message: "The proof is saved. An administrator must confirm the customer approval before Laser.",
@@ -489,6 +519,15 @@ function DepartmentQueue({
         })
         .eq("id", detail.order.id);
       if (error) throw error;
+      await notifyTeam({
+        names: ["Kory"],
+        departments: ["Design"],
+        title: "Artwork Changes Requested",
+        message: `${detail.order.order_number || "Artwork order"} was returned for customer changes.`,
+        sourceId: detail.order.id,
+        targetPage: "designQueue",
+        priority: "High",
+      }).catch(console.warn);
       notifications.show({
         title: "Returned to Design",
         message: "The order is back in Kory's In Progress queue.",
@@ -509,6 +548,15 @@ function DepartmentQueue({
         activeUser,
         "Customer approval confirmed and design released to the next station."
       );
+      if (!result?.completed && result?.next_department) {
+        await notifyTeam({
+          departments: [result.next_department],
+          title: `Work Released to ${result.next_department}`,
+          message: `${workOrder.work_order_number} is ready to start.`,
+          sourceId: workOrder.customer_order_id,
+          targetPage: "productionControl",
+        }).catch(console.warn);
+      }
       const note = `Customer approval confirmed by ${activeUser || "Administrator"} on ${new Date().toLocaleString()}.`;
       const { error } = await supabase
         .from("customer_orders")
@@ -540,6 +588,15 @@ function DepartmentQueue({
         activeUser,
         completionNotes.trim()
       );
+      if (!result?.completed && result?.next_department) {
+        await notifyTeam({
+          departments: [result.next_department],
+          title: `Work Released to ${result.next_department}`,
+          message: `${workOrder.work_order_number} is ready to start.`,
+          sourceId: workOrder.customer_order_id,
+          targetPage: "productionControl",
+        }).catch(console.warn);
+      }
       notifications.show({
         title: result?.completed ? "Production Route Completed" : "Step Completed",
         message: result?.completed
@@ -781,6 +838,9 @@ function DepartmentQueue({
           )}
 
           <SimpleGrid cols={2} spacing="xs">
+            <Button fullWidth size="xs" variant="subtle" color="gray" leftSection={<IconHistory size={15} />} onClick={() => openHistory(workOrder)}>
+              History
+            </Button>
             {!workOrder.assigned_to && (
               <Button fullWidth size="xs" variant="light" leftSection={<IconUserCheck size={15} />} onClick={() => claimWorkOrder(workOrder)}>
                 Claim
@@ -948,6 +1008,35 @@ function DepartmentQueue({
           )}
         </SimpleGrid>
       )}
+
+      <Modal
+        opened={Boolean(activityTarget)}
+        onClose={() => {
+          setActivityTarget(null);
+          setActivities([]);
+        }}
+        title={`${activityTarget?.work_order_number || "Work Order"} History`}
+        centered
+        size="lg"
+      >
+        {activityLoading ? <Text c="dimmed">Loading activity history…</Text> : activities.length ? (
+          <Stack gap="xs">
+            {activities.map((activity) => (
+              <Paper key={activity.id} withBorder radius="md" p="sm">
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text fw={850}>{activity.event_type}</Text>
+                    <Text size="xs" c="dimmed">{activity.actor || "Metal Worx Team"}</Text>
+                  </div>
+                  <Text size="xs" c="dimmed">{new Date(activity.created_at).toLocaleString()}</Text>
+                </Group>
+                {(activity.from_status || activity.to_status) && <Text size="sm" mt={5}>{activity.from_status || "—"} → {activity.to_status || "—"}</Text>}
+                {activity.notes && <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{activity.notes}</Text>}
+              </Paper>
+            ))}
+          </Stack>
+        ) : <Text c="dimmed">No activity has been recorded for this station yet.</Text>}
+      </Modal>
 
       <Modal
         opened={Boolean(noteTarget)}

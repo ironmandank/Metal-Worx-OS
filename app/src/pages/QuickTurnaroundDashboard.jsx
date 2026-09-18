@@ -5,11 +5,12 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle, IconBolt, IconCheck, IconClock, IconPackage,
-  IconPlayerPlay, IconPlus, IconRefresh, IconUser,
+  IconPlayerPlay, IconPlus, IconRefresh,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import { getDashboardData } from "../services/dashboardService";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
@@ -41,7 +42,7 @@ function formatDue(value) {
   });
 }
 
-function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
+function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUser, readOnly = false }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [commitments, setCommitments] = useState([]);
@@ -50,17 +51,21 @@ function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [artworkOrders, setArtworkOrders] = useState([]);
+  const [viewMode, setViewMode] = useState("hot");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [commitmentResult, profileResult] = await Promise.all([
+      const [commitmentResult, profileResult, dashboardData] = await Promise.all([
         supabase.from("quick_turnaround_dashboard").select("*").order("attention_rank").order("required_by"),
         supabase.from("employee_profiles").select("display_name,profile_type,is_active").eq("is_active", true).order("display_name"),
+        getDashboardData(),
       ]);
       if (commitmentResult.error) throw commitmentResult.error;
       setCommitments(commitmentResult.data || []);
       setProfiles(profileResult.data || []);
+      setArtworkOrders(dashboardData?.artworkOrders || []);
     } catch (error) {
       notifications.show({ title: "Commitments Failed to Load", message: error.message, color: "red" });
     } finally { setLoading(false); }
@@ -76,6 +81,17 @@ function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
   }), [commitments, priorityFilter, statusFilter]);
 
   const active = commitments.filter((item) => !["Completed", "Cancelled"].includes(item.status));
+  const activeTitles = new Set(active.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
+  const activeSourceIds = new Set(active.map((item) => String(item.source_id || "")).filter(Boolean));
+  const unlinkedArtwork = artworkOrders.filter((order) =>
+    !activeSourceIds.has(String(order.id)) &&
+    !activeTitles.has(String(order.title || "").trim().toLowerCase())
+  );
+  const agedArtwork = unlinkedArtwork.filter((order) => Number(order.businessDaysInShop || 0) >= 12);
+  const regularArtwork = unlinkedArtwork
+    .filter((order) => Number(order.businessDaysInShop || 0) < 12)
+    .sort((left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0));
+  const agingSoon = regularArtwork.filter((order) => Number(order.businessDaysInShop || 0) >= 10).length;
   const overdue = active.filter((item) => item.timing_status === "Overdue").length;
   const dueToday = active.filter((item) => ["Due Today", "Due Soon"].includes(item.timing_status)).length;
   const blocked = active.filter((item) => item.status === "Blocked" || item.materials_status === "Blocked").length;
@@ -119,20 +135,27 @@ function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
   return <Stack gap="xl">
     <MWPageHeader title="Hot Artwork" subtitle="Weekly control for artwork with deadlines, customer escalations, or too much time in the shop." setPage={setPage} showBack backPage="dashboard" backLabel="Mission Control" showDashboard={false}/>
     <MWKpiStrip items={[
-      { label: "Hot Artwork", value: active.length, description: "Open weekly priorities", icon: IconBolt, color: "red" },
+      { label: "Hot Artwork", value: active.length + agedArtwork.length, description: "Marked hot or 12+ business days", icon: IconBolt, color: "red" },
+      { label: "Artwork Orders", value: regularArtwork.length, description: "Regular open artwork", icon: IconPackage, color: "blue" },
+      { label: "Aging Soon", value: agingSoon, description: "10–11 business days", icon: IconClock, color: "orange" },
       { label: "Due Today", value: dueToday, description: "Requires attention today", icon: IconClock, color: "yellow" },
-      { label: "Overdue", value: overdue, description: "Past promised time", icon: IconAlertTriangle, color: "red" },
-      { label: "Blocked", value: blocked, description: "Work or materials blocked", icon: IconPackage, color: "orange" },
-    ]} columns={{ base: 1, sm: 2, xl: 4 }} compact/>
+      { label: "Overdue / Blocked", value: overdue + blocked, description: "Requires immediate attention", icon: IconAlertTriangle, color: "red" },
+    ]} columns={{ base: 1, sm: 2, xl: 5 }} compact/>
 
     <MWPanel title="Hot Artwork Controls" subtitle="Filter the list or add artwork that needs weekly visibility" icon={IconBolt}>
       <Group justify="space-between">
-        <Group><Select w={190} value={statusFilter} onChange={(value) => setStatusFilter(value || "Active")} data={["Active", "Open", "Acknowledged", "In Progress", "Blocked", "Completed", "Cancelled", { value: "all", label: "All Statuses" }]}/><Select w={170} value={priorityFilter} onChange={(value) => setPriorityFilter(value || "all")} data={[{ value: "all", label: "All Priorities" }, "Critical", "Urgent", "High"]}/><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
+        <Group><Button color="red" variant={viewMode === "hot" ? "filled" : "light"} onClick={() => setViewMode("hot")}>Hot Artwork ({active.length + agedArtwork.length})</Button><Button color="blue" variant={viewMode === "orders" ? "filled" : "light"} onClick={() => setViewMode("orders")}>Artwork Orders ({regularArtwork.length})</Button><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
         {!readOnly && <Button color="red" leftSection={<IconPlus size={18}/>} onClick={() => setModalOpen(true)}>Add Hot Artwork</Button>}
       </Group>
     </MWPanel>
 
-    <MWPanel title="Hot Artwork This Week" subtitle={`${filtered.length} artwork priorit${filtered.length === 1 ? "y" : "ies"} shown`} icon={IconClock}>
+    {viewMode === "hot" ? <>
+    <MWPanel title="Hot Artwork Filters" subtitle="Refine manually prioritized artwork" icon={IconBolt}>
+      <Group><Select w={190} value={statusFilter} onChange={(value) => setStatusFilter(value || "Active")} data={["Active", "Open", "Acknowledged", "In Progress", "Blocked", "Completed", "Cancelled", { value: "all", label: "All Statuses" }]}/><Select w={170} value={priorityFilter} onChange={(value) => setPriorityFilter(value || "all")} data={[{ value: "all", label: "All Priorities" }, "Critical", "Urgent", "High"]}/></Group>
+    </MWPanel>
+    <MWPanel title="Hot Artwork This Week" subtitle={`${filtered.length + agedArtwork.length} artwork priorit${filtered.length + agedArtwork.length === 1 ? "y" : "ies"} shown`} icon={IconClock}>
+      {agedArtwork.length > 0 && <Alert color="red" icon={<IconAlertTriangle size={19}/>} mb="md">{agedArtwork.length} regular artwork order{agedArtwork.length === 1 ? " has" : "s have"} reached 12 business days and automatically moved into Hot Artwork.</Alert>}
+      {agedArtwork.length > 0 && <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md" mb="md">{agedArtwork.map((item) => <Paper key={`aged-${item.id}`} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color="red">12+ BUSINESS DAYS</Badge><Badge color="orange" variant="light">AGING</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed">{item.customer} · {item.department}</Text><Group justify="space-between"><Text fw={900} c="red.4">{item.businessDaysInShop} business days</Text><Text>{item.owner}</Text></Group><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>)}</SimpleGrid>}
       {!filtered.length ? <Alert color="gray" icon={<IconClock size={19}/>}>No commitments match the current filters.</Alert> : <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">{filtered.map((item) => <Paper key={item.id} p="lg" radius="lg" style={{ background: "rgba(255,255,255,.025)", border: `1px solid ${item.timing_status === "Overdue" ? "rgba(250,82,82,.55)" : "rgba(255,255,255,.08)"}` }}><Stack gap="md">
         <Group justify="space-between" align="flex-start" wrap="nowrap"><Stack gap={4}><Group gap="xs"><Badge color={priorityColor(item.priority)}>{item.priority}</Badge><Badge color={timingColor(item.timing_status)} variant="light">{item.timing_status}</Badge><Badge color="gray" variant="light">{item.source_type}</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed" size="sm">{[item.customer_name, item.source_number].filter(Boolean).join(" · ") || "Internal Metal Worx commitment"}</Text></Stack><ThemeIcon size={48} radius="lg" color={timingColor(item.timing_status)} variant="light"><IconBolt size={24}/></ThemeIcon></Group>
         <Paper p="sm" withBorder><Group justify="space-between"><Group gap="xs"><IconClock size={18}/><Text fw={800}>Required {formatDue(item.required_by)}</Text></Group><Text fw={900} c={item.timing_status === "Overdue" ? "red.4" : "gray.1"}>{item.timing_status === "Overdue" ? "PAST DUE" : `${Math.round(Number(item.hours_remaining || 0))} hrs`}</Text></Group></Paper>
@@ -141,6 +164,9 @@ function QuickTurnaroundDashboard({ setPage, activeUser, readOnly = false }) {
         {!readOnly && <Group grow>{item.status === "Open" && <Button color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button color="green" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete</Button>}</Group>}
       </Stack></Paper>)}</SimpleGrid>}
     </MWPanel>
+    </> : <MWPanel title="Artwork Orders" subtitle="Regular work stays here until marked hot or it reaches 12 business days" icon={IconPackage}>
+      {!regularArtwork.length ? <Alert color="gray" icon={<IconPackage size={19}/>}>No regular artwork orders are waiting.</Alert> : <SimpleGrid cols={{ base:1, md:2, xl:3 }} spacing="md">{regularArtwork.map((item) => { const age=Number(item.businessDaysInShop||0); return <Paper key={item.id} p="md" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={age>=10?"orange":"blue"}>{age>=10?"AGING SOON":"REGULAR"}</Badge><Text fw={900} c={age>=10?"orange.4":"gray.1"}>{age} business day{age===1?"":"s"}</Text></Group><Title order={4}>{item.title}</Title><Text size="sm" c="dimmed">{item.customer}</Text><SimpleGrid cols={2}><div><Text size="xs" c="dimmed" fw={800}>STATION</Text><Text size="sm" fw={750}>{item.department}</Text></div><div><Text size="xs" c="dimmed" fw={800}>LEAD</Text><Text size="sm" fw={750}>{item.owner}</Text></div></SimpleGrid><Text size="sm">{item.dueDate ? `Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}` : "No requested date"}</Text><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
+    </MWPanel>}
 
     <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Add Hot Artwork" centered size="lg"><Stack>
       <TextInput label="Artwork / Order Name" placeholder="Example: 24-inch ASOS Double Logo Flag" required value={form.title} onChange={(event) => updateForm("title", event.currentTarget.value)}/>

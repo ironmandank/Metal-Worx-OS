@@ -20,6 +20,7 @@ import { IconInfoCircle, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../../lib/supabase";
 import { releaseCustomerOrder } from "../../lib/productionWorkflow";
+import { notifyTeam } from "../../services/teamNotificationService";
 
 const DEFAULT_FORM = {
   customerName: "",
@@ -217,6 +218,15 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       }
 
       await releaseCustomerOrder(order.id, startingDepartment, activeUser || "Design Intake");
+      await notifyTeam({
+        names: needsDesign ? ["Kory"] : [],
+        departments: [startingDepartment],
+        title: needsDesign ? "New Design Work Is Ready" : "Artwork Order Released to Laser",
+        message: `${form.projectName} for ${form.customerName} is ready in ${startingDepartment}.`,
+        sourceId: order.id,
+        targetPage: needsDesign ? "designQueue" : "laserQueue",
+        priority: form.rush ? "High" : "Medium",
+      }).catch((notificationError) => console.warn("Design handoff notification failed", notificationError));
       notifications.show({
         title: needsDesign ? "Added to Design Queue" : "Released to Laser",
         message: needsDesign

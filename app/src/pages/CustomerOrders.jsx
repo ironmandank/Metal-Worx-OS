@@ -5,24 +5,28 @@ import {
   Button,
   Group,
   Loader,
+  Modal,
   Paper,
   Select,
   SimpleGrid,
   Stack,
   Text,
   TextInput,
+  Textarea,
   ThemeIcon,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle,
+  IconArchive,
   IconCheck,
   IconClock,
   IconFileInvoice,
   IconFlame,
   IconPackage,
   IconRefresh,
+  IconRestore,
   IconSearch,
   IconSettingsAutomation,
 } from "@tabler/icons-react";
@@ -58,6 +62,7 @@ const OFFICE_CLOSEOUT_STATUSES = [
 const STATUS_OPTIONS = [
   { value: "active", label: "Active Orders" },
   { value: "officeCloseout", label: "Office Closeout" },
+  { value: "archived", label: "Archived Orders" },
   { value: "all", label: "All Orders" },
   { value: "New", label: "New" },
   { value: "Design Needed", label: "Design Needed" },
@@ -138,6 +143,7 @@ function getOrderDisplayName(order) {
 }
 
 function getStatusColor(status) {
+  if (status === "Archived") return "gray";
   if (status === "Completed") return "green";
   if (status === "Ready for Pickup") return "cyan";
   if (status === "Ready to Ship") return "blue";
@@ -168,6 +174,7 @@ function CustomerOrders({
   setSelectedCustomerOrder,
   setSelectedProductionJob,
   activeUser = "",
+  accessLevel = "",
 }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,6 +182,9 @@ function CustomerOrders({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [buildingOrderId, setBuildingOrderId] = useState(null);
+  const [archiveTarget, setArchiveTarget] = useState(null);
+  const [archiveReason, setArchiveReason] = useState("");
+  const [archiving, setArchiving] = useState(false);
 
   const loadOrders = useCallback(async (showLoader = false) => {
     if (showLoader) setLoading(true);
@@ -305,6 +315,8 @@ function CustomerOrders({
     const searchValue = search.trim().toLowerCase();
 
     return orders.filter((order) => {
+      if (statusFilter === "archived" && !order.archived_at) return false;
+      if (statusFilter !== "archived" && statusFilter !== "all" && order.archived_at) return false;
       if (
         statusFilter === "active" &&
         !ACTIVE_STATUSES.includes(order.status || "New")
@@ -323,6 +335,7 @@ function CustomerOrders({
         statusFilter !== "active" &&
         statusFilter !== "officeCloseout" &&
         statusFilter !== "all" &&
+        statusFilter !== "archived" &&
         order.status !== statusFilter
       ) {
         return false;
@@ -340,6 +353,8 @@ function CustomerOrders({
         getCustomerCompany(order.customer),
         getOrderDisplayName(order),
         getOrderItemNames(order),
+        order.archive_reason,
+        order.archived_by,
         order.production_job?.production_job_number,
       ]
         .filter(Boolean)
@@ -424,6 +439,42 @@ function CustomerOrders({
       });
     } finally {
       setBuildingOrderId(null);
+    }
+  }
+
+  async function archiveOrder() {
+    if (!archiveTarget || !archiveReason.trim() || archiving) return;
+    setArchiving(true);
+    const { error } = await supabase.from("customer_orders").update({
+      archive_previous_status: archiveTarget.status || "New",
+      status: "Archived",
+      archived_at: new Date().toISOString(),
+      archived_by: activeUser || "Administrator",
+      archive_reason: archiveReason.trim(),
+    }).eq("id", archiveTarget.id);
+    setArchiving(false);
+    if (error) {
+      notifications.show({ title: "Order Could Not Be Archived", message: error.message, color: "red" });
+      return;
+    }
+    notifications.show({ title: "Order Archived", message: "The order was removed from active work but remains searchable.", color: "green" });
+    setArchiveTarget(null);
+    setArchiveReason("");
+    await loadOrders(false);
+  }
+
+  async function restoreOrder(order) {
+    const { error } = await supabase.from("customer_orders").update({
+      status: order.archive_previous_status || "New",
+      archived_at: null,
+      archived_by: null,
+      archive_reason: null,
+      archive_previous_status: null,
+    }).eq("id", order.id);
+    if (error) notifications.show({ title: "Order Could Not Be Restored", message: error.message, color: "red" });
+    else {
+      notifications.show({ title: "Order Restored", message: "The order is active again.", color: "green" });
+      await loadOrders(false);
     }
   }
 
@@ -597,6 +648,7 @@ function CustomerOrders({
                           {built && (
                             <Badge color="green">Production Connected</Badge>
                           )}
+                          {order.archived_at && <Badge color="gray">Archived</Badge>}
                         </Group>
 
                         <Title
@@ -736,6 +788,8 @@ function CustomerOrders({
                       </Paper>
                     )}
 
+                    {order.archived_at && <Alert color="gray" icon={<IconArchive size={18}/>}>Archived by {order.archived_by || "Administrator"}: {order.archive_reason || "No reason recorded"}</Alert>}
+
                     <Group grow>
                       <Button
                         variant="light"
@@ -778,6 +832,10 @@ function CustomerOrders({
                         </Button>
                       )}
                     </Group>
+                    {String(accessLevel).toLowerCase().includes("admin") && (
+                      order.archived_at ? <Button variant="light" color="green" leftSection={<IconRestore size={17}/>} onClick={() => restoreOrder(order)}>Restore Order</Button> :
+                      !built && <Button variant="subtle" color="gray" leftSection={<IconArchive size={17}/>} onClick={() => { setArchiveTarget(order); setArchiveReason(""); }}>Archive Order</Button>
+                    )}
                   </Stack>
                 </Paper>
               );
@@ -785,6 +843,14 @@ function CustomerOrders({
           </SimpleGrid>
         )}
       </MWPanel>
+
+      <Modal opened={Boolean(archiveTarget)} onClose={() => setArchiveTarget(null)} title="Archive Customer Order" centered>
+        <Stack>
+          <Alert color="orange" icon={<IconArchive size={18}/>}>This removes the order from active queues without deleting its customer, files, notes, or history.</Alert>
+          <Textarea label="Required archive reason" placeholder="Example: Customer declined quote, no response, duplicate order, or project cancelled" minRows={4} value={archiveReason} onChange={(event) => setArchiveReason(event.currentTarget.value)} autoFocus/>
+          <Group justify="flex-end"><Button variant="default" onClick={() => setArchiveTarget(null)}>Cancel</Button><Button color="orange" loading={archiving} disabled={!archiveReason.trim()} onClick={archiveOrder}>Archive Order</Button></Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
