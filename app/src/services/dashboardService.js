@@ -1495,6 +1495,7 @@ export async function getDashboardData() {
       receivedDate,
       businessDaysInShop: businessDaysSince(receivedDate),
       dueDate: order.due_date || null,
+      showOnHuddle: Boolean(order.show_on_huddle),
     };
   });
 

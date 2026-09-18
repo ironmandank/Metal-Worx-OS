@@ -1,6 +1,6 @@
 import {
   Alert, Badge, Button, Group, Loader, Modal, Paper, Select, SimpleGrid,
-  Stack, Text, Textarea, TextInput, ThemeIcon, Title,
+  Stack, Switch, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -53,6 +53,7 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
   const [form, setForm] = useState(EMPTY_FORM);
   const [artworkOrders, setArtworkOrders] = useState([]);
   const [viewMode, setViewMode] = useState("hot");
+  const [savingHuddleOrder, setSavingHuddleOrder] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -87,9 +88,9 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     !activeSourceIds.has(String(order.id)) &&
     !activeTitles.has(String(order.title || "").trim().toLowerCase())
   );
-  const agedArtwork = unlinkedArtwork.filter((order) => Number(order.businessDaysInShop || 0) >= 12);
+  const promotedArtwork = unlinkedArtwork.filter((order) => order.showOnHuddle || order.dueDate || Number(order.businessDaysInShop || 0) >= 12);
   const regularArtwork = unlinkedArtwork
-    .filter((order) => Number(order.businessDaysInShop || 0) < 12)
+    .filter((order) => !order.showOnHuddle && !order.dueDate && Number(order.businessDaysInShop || 0) < 12)
     .sort((left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0));
   const agingSoon = regularArtwork.filter((order) => Number(order.businessDaysInShop || 0) >= 10).length;
   const overdue = active.filter((item) => item.timing_status === "Overdue").length;
@@ -130,12 +131,23 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     else await loadData();
   }
 
+  async function toggleHuddleOrder(order, checked) {
+    setSavingHuddleOrder(String(order.id));
+    const { error } = await supabase.from("customer_orders").update({ show_on_huddle: checked }).eq("id", order.id);
+    if (error) notifications.show({ title: "Hot Items List Not Updated", message: error.message, color: "red" });
+    else {
+      notifications.show({ title: checked ? "Added to Hot Items" : "Removed from Hot Items", message: `${order.title} ${checked ? "will appear" : "will no longer appear unless it has a date or reaches 12 business days"} on the TV Huddle.`, color: checked ? "green" : "gray" });
+      await loadData();
+    }
+    setSavingHuddleOrder("");
+  }
+
   if (loading) return <Stack gap="xl"><MWPageHeader title="Hot Artwork" subtitle="Loading this week’s artwork priorities." setPage={setPage} showBack backPage="dashboard" backLabel="Mission Control" showDashboard={false}/><MWPanel><Group justify="center" py={90}><Loader color="red"/><Text c="dimmed">Loading hot artwork…</Text></Group></MWPanel></Stack>;
 
   return <Stack gap="xl">
     <MWPageHeader title="Hot Artwork" subtitle="Weekly control for artwork with deadlines, customer escalations, or too much time in the shop." setPage={setPage} showBack backPage="dashboard" backLabel="Mission Control" showDashboard={false}/>
     <MWKpiStrip items={[
-      { label: "Hot Artwork", value: active.length + agedArtwork.length, description: "Marked hot or 12+ business days", icon: IconBolt, color: "red" },
+      { label: "Hot Items", value: active.length + promotedArtwork.length, description: "Selected, dated, or 12+ business days", icon: IconBolt, color: "red" },
       { label: "Artwork Orders", value: regularArtwork.length, description: "Regular open artwork", icon: IconPackage, color: "blue" },
       { label: "Aging Soon", value: agingSoon, description: "10–11 business days", icon: IconClock, color: "orange" },
       { label: "Due Today", value: dueToday, description: "Requires attention today", icon: IconClock, color: "yellow" },
@@ -144,7 +156,7 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
 
     <MWPanel title="Hot Artwork Controls" subtitle="Filter the list or add artwork that needs weekly visibility" icon={IconBolt}>
       <Group justify="space-between">
-        <Group><Button color="red" variant={viewMode === "hot" ? "filled" : "light"} onClick={() => setViewMode("hot")}>Hot Artwork ({active.length + agedArtwork.length})</Button><Button color="blue" variant={viewMode === "orders" ? "filled" : "light"} onClick={() => setViewMode("orders")}>Artwork Orders ({regularArtwork.length})</Button><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
+        <Group><Button color="red" variant={viewMode === "hot" ? "filled" : "light"} onClick={() => setViewMode("hot")}>Hot Items ({active.length + promotedArtwork.length})</Button><Button color="blue" variant={viewMode === "orders" ? "filled" : "light"} onClick={() => setViewMode("orders")}>Artwork Orders ({unlinkedArtwork.length})</Button><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
         {!readOnly && <Button color="red" leftSection={<IconPlus size={18}/>} onClick={() => setModalOpen(true)}>Add Hot Artwork</Button>}
       </Group>
     </MWPanel>
@@ -153,9 +165,8 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     <MWPanel title="Hot Artwork Filters" subtitle="Refine manually prioritized artwork" icon={IconBolt}>
       <Group><Select w={190} value={statusFilter} onChange={(value) => setStatusFilter(value || "Active")} data={["Active", "Open", "Acknowledged", "In Progress", "Blocked", "Completed", "Cancelled", { value: "all", label: "All Statuses" }]}/><Select w={170} value={priorityFilter} onChange={(value) => setPriorityFilter(value || "all")} data={[{ value: "all", label: "All Priorities" }, "Critical", "Urgent", "High"]}/></Group>
     </MWPanel>
-    <MWPanel title="Hot Artwork This Week" subtitle={`${filtered.length + agedArtwork.length} artwork priorit${filtered.length + agedArtwork.length === 1 ? "y" : "ies"} shown`} icon={IconClock}>
-      {agedArtwork.length > 0 && <Alert color="red" icon={<IconAlertTriangle size={19}/>} mb="md">{agedArtwork.length} regular artwork order{agedArtwork.length === 1 ? " has" : "s have"} reached 12 business days and automatically moved into Hot Artwork.</Alert>}
-      {agedArtwork.length > 0 && <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md" mb="md">{agedArtwork.map((item) => <Paper key={`aged-${item.id}`} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color="red">12+ BUSINESS DAYS</Badge><Badge color="orange" variant="light">AGING</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed">{item.customer} · {item.department}</Text><Group justify="space-between"><Text fw={900} c="red.4">{item.businessDaysInShop} business days</Text><Text>{item.owner}</Text></Group><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>)}</SimpleGrid>}
+    <MWPanel title="Hot Items This Week" subtitle={`${filtered.length + promotedArtwork.length} selected, dated, or aging item${filtered.length + promotedArtwork.length === 1 ? "" : "s"} shown`} icon={IconClock}>
+      {promotedArtwork.length > 0 && <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md" mb="md">{promotedArtwork.map((item) => { const aged=Number(item.businessDaysInShop||0)>=12; const automatic=Boolean(item.dueDate)||aged; return <Paper key={`promoted-${item.id}`} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.dueDate?"red":aged?"orange":"blue"}>{item.dueDate?"DATED ORDER":aged?"12+ BUSINESS DAYS":"SELECTED FOR HUDDLE"}</Badge>{!automatic && <Switch checked={Boolean(item.showOnHuddle)} disabled={savingHuddleOrder===String(item.id)} label="Show on TV Huddle" onChange={(event)=>toggleHuddleOrder(item,event.currentTarget.checked)}/>}</Group><Title order={3}>{item.title}</Title><Text c="dimmed">{item.customer} · {item.department}</Text><Group justify="space-between"><Text fw={900} c={aged?"red.4":"gray.1"}>{item.businessDaysInShop} business days</Text><Text>{item.dueDate?`Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}`:item.owner}</Text></Group><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
       {!filtered.length ? <Alert color="gray" icon={<IconClock size={19}/>}>No commitments match the current filters.</Alert> : <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">{filtered.map((item) => <Paper key={item.id} p="lg" radius="lg" style={{ background: "rgba(255,255,255,.025)", border: `1px solid ${item.timing_status === "Overdue" ? "rgba(250,82,82,.55)" : "rgba(255,255,255,.08)"}` }}><Stack gap="md">
         <Group justify="space-between" align="flex-start" wrap="nowrap"><Stack gap={4}><Group gap="xs"><Badge color={priorityColor(item.priority)}>{item.priority}</Badge><Badge color={timingColor(item.timing_status)} variant="light">{item.timing_status}</Badge><Badge color="gray" variant="light">{item.source_type}</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed" size="sm">{[item.customer_name, item.source_number].filter(Boolean).join(" · ") || "Internal Metal Worx commitment"}</Text></Stack><ThemeIcon size={48} radius="lg" color={timingColor(item.timing_status)} variant="light"><IconBolt size={24}/></ThemeIcon></Group>
         <Paper p="sm" withBorder><Group justify="space-between"><Group gap="xs"><IconClock size={18}/><Text fw={800}>Required {formatDue(item.required_by)}</Text></Group><Text fw={900} c={item.timing_status === "Overdue" ? "red.4" : "gray.1"}>{item.timing_status === "Overdue" ? "PAST DUE" : `${Math.round(Number(item.hours_remaining || 0))} hrs`}</Text></Group></Paper>
@@ -164,8 +175,8 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
         {!readOnly && <Group grow>{item.status === "Open" && <Button color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button color="green" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete</Button>}</Group>}
       </Stack></Paper>)}</SimpleGrid>}
     </MWPanel>
-    </> : <MWPanel title="Artwork Orders" subtitle="Regular work stays here until marked hot or it reaches 12 business days" icon={IconPackage}>
-      {!regularArtwork.length ? <Alert color="gray" icon={<IconPackage size={19}/>}>No regular artwork orders are waiting.</Alert> : <SimpleGrid cols={{ base:1, md:2, xl:3 }} spacing="md">{regularArtwork.map((item) => { const age=Number(item.businessDaysInShop||0); return <Paper key={item.id} p="md" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={age>=10?"orange":"blue"}>{age>=10?"AGING SOON":"REGULAR"}</Badge><Text fw={900} c={age>=10?"orange.4":"gray.1"}>{age} business day{age===1?"":"s"}</Text></Group><Title order={4}>{item.title}</Title><Text size="sm" c="dimmed">{item.customer}</Text><SimpleGrid cols={2}><div><Text size="xs" c="dimmed" fw={800}>STATION</Text><Text size="sm" fw={750}>{item.department}</Text></div><div><Text size="xs" c="dimmed" fw={800}>LEAD</Text><Text size="sm" fw={750}>{item.owner}</Text></div></SimpleGrid><Text size="sm">{item.dueDate ? `Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}` : "No requested date"}</Text><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
+    </> : <MWPanel title="Artwork Orders" subtitle="Choose undated orders for Hot Items; dated and 12-business-day orders appear automatically" icon={IconPackage}>
+      {!unlinkedArtwork.length ? <Alert color="gray" icon={<IconPackage size={19}/>}>No artwork orders are waiting.</Alert> : <SimpleGrid cols={{ base:1, md:2, xl:3 }} spacing="md">{unlinkedArtwork.sort((left,right)=>Number(right.businessDaysInShop||0)-Number(left.businessDaysInShop||0)).map((item) => { const age=Number(item.businessDaysInShop||0); const automatic=Boolean(item.dueDate)||age>=12; return <Paper key={item.id} p="md" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.dueDate?"red":age>=12?"orange":item.showOnHuddle?"blue":age>=10?"orange":"gray"}>{item.dueDate?"DATED":age>=12?"AGING":item.showOnHuddle?"ON HUDDLE":age>=10?"AGING SOON":"REGULAR"}</Badge><Text fw={900} c={age>=10?"orange.4":"gray.1"}>{age} business day{age===1?"":"s"}</Text></Group><Title order={4}>{item.title}</Title><Text size="sm" c="dimmed">{item.customer}</Text><Switch checked={automatic||Boolean(item.showOnHuddle)} disabled={automatic||savingHuddleOrder===String(item.id)} label={automatic?item.dueDate?"Automatically shown because it has a date":"Automatically shown at 12 business days":"Show on Hot Items This Week"} onChange={(event)=>toggleHuddleOrder(item,event.currentTarget.checked)}/><SimpleGrid cols={2}><div><Text size="xs" c="dimmed" fw={800}>STATION</Text><Text size="sm" fw={750}>{item.department}</Text></div><div><Text size="xs" c="dimmed" fw={800}>LEAD</Text><Text size="sm" fw={750}>{item.owner}</Text></div></SimpleGrid><Text size="sm">{item.dueDate ? `Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}` : "No requested date"}</Text><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
     </MWPanel>}
 
     <Modal opened={modalOpen} onClose={() => setModalOpen(false)} title="Add Hot Artwork" centered size="lg"><Stack>
