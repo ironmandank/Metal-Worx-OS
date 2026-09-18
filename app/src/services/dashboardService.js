@@ -539,6 +539,11 @@ function buildPriorityRow(record, sourceType) {
         })
       : "No time set",
     hoursRemaining,
+    dateReceived: record.date_received || record.created_at || null,
+    daysInShop: record.date_received
+      ? Math.max(0, Math.floor((startOfToday().getTime() - new Date(`${record.date_received}T12:00:00`).getTime()) / 86400000))
+      : 0,
+    hotReasonCategory: record.hot_reason_category || "Deadline",
   };
 }
 
