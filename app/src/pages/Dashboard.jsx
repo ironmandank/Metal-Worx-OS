@@ -1042,11 +1042,10 @@ function Dashboard({
     setBriefLoading(true);
     setBriefCopied(false);
     try {
-      const today = new Date().toISOString().slice(0, 10);
       const { data, error } = await supabase
         .from("project_daily_updates")
         .select("*")
-        .eq("update_date", today)
+        .order("update_date", { ascending: false })
         .order("created_at", { ascending: false });
       if (error) throw error;
 
@@ -1091,10 +1090,17 @@ function Dashboard({
           `Due: ${project.target_completion_date || project.due_date || "Not set"}`,
         );
         if (!update) {
-          lines.push("Today's update: NOT SUBMITTED");
+          lines.push("Latest update: NOT SUBMITTED");
           return;
         }
-        lines.push(`Today's status: ${update.status || "Not recorded"}`);
+        const updateDate = update.update_date
+          ? new Date(`${update.update_date}T12:00:00`)
+          : null;
+        const ageDays = updateDate
+          ? Math.max(0, Math.round((new Date().setHours(12, 0, 0, 0) - updateDate.getTime()) / 86400000))
+          : null;
+        lines.push(`Latest update: ${update.update_date || "Date not recorded"}${ageDays === null ? "" : ageDays === 0 ? " (today)" : ` (${ageDays} day${ageDays === 1 ? "" : "s"} old)`}`);
+        lines.push(`Latest status: ${update.status || "Not recorded"}`);
         if (update.work_completed)
           lines.push(`Completed: ${update.work_completed}`);
         if (update.work_in_progress)
