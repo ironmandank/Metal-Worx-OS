@@ -2,7 +2,6 @@ import {
   Button,
   Card,
   Group,
-  ScrollArea,
 } from "@mantine/core";
 
 function MWActionBar({
@@ -27,17 +26,11 @@ function MWActionBar({
           "var(--mantine-color-dark-7)",
       }}
     >
-      <ScrollArea
-        type="auto"
-        scrollbarSize={6}
+      <Group
+        gap="sm"
+        wrap="wrap"
+        align="stretch"
       >
-        <Group
-          gap="sm"
-          wrap="nowrap"
-          style={{
-            minWidth: "max-content",
-          }}
-        >
           {visibleActions.map(
             (action, index) => (
               <Button
@@ -75,22 +68,27 @@ function MWActionBar({
                   action.onClick
                 }
                 style={{
-                  minWidth:
-                    action.minWidth ||
-                    145,
-                  height:
-                    compact
-                      ? 38
-                      : 42,
+                  flex: "1 1 170px",
+                  minWidth: Math.min(action.minWidth || 145, 170),
+                  height: "auto",
+                  minHeight: compact ? 38 : 42,
+                  paddingTop: 8,
+                  paddingBottom: 8,
                   fontWeight: 700,
+                }}
+                styles={{
+                  label: {
+                    whiteSpace: "normal",
+                    textAlign: "center",
+                    lineHeight: 1.15,
+                  },
                 }}
               >
                 {action.label}
               </Button>
             )
           )}
-        </Group>
-      </ScrollArea>
+      </Group>
     </Card>
   );
 }
