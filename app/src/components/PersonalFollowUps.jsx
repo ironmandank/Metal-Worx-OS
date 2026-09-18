@@ -139,12 +139,12 @@ export default function PersonalFollowUps({ onOpenProject }) {
   }
 
   return (
-    <section className="mc-panel">
+    <section className="mc-panel" id="personal-followups">
       <style>{noteStyles}</style>
       <div className="mc-panel-head">
         <div className="mc-panel-title">
           <IconClipboardText />
-          <div><h2>Personal Notes &amp; Follow-Ups</h2><small>Callbacks, reminders, and personal tasks for Chad, Lori, Kory, and Dan</small></div>
+          <div><h2>Team Notes &amp; Follow-Ups</h2><small>The main place for callbacks, reminders, and personal tasks for Chad, Lori, Kory, and Dan</small></div>
         </div>
         <button className="mc-link" type="button" onClick={() => setFormOpen((open) => !open)}>{formOpen ? "Close" : "Add Follow-Up"} ›</button>
       </div>
