@@ -6,7 +6,9 @@ import {
   Card,
   Divider,
   Group,
+  Image,
   Loader,
+  Paper,
   Progress,
   SimpleGrid,
   Stack,
@@ -18,10 +20,18 @@ import {
   IconArrowLeft,
   IconBuildingFactory2,
   IconCalendar,
+  IconCash,
   IconCheck,
+  IconClipboardCheck,
   IconClock,
+  IconExternalLink,
+  IconHistory,
+  IconMail,
   IconPackage,
+  IconPhoto,
+  IconPhone,
   IconRefresh,
+  IconRoute,
   IconUser,
 } from "@tabler/icons-react";
 
@@ -36,6 +46,10 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [orderItems, setOrderItems] = useState([]);
   const [productsById, setProductsById] = useState({});
   const [workOrders, setWorkOrders] = useState([]);
+  const [referenceImages, setReferenceImages] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [materialRequests, setMaterialRequests] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -59,7 +73,15 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
 
       setJob(jobData);
 
-      const [orderResult, itemsResult, workOrdersResult] = await Promise.all([
+      const [
+        orderResult,
+        itemsResult,
+        workOrdersResult,
+        imageResult,
+        paymentResult,
+        activityResult,
+        materialResult,
+      ] = await Promise.all([
         jobData.customer_order_id
           ? supabase
               .from("customer_orders")
@@ -78,6 +100,35 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
           .select("*")
           .eq("production_job_id", jobData.id)
           .order("step_order", { ascending: true }),
+        jobData.customer_order_id
+          ? supabase
+              .from("customer_order_reference_images")
+              .select("*")
+              .eq("customer_order_id", jobData.customer_order_id)
+              .order("sort_order", { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
+        jobData.customer_order_id
+          ? supabase
+              .from("customer_order_payments")
+              .select("*")
+              .eq("customer_order_id", jobData.customer_order_id)
+              .order("payment_date", { ascending: false })
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from("work_order_activity")
+          .select("*")
+          .eq("production_job_id", jobData.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("material_requests")
+          .select("*, material_request_items(*)")
+          .in(
+            "source_id",
+            [jobData.id, jobData.customer_order_id]
+              .filter(Boolean)
+              .map(String)
+          )
+          .order("created_at", { ascending: false }),
       ]);
 
       const resolvedCustomerId =
@@ -94,7 +145,11 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
         orderResult.error ||
         customerResult.error ||
         itemsResult.error ||
-        workOrdersResult.error;
+        workOrdersResult.error ||
+        imageResult.error ||
+        paymentResult.error ||
+        activityResult.error ||
+        materialResult.error;
 
       if (relatedError) throw relatedError;
 
@@ -127,6 +182,10 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
       setOrderItems(nextItems);
       setProductsById(productMap);
       setWorkOrders(workOrdersResult.data || []);
+      setReferenceImages(imageResult.data || []);
+      setPayments(paymentResult.data || []);
+      setActivity(activityResult.data || []);
+      setMaterialRequests(materialResult.data || []);
     } catch (error) {
       console.error(error);
       setErrorMessage(
@@ -203,6 +262,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
     if (status === "In Progress") return "blue";
     if (status === "Ready") return "red";
     if (status === "On Hold") return "orange";
+    if (status === "Blocked") return "red";
     if (status === "Cancelled") return "gray";
     return "dark";
   }
@@ -233,6 +293,18 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
 
   function getLineQuantity(item) {
     return item.quantity ?? item.qty ?? 1;
+  }
+
+  function money(value) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(value || 0));
+  }
+
+  function readinessColor(complete, warning = false) {
+    if (complete) return "green";
+    return warning ? "orange" : "red";
   }
 
   if (loading) {
@@ -284,6 +356,45 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   }
 
   const currentStep = inProgressStep || readyStep;
+  const blockedStep = workOrders.find(
+    (workOrder) => workOrder.status === "Blocked" || workOrder.blocked_reason
+  );
+  const totalPaid = payments.reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0
+  );
+  const orderTotal = Number(order?.order_total || order?.total_amount || 0);
+  const recordedPaid = Math.max(totalPaid, Number(order?.amount_paid || 0));
+  const balanceDue = Math.max(
+    0,
+    Number.isFinite(Number(order?.balance_due)) && order?.balance_due !== null
+      ? Number(order.balance_due)
+      : orderTotal - recordedPaid
+  );
+  const designReady =
+    order?.design_needed === false ||
+    ["Existing Design", "Ready for Laser", "Approved", "Completed"].includes(
+      order?.design_status
+    );
+  const paymentReady =
+    orderTotal === 0 ||
+    order?.deposit_received ||
+    recordedPaid > 0 ||
+    order?.final_payment_received;
+  const materialsReady =
+    materialRequests.length === 0 ||
+    materialRequests.every((request) =>
+      ["Fulfilled", "Received", "Completed", "Cancelled"].includes(request.status)
+    );
+  const nextAction = blockedStep
+    ? `Resolve ${blockedStep.step_name || blockedStep.department}: ${blockedStep.blocked_reason || "production is blocked"}`
+    : inProgressStep
+      ? `Complete ${inProgressStep.step_name || inProgressStep.department}`
+      : readyStep
+        ? `Start ${readyStep.step_name || readyStep.department}`
+        : workOrders.length > 0 && completedSteps === workOrders.length
+          ? "Complete final office closeout"
+          : "Review the production route and assign the next station";
 
   return (
     <>
@@ -313,6 +424,22 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
           {errorMessage}
         </Alert>
       )}
+
+      <Alert
+        mb="lg"
+        color={blockedStep ? "red" : inProgressStep ? "blue" : "orange"}
+        icon={<IconRoute size={20} />}
+        title="Next Action"
+      >
+        <Group justify="space-between" align="center" gap="md">
+          <Text fw={800}>{nextAction}</Text>
+          {currentStep?.assigned_to && (
+            <Badge color="dark" variant="filled">
+              Owner: {currentStep.assigned_to}
+            </Badge>
+          )}
+        </Group>
+      </Alert>
 
       <MWSection
         title="Production Overview"
@@ -390,6 +517,60 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
         </SimpleGrid>
       </MWSection>
 
+      <MWSection
+        title="Release Readiness"
+        subtitle="The checks that should be clear before work advances"
+        mt="lg"
+      >
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+          {[
+            {
+              label: "Artwork / Approval",
+              value: order?.design_status || (order?.design_needed === false ? "On file" : "Not recorded"),
+              complete: designReady,
+              icon: IconClipboardCheck,
+            },
+            {
+              label: "Payment",
+              value: paymentReady ? `${money(recordedPaid)} received` : "Deposit not recorded",
+              complete: paymentReady,
+              icon: IconCash,
+            },
+            {
+              label: "Materials",
+              value: materialRequests.length
+                ? `${materialRequests.filter((request) => ["Fulfilled", "Received", "Completed"].includes(request.status)).length}/${materialRequests.length} ready`
+                : "No request required",
+              complete: materialsReady,
+              icon: IconPackage,
+            },
+            {
+              label: "Station Assignment",
+              value: currentStep?.assigned_to || "Not assigned",
+              complete: Boolean(currentStep?.assigned_to) || completedSteps === workOrders.length,
+              warning: true,
+              icon: IconUser,
+            },
+          ].map((check) => {
+            const CheckIcon = check.icon;
+            return (
+              <Paper key={check.label} withBorder radius="lg" p="md">
+                <Group wrap="nowrap" align="flex-start">
+                  <CheckIcon size={22} color={check.complete ? "#40c057" : check.warning ? "#fab005" : "#fa5252"} />
+                  <div>
+                    <Text size="xs" fw={900} c="dimmed">{check.label.toUpperCase()}</Text>
+                    <Text fw={900}>{check.value}</Text>
+                    <Badge mt={6} color={readinessColor(check.complete, check.warning)} variant="light">
+                      {check.complete ? "Ready" : check.warning ? "Needs owner" : "Needs attention"}
+                    </Badge>
+                  </div>
+                </Group>
+              </Paper>
+            );
+          })}
+        </SimpleGrid>
+      </MWSection>
+
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mt="lg">
         <Stack gap="lg">
           <MWSection title="Customer & Order" subtitle="Source order information">
@@ -415,13 +596,21 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                   <Text size="xs" fw={800} c="dimmed">
                     PHONE
                   </Text>
-                  <Text fw={700}>{customer?.phone || "Not provided"}</Text>
+                  {customer?.phone ? (
+                    <Button component="a" href={`tel:${customer.phone}`} variant="subtle" color="gray" p={0} leftSection={<IconPhone size={15} />}>
+                      {customer.phone}
+                    </Button>
+                  ) : <Text fw={700}>Not provided</Text>}
                 </div>
                 <div>
                   <Text size="xs" fw={800} c="dimmed">
                     EMAIL
                   </Text>
-                  <Text fw={700}>{customer?.email || "Not provided"}</Text>
+                  {customer?.email ? (
+                    <Button component="a" href={`mailto:${customer.email}`} variant="subtle" color="gray" p={0} leftSection={<IconMail size={15} />}>
+                      {customer.email}
+                    </Button>
+                  ) : <Text fw={700}>Not provided</Text>}
                 </div>
                 <div>
                   <Text size="xs" fw={800} c="dimmed">
@@ -521,6 +710,86 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
         </MWSection>
       </SimpleGrid>
 
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mt="lg">
+        <MWSection
+          title="Artwork & Reference Files"
+          subtitle={`${referenceImages.length} connected file${referenceImages.length === 1 ? "" : "s"}`}
+        >
+          {referenceImages.length === 0 ? (
+            <Card withBorder radius="lg" p="xl">
+              <Stack align="center" gap="xs">
+                <IconPhoto size={30} color="#8b8f97" />
+                <Text c="dimmed">No artwork or customer reference image is attached.</Text>
+              </Stack>
+            </Card>
+          ) : (
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              {referenceImages.map((image) => (
+                <Card key={image.id} withBorder radius="lg" p="xs">
+                  <Image src={image.image_url} alt={image.caption || image.image_type || "Order artwork"} h={190} fit="contain" radius="md" />
+                  <Group justify="space-between" mt="sm" wrap="nowrap">
+                    <div>
+                      <Text fw={800} lineClamp={1}>{image.caption || image.image_type || "Reference file"}</Text>
+                      <Text size="xs" c="dimmed">{image.show_on_work_order ? "Included on work order" : "Internal reference"}</Text>
+                    </div>
+                    <Button component="a" href={image.image_url} target="_blank" rel="noreferrer" variant="subtle" color="gray" px="xs" aria-label="Open file">
+                      <IconExternalLink size={18} />
+                    </Button>
+                  </Group>
+                </Card>
+              ))}
+            </SimpleGrid>
+          )}
+        </MWSection>
+
+        <MWSection title="Payment & Balance" subtitle="Amounts recorded against the source order">
+          <SimpleGrid cols={3} spacing="sm" mb="md">
+            <Paper withBorder p="md" radius="lg"><Text size="xs" c="dimmed" fw={900}>ORDER TOTAL</Text><Text fw={900} fz="lg">{money(orderTotal)}</Text></Paper>
+            <Paper withBorder p="md" radius="lg"><Text size="xs" c="dimmed" fw={900}>PAID</Text><Text fw={900} fz="lg" c="green">{money(recordedPaid)}</Text></Paper>
+            <Paper withBorder p="md" radius="lg"><Text size="xs" c="dimmed" fw={900}>BALANCE</Text><Text fw={900} fz="lg" c={balanceDue > 0 ? "orange" : "green"}>{money(balanceDue)}</Text></Paper>
+          </SimpleGrid>
+          <Stack gap="xs">
+            {payments.length === 0 ? <Text c="dimmed">No individual payment entries are recorded.</Text> : payments.map((payment) => (
+              <Group key={payment.id} justify="space-between" p="sm" style={{ borderBottom: "1px solid var(--mantine-color-dark-4)" }}>
+                <div><Text fw={800}>{payment.payment_type || "Payment"}</Text><Text size="xs" c="dimmed">{formatDate(payment.payment_date)} · {payment.payment_method || "Method not entered"}</Text></div>
+                <Text fw={900} c="green">{money(payment.amount)}</Text>
+              </Group>
+            ))}
+          </Stack>
+        </MWSection>
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mt="lg">
+        <MWSection title="Material Readiness" subtitle="Requests connected to this order or production job">
+          <Stack gap="sm">
+            {materialRequests.length === 0 ? <Text c="dimmed">No material request is connected. This job can use stock or does not require a request.</Text> : materialRequests.map((request) => (
+              <Card key={request.id} withBorder radius="lg" p="md">
+                <Group justify="space-between" align="flex-start">
+                  <div><Text fw={900}>{request.request_number || request.source_title || "Material request"}</Text><Text size="sm" c="dimmed">{request.item_count || request.material_request_items?.length || 0} items · Needed {formatDate(request.needed_by)}</Text></div>
+                  <Badge color={statusColor(request.status)} variant="light">{request.status || "Open"}</Badge>
+                </Group>
+                {(request.shortage_count > 0 || request.blocked_work) && <Alert mt="sm" color="orange" icon={<IconAlertTriangle size={16} />}>{request.shortage_count || 0} shortages recorded{request.blocked_work ? " · Production blocked" : ""}</Alert>}
+              </Card>
+            ))}
+          </Stack>
+        </MWSection>
+
+        <MWSection title="Workflow History" subtitle="Who changed the job and when">
+          <Stack gap="sm">
+            {activity.length === 0 ? <Text c="dimmed">No workflow activity has been recorded yet.</Text> : activity.slice(0, 12).map((entry) => (
+              <Group key={entry.id} align="flex-start" wrap="nowrap">
+                <IconHistory size={18} color="#ff2b2b" style={{ marginTop: 3 }} />
+                <div style={{ flex: 1 }}>
+                  <Group justify="space-between" gap="sm"><Text fw={800}>{entry.event_type?.replaceAll("_", " ") || "Workflow update"}</Text><Text size="xs" c="dimmed">{formatDate(entry.created_at, true)}</Text></Group>
+                  <Text size="sm" c="dimmed">{[entry.from_department && entry.to_department ? `${entry.from_department} → ${entry.to_department}` : null, entry.from_status && entry.to_status ? `${entry.from_status} → ${entry.to_status}` : null, entry.actor ? `by ${entry.actor}` : null].filter(Boolean).join(" · ")}</Text>
+                  {entry.notes && <Text size="sm" mt={3}>{entry.notes}</Text>}
+                </div>
+              </Group>
+            ))}
+          </Stack>
+        </MWSection>
+      </SimpleGrid>
+
       <MWSection
         title="Production Route"
         subtitle={`${completedSteps} of ${workOrders.length} workflow steps completed`}
@@ -579,6 +848,17 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                     <Text size="xs" c="dimmed">
                       {workOrder.work_order_number || "Work order number not set"}
                     </Text>
+
+                    <SimpleGrid cols={2} spacing="xs">
+                      <div><Text size="xs" c="dimmed" fw={800}>OWNER</Text><Text size="sm" fw={700}>{workOrder.assigned_to || "Unassigned"}</Text></div>
+                      <div><Text size="xs" c="dimmed" fw={800}>PRIORITY</Text><Text size="sm" fw={700}>{workOrder.priority || "Normal"}</Text></div>
+                    </SimpleGrid>
+
+                    {workOrder.blocked_reason && (
+                      <Alert color="red" icon={<IconAlertTriangle size={16} />}>
+                        {workOrder.blocked_reason}
+                      </Alert>
+                    )}
 
                     {(workOrder.started_at || workOrder.completed_at) && (
                       <Stack gap={4}>
