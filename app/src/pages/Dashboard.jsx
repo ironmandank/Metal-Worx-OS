@@ -986,6 +986,12 @@ function Dashboard({
     .filter((item) => Number(item.businessDaysInShop || 0) >= 12)
     .map((item) => ({ ...item, priority: "Critical", tag: "12+ Business Days" }));
   const artHotItems = [...hotArtwork, ...agedArtwork].slice(0, 10);
+  const wholeShopPriorities = [...hotItems, ...artHotItems].filter(
+    (item, index, items) => index === items.findIndex((candidate) =>
+      String(candidate.sourceType || candidate.dashboardGroup || "priority") === String(item.sourceType || item.dashboardGroup || "priority") &&
+      String(candidate.sourceId || candidate.id || candidate.title) === String(item.sourceId || item.id || item.title)
+    ),
+  );
   const fieldItems = schedule.slice(0, 5);
   const riskItems = [
     ...safeArray(huddle.blockers),
@@ -1124,8 +1130,8 @@ function Dashboard({
         "WHOLE-SHOP PRIORITIES:",
       ];
 
-      if (commitments.length) {
-        commitments.forEach((item) =>
+      if (wholeShopPriorities.length) {
+        wholeShopPriorities.forEach((item) =>
           lines.push(
             `- ${item.title || "Priority"} | Owner: ${item.owner || "Unassigned"} | ${item.nextAction || item.detail || "Needs attention"}`,
           ),
@@ -2067,7 +2073,7 @@ function Dashboard({
         <div className="mc-compact-huddle">
           <div className="mc-compact-huddle-copy">
             <strong>
-              {commitments.length} priorities · {huddleSummary.blockers || 0}{" "}
+              {wholeShopPriorities.length} priorities · {huddleSummary.blockers || 0}{" "}
               blockers · {huddleSummary.todayFieldWork || 0} field commitments
               today
             </strong>
