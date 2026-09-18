@@ -71,6 +71,7 @@ import MWSectionHeader from "../components/ui/MWSectionHeader";
 import MWStatPill from "../components/ui/MWStatPill";
 import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
+import ProjectActivityTimeline from "../components/ProjectActivityTimeline";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
 import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
@@ -3619,6 +3620,11 @@ function ProjectDetails({
           </Tabs.Panel>
 
           <Tabs.Panel value="activity">
+            <ProjectActivityTimeline
+              project={project}
+              materialRequests={materialRequests}
+            />
+            <Box display="none">
             <MWSection>
               <MWSectionHeader
                 title="Project Activity"
@@ -3710,6 +3716,7 @@ function ProjectDetails({
                 </Stack>
               )}
             </MWSection>
+            </Box>
           </Tabs.Panel>
 
           <Tabs.Panel value="notes">
