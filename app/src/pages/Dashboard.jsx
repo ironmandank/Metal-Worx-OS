@@ -54,7 +54,7 @@ const styles = `
   .mc-button.primary { border-color: #b60715; background: linear-gradient(180deg, #d30c1d, #8e000b); }
   .mc-button svg { width: 17px; height: 17px; }
   .mc-topbar {
-    position: relative; display: grid; grid-template-columns: minmax(0, 1fr);
+    position: relative; display: grid; grid-template-columns: minmax(310px, .85fr) minmax(520px, 1.15fr);
     align-items: center; gap: 9px; min-height: 88px; padding: 10px 14px;
     border: 1px solid var(--mc-line); border-radius: 8px;
     background:
@@ -196,6 +196,8 @@ const styles = `
   }
   .mc-link:hover { color: var(--mc-red); }
   .mc-leadership-updates { max-height: 560px; overflow-y: auto; padding: 10px; display: grid; gap: 9px; }
+  .mc-leadership-priority .mc-operating-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mc-leadership-priority .mc-operating-card { min-height: 94px; }
   .mc-update-card {
     display: grid; gap: 9px; padding: 12px; border: 1px solid #354149; border-left: 5px solid #4d5961;
     border-radius: 7px; background: linear-gradient(145deg, #151d22, #10161a);
@@ -386,7 +388,7 @@ const styles = `
     font-size: .58rem; font-weight: 800; letter-spacing: .16em; text-align: center; text-transform: uppercase;
   }
 
-  @media (max-width: 1500px) {
+  @media (max-width: 900px) {
     .mc-topbar { grid-template-columns: 1fr; overflow: visible; }
     .mc-brand { width: 100%; }
     .mc-top-actions {
@@ -405,6 +407,7 @@ const styles = `
   }
   @media (max-width: 760px) {
     .mc-operating-list { grid-template-columns: 1fr; }
+    .mc-leadership-priority .mc-operating-list { grid-template-columns: 1fr; }
     .mc-compact-huddle { align-items: stretch; flex-direction: column; }
     .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
     .mc-logo { width: 100%; padding: 0 14px; }
@@ -795,7 +798,6 @@ function Dashboard({
 
   const quotesNeededCount = Number(outsideSummary.quotesNeeded || 0);
   const approvalsPendingCount = Number(stats.approvalsPending || 0);
-  const quoteApprovalCount = quotesNeededCount + approvalsPendingCount;
   const outsideProductionCount = outsideProjects.filter((project) =>
     ["Design", "Welding / Fabrication", "Finish / Corrections", "Assembly"].includes(project.workflowStage),
   ).length;
@@ -812,9 +814,9 @@ function Dashboard({
       () => openOutsideWorkspace("estimates"),
     ],
     [
-      "Quotes & Approvals",
-      quoteApprovalCount,
-      `${quotesNeededCount} quotes to finish · ${approvalsPendingCount} awaiting approval`,
+      "Quote Workflow",
+      `${quotesNeededCount} / ${approvalsPendingCount}`,
+      "quotes to finish / awaiting approval",
       IconHammer,
       () => openOutsideWorkspace("approvals"),
     ],
@@ -840,9 +842,9 @@ function Dashboard({
       () => openOutsideWorkspace("field"),
     ],
     [
-      "Closeout",
-      unifiedCloseoutCount,
-      `${outsideSummary.paymentsDue || 0} payment actions need attention`,
+      "Closeout & Payments",
+      unifiedCloseoutCount + Number(outsideSummary.paymentsDue || 0),
+      `${unifiedCloseoutCount} closeouts · ${outsideSummary.paymentsDue || 0} payment actions`,
       IconClipboardList,
       () => openOutsideWorkspace("field"),
     ],
@@ -1027,15 +1029,37 @@ function Dashboard({
     return true;
   });
 
-  const leadershipExceptions = leadershipUpdates.filter(({ update }) =>
-    !update || Boolean(
-      update.leadership_attention_required ||
-      update.blockers ||
-      update.decisions_needed ||
-      update.schedule_change ||
-      update.budget_change,
-    ),
-  );
+  const leadershipExceptions = leadershipUpdates
+    .map(({ project, update }) => {
+      const explicitIssue =
+        update?.blockers ||
+        update?.decisions_needed ||
+        update?.schedule_change ||
+        update?.budget_change ||
+        (update?.leadership_attention_required ? "Leadership review was requested in the latest project update." : "");
+      const dueValue = project.next_action_date || project.target_completion_date || project.due_date;
+      const dueDate = dueValue ? new Date(dueValue) : null;
+      const overdue = Boolean(dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < new Date().setHours(0, 0, 0, 0));
+      const updateValue = update?.update_date || update?.created_at || project.updated_at || project.created_at;
+      const updateDate = updateValue ? new Date(updateValue) : null;
+      const updateAge = updateDate && !Number.isNaN(updateDate.getTime())
+        ? Math.max(0, Math.floor((Date.now() - updateDate.getTime()) / 86400000))
+        : null;
+      const stale = !update && updateAge !== null && updateAge >= 3;
+
+      if (explicitIssue) {
+        return { project, update, issue: explicitIssue, reason: "Decision / Blocker", rank: 0 };
+      }
+      if (overdue) {
+        return { project, update, issue: `Project action date passed ${new Date(dueValue).toLocaleDateString()}.`, reason: "Overdue", rank: 1 };
+      }
+      if (stale) {
+        return { project, update, issue: `No project update has been submitted in ${updateAge} days.`, reason: "Update Needed", rank: 2 };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.rank - right.rank);
 
   async function prepareLeadershipNotes() {
     setBriefOpen(true);
@@ -1270,28 +1294,27 @@ function Dashboard({
       <section className="mc-panel mc-leadership-priority">
         <PanelHead
           icon={IconFileDescription}
-          title="Leadership Attention"
-          subtitle="Projects missing an update or requiring a decision, schedule change, or blocker response"
-          action={`View All Projects (${outsideProjects.length})`}
+          title="Priority Exceptions"
+          subtitle="Only overdue work, stale projects, blockers, schedule changes, or decisions needing leadership"
+          action={`Open Outside Alerts (${leadershipExceptions.length})`}
           onAction={() => goToPage("projects")}
         />
         <div className="mc-operating-list">
           {leadershipExceptions.length === 0 ? (
-            <Empty compact text="No outside projects currently require leadership attention." />
+            <Empty compact text="No outside-project exceptions currently require leadership attention." />
           ) : (
-            leadershipExceptions.slice(0, 6).map(({ project, update }) => {
-              const issue = update?.blockers || update?.decisions_needed || update?.schedule_change || update?.budget_change || "Daily project update has not been submitted.";
+            leadershipExceptions.slice(0, 4).map(({ project, update, issue, reason }) => {
               return (
                 <button className="mc-operating-card" type="button" key={`leadership-${project.id}`} onClick={() => openProjectById(project.id)}>
                   <span className="mc-operating-card-head">
-                    <span className="mc-priority">Needs Attention</span>
+                    <span className="mc-priority">{reason}</span>
                     <span className="mc-tag amber">{project.workflowStage || project.status || "Active"}</span>
                   </span>
                   <strong className="mc-operating-card-title">{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
                   <span className="mc-operating-card-detail">{issue}</span>
                   <span className="mc-operating-card-foot">
                     <span>Owner: {update?.project_lead || project.assigned_to || "Unassigned"}</span>
-                    <span>{update?.update_date ? `Updated ${update.update_date}` : "Update missing"}</span>
+                    <span>{update?.update_date ? `Updated ${update.update_date}` : "Open to resolve"}</span>
                   </span>
                 </button>
               );
