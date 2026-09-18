@@ -11,6 +11,53 @@ function moneyValue(value) {
   return match ? Number(match[1].replace(/,/g, "")) : 0;
 }
 
+function allMoneyValues(value) {
+  return [...String(value || "").matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)/g)]
+    .map((match) => Number(match[1].replace(/,/g, "")));
+}
+
+function parseHourlyItem(lines) {
+  const hourlyLine = lines.map(cleanLine).find((line) => /^hourly\s+(?:rate|labor)\s*:/i.test(line));
+  if (!hourlyLine) return null;
+
+  const detail = hourlyLine.slice(hourlyLine.indexOf(":") + 1).trim();
+  const moneyValues = allMoneyValues(detail);
+  const unitMatch = detail.match(/\$\s*([\d,]+(?:\.\d{1,2})?)\s*\/\s*(?:hr|hour)/i);
+  const unitPrice = unitMatch ? Number(unitMatch[1].replace(/,/g, "")) : 0;
+  const hours = [...detail.matchAll(/([\d.]+)\s*(?:hrs?|hours?)\b/gi)]
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+  const quantity = hours.reduce((sum, value) => sum + value, 0);
+  const statedTotal = moneyValues.find((value) => !unitPrice || value !== unitPrice) || 0;
+
+  return {
+    item_type: "Service",
+    title: "Labor — Fabrication & Installation",
+    description: detail.replace(/^\$\s*[\d,]+(?:\.\d{1,2})?\s*/, "").trim(),
+    quantity: quantity || 1,
+    unit: quantity ? "Hour" : "Each",
+    unit_price: unitPrice || statedTotal,
+  };
+}
+
+function parseValidityDate(sourceText) {
+  const duration = String(sourceText || "").match(/valid\s+for\s+(?:[a-z]+\s*)?\((\d+)\)|valid\s+for\s+(\d+)\s+(?:working|business)\s+days?/i);
+  const start = String(sourceText || "").match(/beginning\s+(?:[a-z]+\s+)?(\d{1,2})\s+([a-z]{3,9})(?:\s+(\d{4}))?/i);
+  if (!duration || !start) return "";
+
+  const workingDays = Number(duration[1] || duration[2]);
+  const year = Number(start[3] || new Date().getFullYear());
+  const date = new Date(`${start[2]} ${start[1]}, ${year} 12:00:00`);
+  if (!Number.isFinite(workingDays) || Number.isNaN(date.getTime())) return "";
+
+  let remaining = Math.max(workingDays - 1, 0);
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    if (date.getDay() !== 0 && date.getDay() !== 6) remaining -= 1;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 function fieldValue(lines, labels) {
   const lowered = labels.map((label) => label.toLowerCase());
   for (const source of lines) {
@@ -31,6 +78,8 @@ function sectionLines(lines, headingNames) {
     "scope of work",
     "process",
     "project process",
+    "next steps & process",
+    "next steps and process",
     "schedule",
     "specifications",
     "included services",
@@ -90,6 +139,7 @@ export function emptyOrganizedQuote() {
     down_payment_terms: "",
     payment_terms: "",
     price_notes: "",
+    valid_until: "",
     tax_rate: 0.07,
   };
 }
@@ -109,6 +159,9 @@ export function organizeQuoteText(sourceText) {
   if (itemText || rateText) {
     result.items.push(inferPrimaryItem(itemText || "Quoted Work", rateText));
   }
+
+  const hourlyItem = parseHourlyItem(lines);
+  if (hourlyItem) result.items.push(hourlyItem);
 
   lines.forEach((source) => {
     const line = cleanLine(source);
@@ -131,9 +184,13 @@ export function organizeQuoteText(sourceText) {
   });
 
   const scope = sectionLines(lines, ["Project Scope", "Scope of Work"]);
-  result.scope_of_work = scope.join("\n");
+  const summaryScope = fieldValue(lines, ["Scope of Work"]);
+  result.scope_of_work = [summaryScope, ...scope]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .join("\n");
 
-  const process = sectionLines(lines, ["Process", "Project Process", "Schedule"]);
+  const process = sectionLines(lines, ["Process", "Project Process", "Next Steps & Process", "Next Steps and Process", "Schedule"]);
   result.project_schedule = process.join("\n");
 
   const specifications = sectionLines(lines, ["Specifications"]);
@@ -147,14 +204,14 @@ export function organizeQuoteText(sourceText) {
   result.down_payment_terms = fieldValue(lines, ["Down Payment", "Deposit", "Deposit Required"]);
   result.payment_terms = fieldValue(lines, ["Payment Terms"]);
 
-  const totalLine = lines.map(cleanLine).find((line) => /^total\s*:/i.test(line));
+  const totalLine = lines.map(cleanLine).find((line) => /^(?:estimated\s+)?total\s*:/i.test(line));
   result.price_notes = totalLine || "";
+  result.valid_until = parseValidityDate(sourceText);
   if (/tax[- ]?exempt|no\s+sales\s+tax/i.test(sourceText)) result.tax_rate = 0;
 
-  if (!result.quote_title) {
+  if (!result.quote_title && result.items[0]?.title !== "Labor — Fabrication & Installation") {
     result.quote_title = result.items[0]?.title || "Imported Quote";
   }
 
   return result;
 }
-

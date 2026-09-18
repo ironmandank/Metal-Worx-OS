@@ -536,6 +536,7 @@ function QuoteBuilder({
 
     try {
       const organized = organizeQuoteText(pasteQuoteText);
+      let importedItemCount = 0;
       const fieldMap = {
         quote_title: organized.quote_title,
         project_name: organized.quote_title,
@@ -549,6 +550,7 @@ function QuoteBuilder({
         down_payment_terms: organized.down_payment_terms,
         payment_terms: organized.payment_terms,
         price_notes: organized.price_notes,
+        valid_until: organized.valid_until,
       };
 
       setQuote((current) => {
@@ -563,7 +565,12 @@ function QuoteBuilder({
       });
 
       if (organized.items.length > 0) {
-        const payload = organized.items.map((item, index) => ({
+        const importedItems = organized.items.filter((item) => !items.some((existing) => (
+          String(existing.title || "").trim().toLowerCase() === String(item.title || "").trim().toLowerCase() &&
+          Number(existing.quantity || 0) === Number(item.quantity || 1) &&
+          Number(existing.unit_price || 0) === Number(item.unit_price || 0)
+        )));
+        const payload = importedItems.map((item, index) => ({
           quote_id: quote.id,
           item_type: item.item_type || "Base",
           title: item.title || "Quoted Work",
@@ -576,14 +583,17 @@ function QuoteBuilder({
           show_on_pdf: true,
           sort_order: items.length + index + 1,
         }));
-        const { error } = await supabase.from("project_quote_items").insert(payload);
-        if (error) throw error;
-        await loadItems(quote.id);
+        if (payload.length > 0) {
+          const { error } = await supabase.from("project_quote_items").insert(payload);
+          if (error) throw error;
+          await loadItems(quote.id);
+        }
+        importedItemCount = payload.length;
       }
 
       notifications.show({
         title: "Quote Details Organized",
-        message: `${organized.items.length} line item${organized.items.length === 1 ? " was" : "s were"} added. Review every field, then save the quote.`,
+        message: `${importedItemCount} new line item${importedItemCount === 1 ? " was" : "s were"} added. Existing matching items were not duplicated. Review every field, then save the quote.`,
         color: "green",
       });
       setPasteQuoteText("");
