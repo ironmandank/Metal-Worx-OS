@@ -606,9 +606,9 @@ function DepartmentQueue({
     const materialsReady = materials.length === 0 || materialBlockers.length === 0;
 
     return (
-      <Card key={workOrder.id} withBorder radius="lg" p="lg">
-        <Stack gap="sm">
-          <Group justify="space-between">
+      <Card key={workOrder.id} withBorder radius="lg" p="md">
+        <Stack gap="xs">
+          <Group justify="space-between" align="flex-start" wrap="wrap">
             <Group gap="xs">
               <Badge color={getStatusColor(workOrder.status)} variant="light">
                 {workOrder.status}
@@ -636,7 +636,7 @@ function DepartmentQueue({
             <Text size="xs" c="dimmed">{getStationAge(workOrder)}</Text>
           </Group>
 
-          <Title order={3} style={{ lineHeight: 1.25, overflowWrap: "anywhere" }}>
+          <Title order={4} style={{ lineHeight: 1.2, overflowWrap: "anywhere" }}>
             {customerName} — {project?.project_name || productNames}
           </Title>
 
@@ -661,38 +661,37 @@ function DepartmentQueue({
             </Text>
           </Stack>
 
-          <Card withBorder radius="md" p="sm">
-            <Group justify="space-between">
+          <Card withBorder radius="md" p="xs">
+            <SimpleGrid cols={2} spacing={6}>
+            <Group justify="space-between" wrap="nowrap">
               <Text size="sm">Due Date</Text>
 
               <Text size="sm" fw={700}>
                 {formatDate(job?.due_date)}
               </Text>
             </Group>
-
-            <Group justify="space-between" mt="xs">
+            <Group justify="space-between" wrap="nowrap">
               <Text size="sm">Job Progress</Text>
 
               <Text size="sm" fw={700}>
                 {job?.progress_percent || 0}%
               </Text>
             </Group>
-
-            <Group justify="space-between" mt="xs">
+            <Group justify="space-between" wrap="nowrap">
               <Group gap={6}>
                 <IconUserCheck size={15} />
                 <Text size="sm">Assigned To</Text>
               </Group>
               <Text size="sm" fw={700}>{workOrder.assigned_to || "Unassigned"}</Text>
             </Group>
-
-            <Group justify="space-between" mt="xs">
+            <Group justify="space-between" wrap="nowrap">
               <Group gap={6}>
                 <IconClock size={15} />
                 <Text size="sm">Station Time</Text>
               </Group>
               <Text size="sm" fw={700}>{getStationAge(workOrder)}</Text>
             </Group>
+            </SimpleGrid>
 
             <Progress
               mt="xs"
@@ -703,33 +702,33 @@ function DepartmentQueue({
             />
           </Card>
 
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <Paper withBorder radius="md" p="sm">
+          <SimpleGrid cols={2} spacing="xs">
+            <Paper withBorder radius="md" p="xs">
               <Text size="xs" fw={900} c="dimmed">MATERIALS</Text>
-              <Group justify="space-between" mt={4}>
-                <Text size="sm" fw={700}>
+              <Stack gap={3} mt={4}>
+                <Text size="xs" fw={700}>
                   {materials.length ? `${materials.length} request${materials.length === 1 ? "" : "s"}` : "No request required"}
                 </Text>
-                <Badge color={materialsReady ? "green" : "orange"} variant="light">
+                <Badge size="sm" w="fit-content" color={materialsReady ? "green" : "orange"} variant="light">
                   {materialsReady ? "Ready" : `${materialBlockers.length} need attention`}
                 </Badge>
-              </Group>
+              </Stack>
             </Paper>
-            <Paper withBorder radius="md" p="sm">
+            <Paper withBorder radius="md" p="xs">
               <Text size="xs" fw={900} c="dimmed">ARTWORK / FILES</Text>
-              <Group justify="space-between" mt={4}>
-                <Text size="sm" fw={700}>{images.length} attached</Text>
-                <Badge color={images.length ? "blue" : "gray"} variant="light">
+              <Stack gap={3} mt={4}>
+                <Text size="xs" fw={700}>{images.length} attached</Text>
+                <Badge size="sm" w="fit-content" color={images.length ? "blue" : "gray"} variant="light">
                   {images.length ? "Available" : "None"}
                 </Badge>
-              </Group>
+              </Stack>
             </Paper>
           </SimpleGrid>
 
           {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
-            <Paper withBorder radius="md" p="sm">
+            <Paper withBorder radius="md" p="xs">
               <Text size="xs" fw={900} c="dimmed">SPECIAL INSTRUCTIONS</Text>
-              <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>
+              <Text size="xs" mt={4} lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
                 {[order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
                   .filter(Boolean)
                   .join("\n")}
@@ -743,8 +742,8 @@ function DepartmentQueue({
                 <IconPhoto size={16} />
                 <Text size="sm" fw={800}>Artwork & Reference Files</Text>
               </Group>
-              <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
-                {images.slice(0, 3).map((image) => (
+              <SimpleGrid cols={3} spacing="xs">
+                {images.slice(0, 2).map((image) => (
                   <Card
                     key={image.id}
                     component="a"
@@ -758,7 +757,7 @@ function DepartmentQueue({
                     <Image
                       src={image.image_url}
                       alt={image.caption || image.image_type || "Order reference"}
-                      h={96}
+                      h={58}
                       fit="contain"
                       radius="sm"
                     />
@@ -768,8 +767,9 @@ function DepartmentQueue({
                   </Card>
                 ))}
               </SimpleGrid>
-              {images.length > 3 && (
-                <Text size="xs" c="dimmed" mt={4}>Open Job to view all {images.length} files.</Text>
+                {images.length > 2 && <Paper withBorder radius="md" p="xs" style={{ display:"grid", placeItems:"center", minHeight:82 }}><Text size="sm" fw={900}>+{images.length - 2}<br/><Text component="span" size="xs" c="dimmed">more</Text></Text></Paper>}
+              {images.length > 2 && (
+                <Text size="xs" c="dimmed" mt={4}>Open Job to view every attachment.</Text>
               )}
             </div>
           )}
@@ -780,19 +780,19 @@ function DepartmentQueue({
             </Alert>
           )}
 
-          <Group gap="xs" wrap="wrap">
+          <SimpleGrid cols={2} spacing="xs">
             {!workOrder.assigned_to && (
-              <Button size="xs" variant="light" leftSection={<IconUserCheck size={15} />} onClick={() => claimWorkOrder(workOrder)}>
+              <Button fullWidth size="xs" variant="light" leftSection={<IconUserCheck size={15} />} onClick={() => claimWorkOrder(workOrder)}>
                 Claim
               </Button>
             )}
             {isAdministrator && (
-              <Button size="xs" variant="subtle" color="orange" leftSection={<IconFlag size={15} />} onClick={() => togglePriority(workOrder)}>
+              <Button fullWidth size="xs" variant="subtle" color="orange" leftSection={<IconFlag size={15} />} onClick={() => togglePriority(workOrder)}>
                 {workOrder.priority === "High" ? "Normal Priority" : "Mark High Priority"}
               </Button>
             )}
             <Button
-              size="xs"
+              fullWidth size="xs"
               variant="subtle"
               color="gray"
               leftSection={<IconNotes size={15} />}
@@ -805,7 +805,7 @@ function DepartmentQueue({
             </Button>
             {isAdministrator && (
               <Button
-                size="xs"
+                fullWidth size="xs"
                 variant="subtle"
                 color="orange"
                 leftSection={<IconRoute size={15} />}
@@ -818,11 +818,11 @@ function DepartmentQueue({
               </Button>
             )}
             {workOrder.status === "Blocked" ? (
-              <Button size="xs" color="green" variant="light" onClick={() => resumeWorkOrder(workOrder)}>Resume Work</Button>
+              <Button fullWidth size="xs" color="green" variant="light" onClick={() => resumeWorkOrder(workOrder)}>Resume Work</Button>
             ) : (
-              <Button size="xs" color="red" variant="subtle" onClick={() => blockWorkOrder(workOrder)}>Mark Blocked</Button>
+              <Button fullWidth size="xs" color="red" variant="subtle" onClick={() => blockWorkOrder(workOrder)}>Mark Blocked</Button>
             )}
-          </Group>
+          </SimpleGrid>
 
           <Group grow wrap="wrap">
             <Button

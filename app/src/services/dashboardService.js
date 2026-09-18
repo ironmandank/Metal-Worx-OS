@@ -540,9 +540,7 @@ function buildPriorityRow(record, sourceType) {
       : "No time set",
     hoursRemaining,
     dateReceived: record.date_received || record.created_at || null,
-    daysInShop: record.date_received
-      ? Math.max(0, Math.floor((startOfToday().getTime() - new Date(`${record.date_received}T12:00:00`).getTime()) / 86400000))
-      : 0,
+    daysInShop: businessDaysSince(record.date_received || record.created_at),
     hotReasonCategory: record.hot_reason_category || "Deadline",
   };
 }
@@ -600,17 +598,7 @@ function buildPriorityFeed(
   };
 }
 
-function buildArtHotItems(manualItems, customerOrders, customerMap) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const windowEnd = new Date(today);
-  windowEnd.setDate(windowEnd.getDate() + 14);
-  const closedStatuses = new Set([
-    "completed",
-    "cancelled",
-    "closed",
-    "office closeout complete",
-  ]);
+function buildArtHotItems(manualItems) {
   const priorityOrder = { Critical: 0, High: 1, Normal: 2 };
 
   const manual = (manualItems || [])
@@ -635,38 +623,7 @@ function buildArtHotItems(manualItems, customerOrders, customerMap) {
       manual: true,
     }));
 
-  const datedOrders = (customerOrders || [])
-    .filter((order) => {
-      if (!order.due_date || order.fulfillment_completed) return false;
-      if (closedStatuses.has(String(order.status || "").trim().toLowerCase())) return false;
-      const due = new Date(`${order.due_date}T12:00:00`);
-      return !Number.isNaN(due.getTime()) && due <= windowEnd;
-    })
-    .map((order) => {
-      const customer = customerMap.get(order.customer_id);
-      const customerName = customer?.company_name ||
-        [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") ||
-        customer?.contact_name || "Customer";
-      return {
-        id: `order-${order.id}`,
-        sourceType: "customerOrder",
-        sourceId: order.id,
-        title: [order.order_number, order.order_type].filter(Boolean).join(" — ") || `Order #${order.id}`,
-        customer: customerName,
-        owner: order.order_owner || "Unassigned",
-        fulfillmentMethod: order.fulfillment_method || "Pickup",
-        dueDate: order.due_date,
-        dueDisplay: new Date(`${order.due_date}T12:00:00`).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
-        priority: order.rush || order.is_quick_turnaround ? "Critical" : "High",
-        notes: order.notes || "",
-        manual: false,
-      };
-    });
-
-  return [...manual, ...datedOrders]
+  return manual
     .sort((a, b) => {
       const dateA = a.dueDate ? new Date(`${a.dueDate}T12:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
       const dateB = b.dueDate ? new Date(`${b.dueDate}T12:00:00`).getTime() : Number.MAX_SAFE_INTEGER;
@@ -1494,11 +1451,7 @@ export async function getDashboardData() {
     console.warn("Hot Artwork dashboard feed unavailable:", artHotItemsResult.error);
   }
 
-  const artHotItems = buildArtHotItems(
-    artHotItemsResult.data || [],
-    customerOrders,
-    customerMap
-  );
+  const artHotItems = buildArtHotItems(artHotItemsResult.data || []);
 
   function getCustomerName(customerId) {
     const customer =

@@ -44,6 +44,9 @@ const styles = `
   .tv-list li { padding:13px 16px; border-bottom:1px solid #273036; font-size:clamp(14px,1vw,19px); line-height:1.25; }
   .tv-list strong { display:block; color:#fff; }
   .tv-list small { display:block; margin-top:4px; color:#9ba5ac; font-size:.82em; }
+  .tv-age { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px; color:#d9e0e4; background:#273138; font-size:.76em; font-weight:900; }
+  .tv-age.watch { color:#ffd083; background:#4b3300; }
+  .tv-age.hot { color:#fff; background:#9b0010; }
   .tv-empty { padding:28px 16px; color:#8c979f; font-size:18px; text-align:center; }
   .tv-foot { margin-top:12px; color:#76828a; font-size:12px; text-align:center; text-transform:uppercase; letter-spacing:.15em; }
   @media(max-width:1400px){ .tv-kpis{grid-template-columns:repeat(4,1fr)} .tv-grid{grid-template-columns:1fr 1fr} }
@@ -52,7 +55,7 @@ const styles = `
     .tv-head{align-items:stretch;flex-direction:column;padding:13px}
     .tv-brand{align-items:center;gap:10px}.tv-brand img{width:92px;height:40px}.tv-brand h1{font-size:20px;line-height:1.1}.tv-brand p{font-size:13px}
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
-    .tv-summary{padding:14px}.tv-summary p{font-size:17px;line-height:1.42}
+    .tv-summary{padding:10px 12px}.tv-summary p{font-size:15px;line-height:1.3}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
     .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-list li{padding:12px;font-size:15px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
@@ -101,7 +104,7 @@ export default function MorningHuddleTV({ setPage }) {
   const huddle = data?.morningHuddle || {};
   const summary = huddle.summary || {};
   const projects = data?.outsideProjects || [];
-  const priorityItems = data?.priorityFeed?.combined || [];
+  const priorityItems = data?.priorityFeed?.quickCommitments || [];
   const artworkOrders = data?.artworkOrders || [];
   const projectLeadCount = new Set(projects.map((project) => String(project.owner || project.assigned_to || "").trim()).filter(Boolean)).size;
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
@@ -136,7 +139,7 @@ export default function MorningHuddleTV({ setPage }) {
     </section>
     <section className="tv-grid">
       <div className="tv-panel"><h2><IconClipboardCheck/> Hot Artwork This Week</h2>{priorities.length ? <ul className="tv-list">{priorities.map((x,i)=><li key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.owner)} · {text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop · {text(x.hotReasonCategory,"Deadline")} · {text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></li>)}</ul>:<div className="tv-empty">No artwork has been marked hot for this week.</div>}</div>
-      <div className="tv-panel"><h2><IconClipboardCheck/> Artwork Orders</h2>{regularArtwork.length ? <ul className="tv-list">{regularArtwork.map((x)=><li key={x.id}><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.customer,"Customer not entered")} · {x.businessDaysInShop || 0} business days · {text(x.department,"Not released")} · Lead: {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No regular artwork orders are waiting outside the hot list.</div>}</div>
+      <div className="tv-panel"><h2><IconClipboardCheck/> Artwork Orders</h2>{regularArtwork.length ? <ul className="tv-list">{regularArtwork.map((x)=>{const age=Number(x.businessDaysInShop||0);return <li key={x.id}><strong>{text(x.title,"Artwork order")}<span className={`tv-age ${age>=10?"watch":""}`}>{age} business day{age===1?"":"s"}</span></strong><small>{text(x.customer,"Customer not entered")} · {text(x.department,"Not released")} · Lead: {text(x.owner)}{x.dueDate?` · Requested ${dateOnly(x.dueDate)}`:" · No requested date"}</small></li>})}</ul>:<div className="tv-empty">No regular artwork orders are waiting outside the hot list.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Production by Station</h2>{shopWorkload.length ? <ul className="tv-list">{shopWorkload.map((item)=><li key={item.name}><strong>{item.name}: {item.count}</strong><small>{item.ready || 0} ready · {item.inProgress || 0} active · {item.onHold || 0} on hold</small></li>)}</ul>:<div className="tv-empty">Artwork has not been released into a production station yet.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <ul className="tv-list">{field.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Field activity")}</strong><small>{dateOnly(x.start || x.date || x.dueDate)} · {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No field work scheduled today.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Pre-Quote Site Visits</h2>{siteVisits.length ? <ul className="tv-list">{siteVisits.slice(0,8).map((visit)=><li key={visit.id}><strong>{text(visit.customer_name,"Potential job")}</strong><small>{dateOnly(visit.requested_visit_date)} · {text(visit.assigned_estimator)} · {text(visit.job_site_address,"Address not entered")}</small></li>)}</ul>:<div className="tv-empty">No open pre-quote site visits.</div>}</div>

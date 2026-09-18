@@ -972,10 +972,20 @@ function Dashboard({
     : outsideProjects;
 
   const hotItems = attention.slice(0, 5);
-  const artHotItems = safeArray(dashboardData?.artHotItems).slice(0, 10);
-  const commitments = safeArray(huddle.todayFocus).length
-    ? safeArray(huddle.todayFocus).slice(0, 5)
-    : hotItems.slice(0, 5);
+  const artworkOrders = safeArray(dashboardData?.artworkOrders);
+  const hotArtwork = safeArray(dashboardData?.priorityFeed?.quickCommitments);
+  const hotArtworkIds = new Set(hotArtwork.map((item) => String(item.sourceId || "")).filter(Boolean));
+  const hotArtworkTitles = new Set(hotArtwork.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
+  const regularArtwork = artworkOrders
+    .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
+    .filter((item) => Number(item.businessDaysInShop || 0) < 12)
+    .sort((left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0))
+    .slice(0, 10);
+  const agedArtwork = artworkOrders
+    .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
+    .filter((item) => Number(item.businessDaysInShop || 0) >= 12)
+    .map((item) => ({ ...item, priority: "Critical", tag: "12+ Business Days" }));
+  const artHotItems = [...hotArtwork, ...agedArtwork].slice(0, 10);
   const fieldItems = schedule.slice(0, 5);
   const riskItems = [
     ...safeArray(huddle.blockers),
@@ -986,8 +996,8 @@ function Dashboard({
 
   const todayGroups = {
     "Hot Today": hotItems,
-    Commitments: commitments,
-    "Dated Orders": artHotItems,
+    "Hot Artwork": artHotItems,
+    "Artwork Orders": regularArtwork,
     "Field Work": fieldItems,
     Blockers: riskItems,
   };
@@ -1168,7 +1178,7 @@ function Dashboard({
           lines.push(`Budget change: ${update.budget_change}`);
       });
 
-      lines.push("", "HOT ARTWORK & DATED SHOP ORDERS:");
+      lines.push("", "HOT ARTWORK:");
       if (artHotItems.length) {
         artHotItems.forEach((item) =>
           lines.push(
@@ -1177,8 +1187,15 @@ function Dashboard({
         );
       } else {
         lines.push(
-          "- No hot artwork or approaching dated shop orders are recorded.",
+          "- No artwork has been marked hot and no artwork has reached 12 business days.",
         );
+      }
+
+      lines.push("", "REGULAR ARTWORK ORDERS:");
+      if (regularArtwork.length) {
+        regularArtwork.forEach((item) => lines.push(`- ${item.title} | ${item.customer || "Customer not entered"} | ${item.businessDaysInShop || 0} business days | ${item.department || "Not released"} | Lead: ${item.owner || "Unassigned"}`));
+      } else {
+        lines.push("- No regular artwork orders are waiting outside the hot list.");
       }
 
       lines.push(
@@ -1393,7 +1410,11 @@ function Dashboard({
                 type="button"
                 key={`${item.dashboardGroup}-${item.id || item.sourceId || index}`}
                 onClick={() => {
-                  if (item.dashboardGroup === "Dated Orders") {
+                  if (item.dashboardGroup === "Hot Artwork") {
+                    goToPage("quickTurnaround");
+                    return;
+                  }
+                  if (item.dashboardGroup === "Artwork Orders") {
                     if (item.sourceType === "customerOrder")
                       openOrderById(item.sourceId);
                     else goToPage("quickTurnaround");
