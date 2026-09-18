@@ -353,6 +353,7 @@ function ProjectDetails({
   setPage,
   setSelectedProductionJob,
   activeUser,
+  accessLevel,
 }) {
   const [project, setProject] = useState(selectedProject || null);
 
@@ -387,6 +388,12 @@ function ProjectDetails({
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [closingProject, setClosingProject] = useState(false);
+  const [closeoutModalOpen, setCloseoutModalOpen] = useState(false);
+  const [closeoutBypassReason, setCloseoutBypassReason] = useState("");
+  const [closeoutError, setCloseoutError] = useState("");
+  const isAdministrator = String(accessLevel || "")
+    .toLowerCase()
+    .includes("admin");
 
   async function releaseProjectProduction() {
     if (!project?.id || !productionReady || releasingProduction) return;
@@ -582,24 +589,56 @@ function ProjectDetails({
     }
   }
 
-  async function completeProjectCloseout() {
+  function requestProjectCloseout() {
+    const total = Number(project?.contract_total || 0);
+    const remaining = Math.max(Number(project?.balance_due || 0), 0);
+
+    if (total <= 0 || remaining > 0) {
+      if (!isAdministrator) {
+        notifications.show({
+          title: "Administrator Approval Required",
+          message: "Only an Administrator can close a project with a $0.00 total or remaining balance.",
+          color: "orange",
+        });
+        return;
+      }
+      setCloseoutBypassReason("");
+      setCloseoutError("");
+      setCloseoutModalOpen(true);
+      return;
+    }
+
+    completeProjectCloseout();
+  }
+
+  async function completeProjectCloseout({ financialBypass = false } = {}) {
     if (!project?.id || closingProject) return;
+
+    if (financialBypass && !closeoutBypassReason.trim()) {
+      setCloseoutError("Enter a reason for closing with an unsettled or $0.00 total.");
+      return;
+    }
 
     setClosingProject(true);
     try {
       const { error } = await supabase.rpc("mw_complete_project_closeout", {
         p_project_id: Number(project.id),
         p_closed_by: activeUser || project.assigned_to || null,
+        p_allow_financial_bypass: financialBypass,
+        p_bypass_reason: financialBypass ? closeoutBypassReason.trim() : null,
       });
 
       if (error) throw error;
 
       notifications.show({
         title: "Office Closeout Completed",
-        message: `${project.project_number || "The project"} is now completed.`,
+        message: financialBypass
+          ? `${project.project_number || "The project"} is completed. The financial warning and bypass reason were recorded.`
+          : `${project.project_number || "The project"} is now completed.`,
         color: "green",
         icon: <IconCheck size={18} />,
       });
+      setCloseoutModalOpen(false);
       setPage("dashboard");
     } catch (error) {
       notifications.show({
@@ -1331,6 +1370,20 @@ function ProjectDetails({
           ? `Created by ${project.intake_owner}`
           : "Project entered into Metal Worx OS",
         color: "gray",
+      });
+    }
+
+    if (project?.completed_at) {
+      activity.push({
+        id: "project-completed",
+        date: project.completed_at,
+        title: project.closeout_financial_bypass
+          ? "Project closed with financial override"
+          : "Project closeout completed",
+        detail: project.closeout_financial_bypass
+          ? `${project.closed_by || "Authorized user"} closed the project with ${money(project.balance_due)} remaining. Reason: ${project.closeout_bypass_reason || "Not recorded"}`
+          : `Closed by ${project.closed_by || "Metal Worx"}`,
+        color: project.closeout_financial_bypass ? "orange" : "green",
       });
     }
 
@@ -2563,8 +2616,7 @@ function ProjectDetails({
                       </Button>
                     </Group>
 
-                    {Number(project.balance_due || 0) <= 0 &&
-                      (!project.install_required ||
+                    {(!project.install_required ||
                         project.install_status === "Completed") &&
                       ["Passed", "Not Required"].includes(
                         project.final_inspection_status || "Not Required",
@@ -2595,8 +2647,13 @@ function ProjectDetails({
                                   Ready to Close
                                 </Text>
                                 <Text size="sm" c="gray.3">
-                                  Installation, inspection, and payment are
-                                  complete.
+                                  Installation and inspection are complete.
+                                  {Number(project.contract_total || 0) <= 0 ||
+                                  Number(project.balance_due || 0) > 0
+                                    ? isAdministrator
+                                      ? " Review the financial warning or close with a recorded override."
+                                      : " An Administrator must approve the financial override."
+                                    : " Payment is complete."}
                                 </Text>
                               </Box>
                             </Group>
@@ -2605,7 +2662,7 @@ function ProjectDetails({
                               fullWidth
                               loading={closingProject}
                               leftSection={<IconClipboardCheck size={17} />}
-                              onClick={completeProjectCloseout}
+                              onClick={requestProjectCloseout}
                               styles={{
                                 root: {
                                   height: "auto",
@@ -3709,6 +3766,69 @@ function ProjectDetails({
               onClick={recordProjectPayment}
             >
               Record Payment
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={closeoutModalOpen}
+        onClose={() => {
+          if (!closingProject) setCloseoutModalOpen(false);
+        }}
+        title="Confirm Financial Closeout Override"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <Alert color="orange" icon={<IconActivity size={18} />}>
+            This project has a financial warning. You may still close it, but
+            the amounts, your name, reason, and closeout time will be recorded.
+          </Alert>
+
+          <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+            <Card withBorder radius="md" p="md">
+              <Text size="xs" c="dimmed" fw={800} tt="uppercase">Contract Total</Text>
+              <Text fw={900} size="lg">{money(project.contract_total)}</Text>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text size="xs" c="dimmed" fw={800} tt="uppercase">Amount Paid</Text>
+              <Text fw={900} size="lg" c="green">{money(project.amount_paid)}</Text>
+            </Card>
+            <Card withBorder radius="md" p="md">
+              <Text size="xs" c="dimmed" fw={800} tt="uppercase">Remaining</Text>
+              <Text fw={900} size="lg" c={Number(project.balance_due || 0) > 0 ? "red" : "orange"}>
+                {money(project.balance_due)}
+              </Text>
+            </Card>
+          </SimpleGrid>
+
+          {closeoutError && <Alert color="red">{closeoutError}</Alert>}
+
+          <Textarea
+            label="Reason for closing anyway"
+            description="Required for the project audit history."
+            placeholder="Example: Warranty work, no-charge project, or balance approved for separate collection."
+            required
+            minRows={3}
+            value={closeoutBypassReason}
+            onChange={(event) => {
+              setCloseoutBypassReason(event.currentTarget.value);
+              setCloseoutError("");
+            }}
+          />
+
+          <Group justify="flex-end">
+            <Button variant="light" color="gray" disabled={closingProject} onClick={() => setCloseoutModalOpen(false)}>
+              Keep Project Open
+            </Button>
+            <Button
+              color="orange"
+              loading={closingProject}
+              leftSection={<IconClipboardCheck size={17} />}
+              onClick={() => completeProjectCloseout({ financialBypass: true })}
+            >
+              Close Anyway
             </Button>
           </Group>
         </Stack>
