@@ -23,7 +23,6 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { getDashboardData } from "../services/dashboardService";
-import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
 const styles = `
   .mc-page, .mc-page * { box-sizing: border-box; }
@@ -54,8 +53,8 @@ const styles = `
   .mc-button.primary { border-color: #b60715; background: linear-gradient(180deg, #d30c1d, #8e000b); }
   .mc-button svg { width: 17px; height: 17px; }
   .mc-topbar {
-    position: relative; display: grid; grid-template-columns: minmax(310px, .85fr) minmax(520px, 1.15fr);
-    align-items: center; gap: 9px; min-height: 88px; padding: 10px 14px;
+    position: relative; display: grid; grid-template-columns: minmax(250px, 1fr) auto;
+    align-items: center; gap: 18px; min-height: 76px; padding: 12px 14px;
     border: 1px solid var(--mc-line); border-radius: 8px;
     background:
       linear-gradient(90deg, rgba(7,11,14,.94), rgba(13,19,23,.96)),
@@ -71,33 +70,30 @@ const styles = `
     mask-image: linear-gradient(90deg, transparent 28%, #000 60%, transparent);
   }
   .mc-brand {
-    position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr;
-    align-items: center; justify-content: center; min-width: 0; width: 100%;
-    margin: 0 auto;
+    position: relative; z-index: 1; display: block; min-width: 0;
   }
-  .mc-logo {
-    width: 100%; height: 50px; padding: 2px 26px; object-fit: contain; object-position: center;
-    border-right: 1px solid #3c454d;
+  .mc-title-block { min-width: 0; padding: 0; text-align: left; }
+  .mc-title-block small {
+    display: block; margin-bottom: 3px; color: var(--mc-red); font-size: .58rem;
+    font-weight: 900; letter-spacing: .13em; text-transform: uppercase;
   }
-  .mc-title-block { min-width: 0; padding: 0 26px; text-align: center; }
   .mc-title-block strong {
-    display: block; color: var(--mc-red); font-size: clamp(1.15rem, 1.55vw, 1.55rem);
-    letter-spacing: .045em; text-transform: uppercase; line-height: 1.05; white-space: nowrap;
+    display: block; color: #f4f6f7; font-size: clamp(1.1rem, 1.45vw, 1.42rem);
+    letter-spacing: .01em; line-height: 1.05; white-space: nowrap;
   }
-  .mc-title-block span { display: block; margin-top: 5px; color: #dce1e5; font-size: .92rem; white-space: nowrap; }
+  .mc-title-block span { display: block; margin-top: 5px; color: #84919a; font-size: .66rem; white-space: nowrap; }
   .mc-top-actions {
-    position: relative; z-index: 1; display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    align-items: stretch; width: 100%; gap: 8px;
+    position: relative; z-index: 1; display: flex;
+    align-items: stretch; justify-content: flex-end; width: auto; gap: 7px;
   }
-  .mc-top-actions > * { min-width: 0; width: 100%; }
+  .mc-top-actions > * { min-width: 0; }
   .mc-top-actions .mc-button { white-space: normal; line-height: 1.15; }
   .mc-clock {
     min-height: 38px; border: 1px solid #46515a; border-radius: 7px; background: rgba(18,25,29,.92);
   }
   .mc-clock {
     display: grid; grid-template-columns: 1fr; place-items: center; gap: 2px;
-    min-width: 148px; padding: 6px 10px; text-align: center;
+    min-width: 126px; padding: 5px 10px; text-align: center;
   }
   .mc-clock b { font-size: .66rem; white-space: nowrap; }
   .mc-clock strong { color: #fff; font-size: .9rem; white-space: nowrap; }
@@ -198,6 +194,23 @@ const styles = `
   .mc-leadership-updates { max-height: 560px; overflow-y: auto; padding: 10px; display: grid; gap: 9px; }
   .mc-leadership-priority .mc-operating-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mc-leadership-priority .mc-operating-card { min-height: 94px; }
+  .mc-exception-list { display: grid; }
+  .mc-exception-row {
+    display: grid; grid-template-columns: 118px minmax(220px, 1.1fr) minmax(230px, 1.45fr) 120px auto;
+    align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 12px;
+    border: 0; border-bottom: 1px solid #303a41; border-left: 4px solid var(--mc-red);
+    color: inherit; text-align: left; background: transparent; cursor: pointer;
+  }
+  .mc-exception-row:hover { background: rgba(255,255,255,.025); }
+  .mc-exception-row:last-child { border-bottom: 0; }
+  .mc-exception-project, .mc-exception-issue { min-width: 0; }
+  .mc-exception-project strong, .mc-exception-project small, .mc-exception-issue {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mc-exception-project strong { font-size: .72rem; }
+  .mc-exception-project small, .mc-exception-owner { color: #82909a; font-size: .59rem; }
+  .mc-exception-issue { color: #c6cdd2; font-size: .65rem; }
+  .mc-exception-open { color: #ff727d; font-size: .61rem; font-weight: 900; white-space: nowrap; }
   .mc-update-card {
     display: grid; gap: 9px; padding: 12px; border: 1px solid #354149; border-left: 5px solid #4d5961;
     border-radius: 7px; background: linear-gradient(145deg, #151d22, #10161a);
@@ -388,12 +401,12 @@ const styles = `
     font-size: .58rem; font-weight: 800; letter-spacing: .16em; text-align: center; text-transform: uppercase;
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 980px) {
     .mc-topbar { grid-template-columns: 1fr; overflow: visible; }
     .mc-brand { width: 100%; }
     .mc-top-actions {
       width: 100%;
-      grid-template-columns: minmax(138px, .8fr) minmax(150px, 1fr) minmax(185px, 1.25fr) minmax(88px, .65fr);
+      display: grid; grid-template-columns: minmax(126px, .8fr) repeat(3, minmax(120px, 1fr));
       justify-content: stretch;
     }
     .mc-top-actions > * { min-width: 0; width: 100%; }
@@ -408,10 +421,12 @@ const styles = `
   @media (max-width: 760px) {
     .mc-operating-list { grid-template-columns: 1fr; }
     .mc-leadership-priority .mc-operating-list { grid-template-columns: 1fr; }
+    .mc-exception-row { grid-template-columns: 1fr auto; gap: 6px 10px; }
+    .mc-exception-issue { grid-column: 1 / -1; white-space: normal; }
+    .mc-exception-owner { grid-column: 1; }
     .mc-compact-huddle { align-items: stretch; flex-direction: column; }
-    .mc-brand { width: 100%; grid-template-columns: minmax(100px, .8fr) minmax(0, 1.2fr); }
-    .mc-logo { width: 100%; padding: 0 14px; }
-    .mc-title-block { padding: 0 14px; }
+    .mc-brand { width: 100%; }
+    .mc-title-block { padding: 0; }
     .mc-title-block span { font-size: .84rem; }
     .mc-title-block strong, .mc-title-block span { white-space: normal; }
     .mc-top-actions { grid-template-columns: 1fr 1fr; width: 100%; }
@@ -425,8 +440,7 @@ const styles = `
   }
   @media (max-width: 500px) {
     .mc-brand { align-items: center; }
-    .mc-logo { width: 100%; height: 46px; padding: 0 10px; }
-    .mc-title-block { padding: 0 10px; }
+    .mc-title-block { padding: 0; }
     .mc-top-actions { grid-template-columns: 1fr; }
     .mc-clock { grid-column: auto; }
     .mc-kpi { min-height: 82px; }
@@ -1219,10 +1233,10 @@ function Dashboard({
 
       <header className="mc-topbar">
         <div className="mc-brand">
-          <img className="mc-logo" src={metalWorxLogo} alt="Metal Worx" />
           <div className="mc-title-block">
-            <strong>Metal Worx OS</strong>
-            <span>Operations Command Center</span>
+            <small>Metal Worx OS</small>
+            <strong>Operations Dashboard</strong>
+            <span>Live priorities, workflow, field work, and closeout</span>
           </div>
         </div>
 
@@ -1299,23 +1313,21 @@ function Dashboard({
           action={`Open Outside Alerts (${leadershipExceptions.length})`}
           onAction={() => goToPage("projects")}
         />
-        <div className="mc-operating-list">
+        <div className="mc-exception-list">
           {leadershipExceptions.length === 0 ? (
             <Empty compact text="No outside-project exceptions currently require leadership attention." />
           ) : (
             leadershipExceptions.slice(0, 4).map(({ project, update, issue, reason }) => {
               return (
-                <button className="mc-operating-card" type="button" key={`leadership-${project.id}`} onClick={() => openProjectById(project.id)}>
-                  <span className="mc-operating-card-head">
-                    <span className="mc-priority">{reason}</span>
-                    <span className="mc-tag amber">{project.workflowStage || project.status || "Active"}</span>
+                <button className="mc-exception-row" type="button" key={`leadership-${project.id}`} onClick={() => openProjectById(project.id)}>
+                  <span className="mc-priority">{reason}</span>
+                  <span className="mc-exception-project">
+                    <strong>{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
+                    <small>{project.workflowStage || project.status || "Active"}</small>
                   </span>
-                  <strong className="mc-operating-card-title">{project.project_number || "Project"} — {project.project_name || project.contact_name || "Unnamed project"}</strong>
-                  <span className="mc-operating-card-detail">{issue}</span>
-                  <span className="mc-operating-card-foot">
-                    <span>Owner: {update?.project_lead || project.assigned_to || "Unassigned"}</span>
-                    <span>{update?.update_date ? `Updated ${update.update_date}` : "Open to resolve"}</span>
-                  </span>
+                  <span className="mc-exception-issue">{issue}</span>
+                  <span className="mc-exception-owner">Owner: {update?.project_lead || project.assigned_to || "Unassigned"}</span>
+                  <span className="mc-exception-open">Open ›</span>
                 </button>
               );
             })
