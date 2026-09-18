@@ -23,6 +23,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { getDashboardData } from "../services/dashboardService";
+import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
 const styles = `
   .mc-page, .mc-page * { box-sizing: border-box; }
@@ -70,9 +71,13 @@ const styles = `
     mask-image: linear-gradient(90deg, transparent 28%, #000 60%, transparent);
   }
   .mc-brand {
-    position: relative; z-index: 1; display: block; min-width: 0;
+    position: relative; z-index: 1; display: flex; align-items: center; min-width: 0;
   }
-  .mc-title-block { min-width: 0; padding: 0; text-align: left; }
+  .mc-logo {
+    width: 150px; height: 42px; padding-right: 16px; object-fit: contain; object-position: center;
+    border-right: 1px solid #3c454d; flex: 0 0 auto;
+  }
+  .mc-title-block { min-width: 0; padding: 0 0 0 16px; text-align: left; }
   .mc-title-block small {
     display: block; margin-bottom: 3px; color: var(--mc-red); font-size: .58rem;
     font-weight: 900; letter-spacing: .13em; text-transform: uppercase;
@@ -426,7 +431,8 @@ const styles = `
     .mc-exception-owner { grid-column: 1; }
     .mc-compact-huddle { align-items: stretch; flex-direction: column; }
     .mc-brand { width: 100%; }
-    .mc-title-block { padding: 0; }
+    .mc-logo { width: 132px; height: 40px; padding-right: 12px; }
+    .mc-title-block { padding-left: 12px; }
     .mc-title-block span { font-size: .84rem; }
     .mc-title-block strong, .mc-title-block span { white-space: normal; }
     .mc-top-actions { grid-template-columns: 1fr 1fr; width: 100%; }
@@ -440,7 +446,10 @@ const styles = `
   }
   @media (max-width: 500px) {
     .mc-brand { align-items: center; }
-    .mc-title-block { padding: 0; }
+    .mc-logo { width: 108px; height: 36px; padding-right: 10px; }
+    .mc-title-block { padding-left: 10px; }
+    .mc-title-block strong { white-space: normal; }
+    .mc-title-block span { display: none; }
     .mc-top-actions { grid-template-columns: 1fr; }
     .mc-clock { grid-column: auto; }
     .mc-kpi { min-height: 82px; }
@@ -1233,6 +1242,7 @@ function Dashboard({
 
       <header className="mc-topbar">
         <div className="mc-brand">
+          <img className="mc-logo" src={metalWorxLogo} alt="Metal Worx" />
           <div className="mc-title-block">
             <small>Metal Worx OS</small>
             <strong>Operations Dashboard</strong>
