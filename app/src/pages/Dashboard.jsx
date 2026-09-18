@@ -407,7 +407,7 @@ const styles = `
     font-size: .58rem; font-weight: 800; letter-spacing: .16em; text-align: center; text-transform: uppercase;
   }
 
-  @media (max-width: 980px) {
+  @media (max-width: 1240px) {
     .mc-topbar { grid-template-columns: 1fr; overflow: visible; }
     .mc-brand { width: 100%; }
     .mc-top-actions {
