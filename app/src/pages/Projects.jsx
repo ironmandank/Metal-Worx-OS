@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   FileButton,
   Group,
   Loader,
@@ -13,6 +14,7 @@ import {
   SegmentedControl,
   SimpleGrid,
   ScrollArea,
+  Select,
   Stack,
   Text,
   TextInput,
@@ -31,6 +33,7 @@ import {
   IconChevronRight,
   IconMapPin,
   IconMail,
+  IconNotes,
   IconPackage,
   IconPhone,
   IconPrinter,
@@ -62,6 +65,17 @@ const CALENDAR_TYPES = [
   { label: "Install & Field Work", color: "#0ca6a6", terms: ["install", "field", "site"] },
   { label: "Other Project", color: "#66717a", terms: [] },
 ];
+
+function updateAgeLabel(update) {
+  if (!update?.update_date) return { label: "No daily update", color: "red" };
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const date = new Date(`${String(update.update_date).slice(0, 10)}T12:00:00`);
+  const days = Math.max(0, Math.round((today - date) / 86400000));
+  if (days === 0) return { label: "Updated today", color: "green" };
+  if (days === 1) return { label: "Updated yesterday", color: "blue" };
+  return { label: `${days} days since update`, color: days >= 3 ? "red" : "orange" };
+}
 
 const OUTSIDE_WORKSPACES = [
   {
@@ -239,6 +253,14 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [archiveTarget, setArchiveTarget] = useState(null);
   const [archiveReason, setArchiveReason] = useState("");
   const [archivingProject, setArchivingProject] = useState(false);
+  const [updateTarget, setUpdateTarget] = useState(null);
+  const [quickUpdate, setQuickUpdate] = useState({ status: "On Track", work_completed: "", work_in_progress: "", next_steps: "", blockers: "", leadership_attention_required: false });
+  const [savingQuickUpdate, setSavingQuickUpdate] = useState(false);
+  const [declineTarget, setDeclineTarget] = useState(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineAction, setDeclineAction] = useState("Follow Up");
+  const [savingDecline, setSavingDecline] = useState(false);
+  const [restoringProjectId, setRestoringProjectId] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -315,7 +337,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           supabase
             .from("project_daily_updates")
             .select(
-              "project_id, update_date, status, leadership_attention_required, created_at"
+              "project_id, update_date, status, work_completed, work_in_progress, next_steps, blockers, leadership_attention_required, project_lead, created_at"
             )
             .in("project_id", projectIds)
             .order("update_date", { ascending: false })
@@ -982,6 +1004,89 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     }
   }
 
+  function openQuickUpdate(project) {
+    setUpdateTarget(project);
+    setQuickUpdate({ status: "On Track", work_completed: "", work_in_progress: "", next_steps: "", blockers: "", leadership_attention_required: false });
+  }
+
+  async function saveQuickProjectUpdate() {
+    if (!updateTarget?.id || savingQuickUpdate) return;
+    const hasContent = [quickUpdate.work_completed, quickUpdate.work_in_progress, quickUpdate.next_steps, quickUpdate.blockers].some((value) => value.trim());
+    if (!hasContent) {
+      notifications.show({ title: "Update Is Blank", message: "Enter at least one update or next step.", color: "orange" });
+      return;
+    }
+    setSavingQuickUpdate(true);
+    try {
+      const { error } = await supabase.from("project_daily_updates").insert({
+        project_id: updateTarget.id,
+        project_lead: updateTarget.assigned_to || activeUserName,
+        update_date: new Date().toISOString().slice(0, 10),
+        status: quickUpdate.status,
+        work_completed: quickUpdate.work_completed.trim() || null,
+        work_in_progress: quickUpdate.work_in_progress.trim() || null,
+        next_steps: quickUpdate.next_steps.trim() || null,
+        blockers: quickUpdate.blockers.trim() || null,
+        leadership_attention_required: quickUpdate.leadership_attention_required || quickUpdate.status === "Blocked",
+      });
+      if (error) throw error;
+      setUpdateTarget(null);
+      await loadProjects();
+      notifications.show({ title: "Project Update Saved", message: "The Operations Board and leadership report are current.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Update Could Not Be Saved", message: error.message, color: "red" });
+    } finally {
+      setSavingQuickUpdate(false);
+    }
+  }
+
+  async function recordQuoteDecline() {
+    if (!declineTarget?.id || !declineReason.trim() || savingDecline) return;
+    setSavingDecline(true);
+    try {
+      const quoteId = trackingByProject[declineTarget.id]?.latestQuote?.id;
+      if (quoteId) {
+        const { error } = await supabase.from("project_quotes").update({ status: "Declined" }).eq("id", quoteId);
+        if (error) throw error;
+      }
+      const note = `[Quote declined ${new Date().toLocaleString()}] Recorded by ${activeUserName}. Reason: ${declineReason.trim()}`;
+      const { error } = await supabase.from("projects").update({
+        quote_status: "Declined",
+        approval_status: "Declined",
+        next_action: declineAction === "Revise Quote" ? "Revise and resend customer quote" : "Follow up on declined quote",
+        notes: [declineTarget.notes, note].filter(Boolean).join("\n"),
+      }).eq("id", declineTarget.id);
+      if (error) throw error;
+      if (declineAction === "Archive Project") {
+        const { error: archiveError } = await supabase.rpc("mw_archive_project", { p_project_id: Number(declineTarget.id), p_reason: `Customer declined quote: ${declineReason.trim()}`, p_archived_by: activeUserName });
+        if (archiveError) throw archiveError;
+      }
+      setDeclineTarget(null);
+      setDeclineReason("");
+      await loadProjects();
+      notifications.show({ title: "Quote Decision Recorded", message: declineAction === "Archive Project" ? "The project was moved to Archived." : `The project is ready to ${declineAction.toLowerCase()}.`, color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Decision Could Not Be Saved", message: error.message, color: "red" });
+    } finally {
+      setSavingDecline(false);
+    }
+  }
+
+  async function restoreArchivedProject(project) {
+    if (!isAdministrator || restoringProjectId) return;
+    setRestoringProjectId(project.id);
+    try {
+      const { error } = await supabase.rpc("mw_restore_archived_project", { p_project_id: Number(project.id) });
+      if (error) throw error;
+      await loadProjects();
+      notifications.show({ title: "Project Restored", message: "The project is active and back on the Operations Board.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Project Could Not Be Restored", message: error.message, color: "red" });
+    } finally {
+      setRestoringProjectId(null);
+    }
+  }
+
   if (loading) {
     return (
       <Stack gap="xl">
@@ -1273,6 +1378,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                 const phase = getOutsidePhase(operationalProject);
                 const nextDate = getOutsideNextDate(project);
                 const needsAttention = tracking.blocked > 0 || tracking.latestUpdate?.leadership_attention_required;
+                const updateAge = updateAgeLabel(tracking.latestUpdate);
                 return <Card key={project.id} withBorder p="md" radius="lg" onClick={() => openProject(project)} style={{ cursor: "pointer", borderColor: needsAttention ? "var(--mantine-color-red-6)" : undefined }}>
                   <Stack gap="xs">
                     <Group justify="space-between" align="flex-start"><Badge color={phase.color}>{phase.label}</Badge>{project.priority === "Rush" && <Badge color="red">Rush</Badge>}</Group>
@@ -1280,13 +1386,22 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     <Text size="sm" c="dimmed">Owner: {project.assigned_to || project.intake_owner || "Unassigned"}</Text>
                     <Text size="sm" fw={800}>{project.next_action || getSuggestedNextAction(operationalProject)}</Text>
                     <Text size="xs" c="dimmed">Next date: {formatDate(nextDate)}</Text>
+                    <Card withBorder radius="md" p="xs" bg="rgba(255,255,255,.025)">
+                      <Group justify="space-between" gap="xs" mb={4}>
+                        <Text size="xs" fw={800}>Latest Update</Text>
+                        <Badge size="xs" color={updateAge.color}>{updateAge.label}</Badge>
+                      </Group>
+                      <Text size="xs" c="dimmed" lineClamp={2}>
+                        {tracking.latestUpdate?.work_in_progress || tracking.latestUpdate?.next_steps || tracking.latestUpdate?.work_completed || "No project update has been entered."}
+                      </Text>
+                    </Card>
                     <Group gap="xs">
                       {needsAttention && <Badge color="red">Attention</Badge>}
                       {phase.key === "quote_approval" && <Badge color={approvalStatus === "Approved" ? "green" : "gray"}>Approval: {approvalStatus || "Pending"}</Badge>}
                       {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"}>Deposit</Badge>}
                       {Number(project.balance_due || 0) > 0 && <Badge color="yellow">{money(project.balance_due)} due</Badge>}
                     </Group>
-                    <Group grow gap="xs" mt={6}>
+                    <SimpleGrid cols={isAdministrator ? 3 : 2} spacing="xs" mt={6}>
                       <Button
                         size="xs"
                         color="red"
@@ -1296,6 +1411,18 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         }}
                       >
                         Open Project
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="blue"
+                        leftSection={<IconNotes size={14} />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openQuickUpdate(project);
+                        }}
+                      >
+                        Update
                       </Button>
                       {isAdministrator && (
                         <Button
@@ -1311,7 +1438,22 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           Archive
                         </Button>
                       )}
-                    </Group>
+                    </SimpleGrid>
+                    {phase.key === "quote_approval" && (
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="orange"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeclineTarget(project);
+                          setDeclineReason("");
+                          setDeclineAction("Follow Up");
+                        }}
+                      >
+                        Record Quote Declined
+                      </Button>
+                    )}
                   </Stack>
                 </Card>;
               })}
@@ -1456,6 +1598,50 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             <Button color="orange" loading={archivingProject} disabled={!archiveReason.trim()} onClick={confirmArchiveProject}>
               Archive Project
             </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={Boolean(updateTarget)}
+        onClose={() => !savingQuickUpdate && setUpdateTarget(null)}
+        title="Add Today’s Project Update"
+        centered
+        size="lg"
+      >
+        <Stack>
+          <Text fw={900}>{updateTarget?.project_name || updateTarget?.project_number}</Text>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Select label="Overall Status" allowDeselect={false} value={quickUpdate.status} data={["On Track", "At Risk", "Blocked", "Complete"]} onChange={(value) => setQuickUpdate((current) => ({ ...current, status: value || "On Track" }))} />
+            <Checkbox mt={30} label="Leadership attention required" checked={quickUpdate.leadership_attention_required} onChange={(event) => setQuickUpdate((current) => ({ ...current, leadership_attention_required: event.currentTarget.checked }))} />
+            <Textarea label="Completed Today" minRows={3} value={quickUpdate.work_completed} onChange={(event) => setQuickUpdate((current) => ({ ...current, work_completed: event.currentTarget.value }))} />
+            <Textarea label="Currently In Progress" minRows={3} value={quickUpdate.work_in_progress} onChange={(event) => setQuickUpdate((current) => ({ ...current, work_in_progress: event.currentTarget.value }))} />
+            <Textarea label="Next Steps" minRows={3} value={quickUpdate.next_steps} onChange={(event) => setQuickUpdate((current) => ({ ...current, next_steps: event.currentTarget.value }))} />
+            <Textarea label="Blockers" minRows={3} value={quickUpdate.blockers} onChange={(event) => setQuickUpdate((current) => ({ ...current, blockers: event.currentTarget.value }))} />
+          </SimpleGrid>
+          <Group justify="flex-end">
+            <Button variant="default" disabled={savingQuickUpdate} onClick={() => setUpdateTarget(null)}>Cancel</Button>
+            <Button color="red" loading={savingQuickUpdate} onClick={saveQuickProjectUpdate}>Save Today’s Update</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={Boolean(declineTarget)}
+        onClose={() => !savingDecline && setDeclineTarget(null)}
+        title="Record Customer Quote Decision"
+        centered
+      >
+        <Stack>
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
+            Record why the quote was declined and choose what should happen next.
+          </Alert>
+          <Text fw={900}>{declineTarget?.project_name || declineTarget?.project_number}</Text>
+          <Textarea label="Reason quote was declined" required minRows={4} placeholder="Price, timing, scope changed, no response, chose another vendor…" value={declineReason} onChange={(event) => setDeclineReason(event.currentTarget.value)} />
+          <Select label="Next action" allowDeselect={false} value={declineAction} data={["Follow Up", "Revise Quote", ...(isAdministrator ? ["Archive Project"] : [])]} onChange={(value) => setDeclineAction(value || "Follow Up")} />
+          <Group justify="flex-end">
+            <Button variant="default" disabled={savingDecline} onClick={() => setDeclineTarget(null)}>Cancel</Button>
+            <Button color="orange" loading={savingDecline} disabled={!declineReason.trim()} onClick={recordQuoteDecline}>Save Decision</Button>
           </Group>
         </Stack>
       </Modal>
@@ -1768,15 +1954,26 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           Checklist & Updates
                         </Button>
                       )}
-                      <Button
+                      {viewMode !== "archived" && <Button
                         fullWidth
                         variant="light"
                         color="gray"
                         onClick={() => editProject(project)}
                       >
                         Edit Project
-                      </Button>
-                      {project.status === "Completed" ? (
+                      </Button>}
+                      {viewMode === "archived" && isAdministrator && (
+                        <Button
+                          fullWidth
+                          color="green"
+                          leftSection={<IconRotateClockwise size={17} />}
+                          loading={restoringProjectId === project.id}
+                          onClick={() => restoreArchivedProject(project)}
+                        >
+                          Restore Project
+                        </Button>
+                      )}
+                      {viewMode !== "archived" && (project.status === "Completed" ? (
                         <Button
                           fullWidth
                           variant="light"
@@ -1796,7 +1993,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         >
                           Mark Complete
                         </Button>
-                      )}
+                      ))}
                       {isAdministrator && viewMode !== "archived" && <Button
                         fullWidth
                         variant="subtle"
