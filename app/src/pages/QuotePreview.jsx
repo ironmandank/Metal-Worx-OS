@@ -228,6 +228,13 @@ function wordTextBlock(value) {
   return splitLines(value).map((line) => wordParagraph(line.replace(/^[-•]\s*/, ""), { after: 70 }));
 }
 
+function wordCenteredTextBlock(value) {
+  return splitLines(value).map((line) => wordParagraph(line.replace(/^[-•]\s*/, ""), {
+    after: 70,
+    alignment: AlignmentType.CENTER,
+  }));
+}
+
 function wordBulletBlock(value) {
   return splitLines(value).map((line) =>
     wordParagraph(line.replace(/^[-•]\s*/, ""), {
@@ -667,7 +674,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
               metadataTable,
               wordHeading("Project Summary"),
               ...wordTextBlock(quote.scope_of_work || "Project scope to be confirmed."),
-              ...(quote.specifications ? [wordHeading("Scope of Work"), ...wordTextBlock(quote.specifications)] : []),
+              ...(quote.specifications ? [wordHeading("Specifications"), ...wordTextBlock(quote.specifications)] : []),
               ...(quote.included_services ? [wordHeading("Included Services"), ...wordTextBlock(quote.included_services)] : []),
             ],
           },
@@ -691,8 +698,9 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
               ...(wordImageTable ? [wordHeading("Project Images and References"), wordImageTable] : []),
               ...(quote.assumptions ? [wordHeading("Assumptions"), ...wordBulletBlock(quote.assumptions)] : []),
               ...(quote.exclusions ? [wordHeading("Exclusions and Change Conditions"), ...wordBulletBlock(quote.exclusions)] : []),
+              ...(quote.safety_technical_notice ? [wordHeading("Safety and Technical Notice"), ...wordTextBlock(quote.safety_technical_notice)] : []),
               wordHeading("Payment Terms"),
-              ...wordTextBlock([quote.down_payment_terms, quote.payment_terms, quote.warranty_terms, quote.disclaimer].filter(Boolean).join("\n")),
+              ...wordCenteredTextBlock([quote.down_payment_terms, quote.payment_terms, quote.warranty_terms, quote.disclaimer].filter(Boolean).join("\n")),
               wordHeading("Acceptance"),
               ...wordTextBlock(quote.acceptance_terms || "By signing below, the customer accepts this quotation, its scope, price, and stated terms."),
               signatureTable,
@@ -1121,26 +1129,27 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           line-height: 1.35;
         }
 
-        .quote-terms-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
+        .quote-terms-list {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
           gap: 12px;
-          margin-top: 12px;
+          margin: 12px auto 0;
+          text-align: center;
         }
 
-        .quote-term-card {
-          border: 1px solid #777;
-          padding: 12px;
-          min-height: 100px;
+        .quote-term-block {
+          width: 100%;
+          padding: 0 20px;
         }
 
-        .quote-term-card h3 {
-          margin: 0 0 7px;
+        .quote-term-block h3 {
+          margin: 0 0 5px;
           font-size: 13px;
           text-transform: uppercase;
         }
 
-        .quote-term-card div {
+        .quote-term-block div {
           font-size: 12px;
           line-height: 1.45;
           white-space: pre-wrap;
@@ -1201,7 +1210,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           .quote-title-grid,
           .quote-info-table,
           .quote-price-band,
-          .quote-terms-grid,
+          .quote-terms-list,
           .quote-signatures {
             grid-template-columns: 1fr;
           }
@@ -1340,7 +1349,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           .quote-table tr,
           .quote-price-band,
           .quote-info-table,
-          .quote-term-card,
+          .quote-term-block,
           .quote-image-card,
           .quote-signatures {
             break-inside: avoid-page;
@@ -1356,22 +1365,21 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             height: 145px;
           }
 
-          .quote-terms-grid {
+          .quote-terms-list {
             gap: 8px;
             margin-top: 7px;
           }
 
-          .quote-term-card {
-            min-height: 0;
-            padding: 8px;
+          .quote-term-block {
+            padding: 0 8px;
           }
 
-          .quote-term-card h3 {
+          .quote-term-block h3 {
             margin-bottom: 4px;
             font-size: 11px;
           }
 
-          .quote-term-card div {
+          .quote-term-block div {
             font-size: 10px;
             line-height: 1.3;
           }
@@ -1740,27 +1748,27 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
           <section className="quote-section">
             <h2>Payment Terms</h2>
-            <div className="quote-terms-grid">
+            <div className="quote-terms-list">
               {quote.down_payment_terms && (
-                <div className="quote-term-card">
+                <div className="quote-term-block">
                   <h3>Down Payment</h3>
                   <div>{quote.down_payment_terms}</div>
                 </div>
               )}
               {quote.payment_terms && (
-                <div className="quote-term-card">
+                <div className="quote-term-block">
                   <h3>Payment Schedule</h3>
                   <div>{quote.payment_terms}</div>
                 </div>
               )}
               {quote.warranty_terms && (
-                <div className="quote-term-card">
+                <div className="quote-term-block">
                   <h3>Warranty</h3>
                   <div>{quote.warranty_terms}</div>
                 </div>
               )}
               {quote.disclaimer && (
-                <div className="quote-term-card">
+                <div className="quote-term-block">
                   <h3>Additional Terms</h3>
                   <div>{quote.disclaimer}</div>
                 </div>

@@ -184,6 +184,15 @@ const styles = `
   .mc-operating-card-head, .mc-operating-card-foot {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0;
   }
+  .mc-operating-card-badges { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; }
+  .mc-countdown {
+    display: inline-flex; align-items: center; min-height: 20px; padding: 0 7px; border-radius: 10px;
+    color: #d8e4eb; background: #26343d; font-size: .58rem; font-weight: 900; text-transform: uppercase; white-space: nowrap;
+  }
+  .mc-countdown.warning { color: #ffd06b; background: #4a3208; }
+  .mc-countdown.urgent { color: #fff0ad; background: #704900; }
+  .mc-countdown.today { color: #fff; background: #b50715; }
+  .mc-countdown.overdue { color: #fff; background: #d20b1c; box-shadow: 0 0 0 1px #ff5865; }
   .mc-operating-card-title {
     overflow: hidden; color: #f1f3f4; font-size: .76rem; line-height: 1.25;
     text-overflow: ellipsis; white-space: nowrap;
@@ -489,6 +498,32 @@ const outsideFlowIcons = [
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function getDeadlineCountdown(item) {
+  const rawValue = item?.deadlineAt ?? item?.dueAt ?? item?.dueDate ?? item?.sortDate;
+  if (!rawValue || rawValue === Number.MAX_SAFE_INTEGER) return null;
+
+  const target = new Date(
+    typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)
+      ? `${rawValue}T12:00:00`
+      : rawValue,
+  );
+  if (Number.isNaN(target.getTime())) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  const days = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+  if (days < 0) {
+    const overdueDays = Math.abs(days);
+    return { label: `${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`, tone: "overdue" };
+  }
+  if (days === 0) return { label: "Due today", tone: "today" };
+  if (days <= 3) return { label: `${days} day${days === 1 ? "" : "s"} left`, tone: "urgent" };
+  if (days <= 7) return { label: `${days} days left`, tone: "warning" };
+  return { label: `${days} days left`, tone: "scheduled" };
 }
 
 function getCloseoutCustomerName(customer) {
@@ -1410,7 +1445,9 @@ function Dashboard({
               text={`No ${todayView === "All" ? "operating items" : todayView.toLowerCase()} need attention.`}
             />
           ) : (
-            todayItems.map((item, index) => (
+            todayItems.map((item, index) => {
+              const countdown = getDeadlineCountdown(item);
+              return (
               <button
                 className="mc-operating-card"
                 type="button"
@@ -1437,7 +1474,10 @@ function Dashboard({
               >
                 <span className="mc-operating-card-head">
                   <span className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}>{item.dashboardGroup}</span>
-                  <span className={`mc-tag ${item.isToday ? "green" : ""}`}>{item.status || item.tag || (item.isToday ? "Today" : "Open")}</span>
+                  <span className="mc-operating-card-badges">
+                    {countdown && <span className={`mc-countdown ${countdown.tone}`}>{countdown.label}</span>}
+                    <span className={`mc-tag ${item.isToday ? "green" : ""}`}>{item.status || item.tag || (item.isToday ? "Today" : "Open")}</span>
+                  </span>
                 </span>
                 <strong className="mc-operating-card-title">{item.title || item.customer || item.job || "Work item"}</strong>
                 <span className="mc-operating-card-detail">{item.customer || item.detail || item.issue || item.location || item.type || "Metal Worx work item"}</span>
@@ -1446,7 +1486,8 @@ function Dashboard({
                   <span>{item.dueDisplay || item.nextAction || item.notes || item.date || item.day || "Date not set"}</span>
                 </span>
               </button>
-            ))
+              );
+            })
           )}
         </div>
       </section>

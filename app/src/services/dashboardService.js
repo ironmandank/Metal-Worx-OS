@@ -1600,6 +1600,10 @@ export async function getDashboardData() {
         next: action.nextAction,
         owner: action.owner,
         status: action.dueDate,
+        deadlineAt:
+          Number.isFinite(action.sortDate) && action.sortDate < Number.MAX_SAFE_INTEGER
+            ? action.sortDate
+            : null,
         tag: String(
           action.category || "Action"
         ).toUpperCase(),
@@ -2273,7 +2277,7 @@ export async function getDashboardData() {
         openProjects.filter(
           (project) =>
             project.install_required === true &&
-            !Boolean(project.install_start || project.install_date) &&
+            !(project.install_start || project.install_date) &&
             ![
               "completed",
               "complete",
