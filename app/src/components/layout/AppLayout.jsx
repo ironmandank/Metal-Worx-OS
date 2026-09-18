@@ -136,7 +136,7 @@ const NAV_GROUPS = [
       },
       {
         page: "callbacks",
-        label: "Customer Follow-Ups",
+        label: "Notes & Follow-Ups",
         icon: IconPhone,
       },
       {
@@ -540,6 +540,16 @@ function AppLayout({
     setOpenGroup("");
     setShowNotifications(false);
     if (window.matchMedia("(max-width: 650px)").matches) setExpanded(false);
+    if (pageName === "callbacks") {
+      setPage("dashboard");
+      window.setTimeout(() => {
+        document.getElementById("personal-followups")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100);
+      return;
+    }
     setPage(pageName);
   }
 
