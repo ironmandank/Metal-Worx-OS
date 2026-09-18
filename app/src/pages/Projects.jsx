@@ -1401,7 +1401,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                       {project.down_payment_required && <Badge color={project.down_payment_status === "Received" ? "green" : "orange"}>Deposit</Badge>}
                       {Number(project.balance_due || 0) > 0 && <Badge color="yellow">{money(project.balance_due)} due</Badge>}
                     </Group>
-                    <SimpleGrid cols={isAdministrator ? 3 : 2} spacing="xs" mt={6}>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs" mt={6}>
                       <Button
                         size="xs"
                         color="red"
