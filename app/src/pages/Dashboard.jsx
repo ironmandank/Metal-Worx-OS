@@ -55,7 +55,7 @@ const styles = `
   .mc-button.primary { border-color: #b60715; background: linear-gradient(180deg, #d30c1d, #8e000b); }
   .mc-button svg { width: 17px; height: 17px; }
   .mc-topbar {
-    position: relative; display: grid; grid-template-columns: minmax(250px, 1fr) auto;
+    position: relative; display: grid; grid-template-columns: 1fr;
     align-items: center; gap: 18px; min-height: 76px; padding: 12px 14px;
     border: 1px solid var(--mc-line); border-radius: 8px;
     background:
@@ -89,10 +89,11 @@ const styles = `
   }
   .mc-title-block span { display: block; margin-top: 5px; color: #84919a; font-size: .66rem; white-space: nowrap; }
   .mc-top-actions {
-    position: relative; z-index: 1; display: flex;
-    align-items: stretch; justify-content: flex-end; width: auto; gap: 7px;
+    position: relative; z-index: 1; display: grid;
+    grid-template-columns: minmax(126px, .8fr) repeat(3, minmax(140px, 1fr));
+    align-items: stretch; justify-content: stretch; width: 100%; gap: 7px;
   }
-  .mc-top-actions > * { min-width: 0; }
+  .mc-top-actions > * { min-width: 0; width: 100%; }
   .mc-top-actions .mc-button { white-space: normal; line-height: 1.15; }
   .mc-clock {
     min-height: 38px; border: 1px solid #46515a; border-radius: 7px; background: rgba(18,25,29,.92);
@@ -408,7 +409,7 @@ const styles = `
   }
 
   @media (max-width: 1240px) {
-    .mc-topbar { grid-template-columns: 1fr; overflow: visible; }
+    .mc-topbar { overflow: visible; }
     .mc-brand { width: 100%; }
     .mc-top-actions {
       width: 100%;
