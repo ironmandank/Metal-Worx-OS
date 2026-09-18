@@ -165,7 +165,7 @@ export default function CustomerQuoteApproval() {
         <Card withBorder className="approval-summary-card">
           <Group justify="space-between" align="flex-start">
             <div><Text size="xs" c="dimmed" fw={800}>QUOTE</Text><Title order={2}>{quote.quote_number || `Quote ${quote.id}`}</Title><Text fw={700}>{quote.quote_title || quote.project_name || "Custom Project"}</Text></div>
-            <div className="approval-total"><Text size="xs" c="dimmed" fw={800}>TOTAL</Text><Title order={2}>{money(quote.total_amount)}</Title><Badge color={approval?.status === "Approved" ? "green" : "blue"}>{approval?.status}</Badge></div>
+            <div className="approval-total"><Text size="xs" c="dimmed" fw={800}>TOTAL</Text><Title order={2}>{money(quote.total_amount)}</Title>{quote.tax_treatment === "plus" && <Text size="xs" fw={800}>Plus applicable taxes and fees</Text>}{quote.tax_treatment === "exempt" && <Text size="xs" fw={800}>Tax exempt</Text>}<Badge color={approval?.status === "Approved" ? "green" : "blue"}>{approval?.status}</Badge></div>
           </Group>
           <div className="approval-meta-grid">
             <div><strong>Prepared for</strong><span>{quote.company_name || quote.customer_name || quote.contact_name || "Customer"}</span></div>

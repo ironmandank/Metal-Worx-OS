@@ -141,6 +141,7 @@ export function emptyOrganizedQuote() {
     price_notes: "",
     valid_until: "",
     tax_rate: 0.07,
+    tax_treatment: "included",
   };
 }
 
@@ -207,7 +208,12 @@ export function organizeQuoteText(sourceText) {
   const totalLine = lines.map(cleanLine).find((line) => /^(?:estimated\s+)?total\s*:/i.test(line));
   result.price_notes = totalLine || "";
   result.valid_until = parseValidityDate(sourceText);
-  if (/tax[- ]?exempt|no\s+sales\s+tax/i.test(sourceText)) result.tax_rate = 0;
+  if (/tax[- ]?exempt|no\s+sales\s+tax/i.test(sourceText)) {
+    result.tax_rate = 0;
+    result.tax_treatment = "exempt";
+  } else if (/excluding\s+(?:applicable\s+)?tax(?:es)?(?:\s+and\s+fees)?|plus\s+(?:applicable\s+)?tax(?:es)?(?:\s+and\s+fees)?/i.test(sourceText)) {
+    result.tax_treatment = "plus";
+  }
 
   if (!result.quote_title && result.items[0]?.title !== "Labor — Fabrication & Installation") {
     result.quote_title = result.items[0]?.title || "Imported Quote";

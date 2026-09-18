@@ -391,10 +391,24 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
   const contractSubtotal =
     materialSubtotal + baseSubtotal + selectedOptionsTotal;
-  const taxAmount = contractSubtotal * Number(quote?.tax_rate || 0);
+  const taxTreatment = quote?.tax_treatment || "included";
+  const taxAmount = taxTreatment === "included"
+    ? contractSubtotal * Number(quote?.tax_rate || 0)
+    : 0;
   const calculatedTotal = contractSubtotal + taxAmount;
   const grandTotal =
     calculatedTotal > 0 ? calculatedTotal : Number(quote?.total_amount || 0);
+  const taxLabel = taxTreatment === "plus" ? "Taxes & Fees" : "Sales Tax";
+  const taxDisplay = taxTreatment === "plus"
+    ? "Plus applicable"
+    : taxTreatment === "exempt"
+      ? "Tax exempt"
+      : money(taxAmount);
+  const taxNotice = taxTreatment === "plus"
+    ? "Applicable taxes and payment-processing fees are not included in the estimated project price and will be added when invoiced."
+    : taxTreatment === "exempt"
+      ? "This quote is marked tax exempt. Tax-exemption documentation may be required."
+      : "";
 
   const projectPerson = getProjectPerson(selectedProject, customer, quote);
   const projectCompany = getProjectCompany(
@@ -564,7 +578,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             })
           ),
           new TableRow({ children: [wordCell("Contract Subtotal", { bold: true, gray: true }), wordCell(""), wordCell(money(contractSubtotal), { bold: true, gray: true, alignment: AlignmentType.RIGHT })] }),
-          new TableRow({ children: [wordCell("Sales Tax", { bold: true, gray: true }), wordCell(""), wordCell(money(taxAmount), { bold: true, gray: true, alignment: AlignmentType.RIGHT })] }),
+          new TableRow({ children: [wordCell(taxLabel, { bold: true, gray: true }), wordCell(""), wordCell(taxDisplay, { bold: true, gray: true, alignment: AlignmentType.RIGHT })] }),
           new TableRow({ children: [wordCell("TOTAL ESTIMATED PRICE", { bold: true }), wordCell(""), wordCell(money(grandTotal), { bold: true, alignment: AlignmentType.RIGHT })] }),
         ],
       });
@@ -685,6 +699,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             children: [
               wordHeading("Pricing"),
               pricingTable,
+              ...(taxNotice ? wordCenteredTextBlock(taxNotice) : []),
               ...(quote.price_notes ? [wordHeading("Remarks"), ...wordTextBlock(quote.price_notes)] : []),
               ...(quote.project_schedule ? [wordHeading("Process / Work Sequence"), ...wordTextBlock(quote.project_schedule)] : []),
               ...(quote.customer_responsibilities ? [wordHeading("Customer Responsibilities"), ...wordBulletBlock(quote.customer_responsibilities)] : []),
@@ -755,7 +770,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       pricingSheet,
       [
         ["Contract Subtotal", contractSubtotal],
-        ["Sales Tax", taxAmount],
+        [taxLabel, taxTreatment === "included" ? taxAmount : taxDisplay],
         ["Total Estimated Price", grandTotal],
       ],
       { origin: -1 },
@@ -1015,6 +1030,18 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           line-height: 1.45;
           font-style: italic;
           white-space: pre-wrap;
+        }
+
+        .quote-tax-notice {
+          margin: 8px 0 16px;
+          padding: 8px 12px;
+          border-left: 3px solid #9c000f;
+          color: #333;
+          background: #f2f2f2;
+          font-size: 11px;
+          font-weight: 700;
+          line-height: 1.4;
+          text-align: center;
         }
 
         .quote-section {
@@ -1585,6 +1612,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             {quote.price_notes ||
               "Final pricing is subject to the scope, selections, and terms stated in this quotation."}
           </p>
+          {taxNotice && <div className="quote-tax-notice">{taxNotice}</div>}
 
           <QuoteTextSection title="Scope of Work" value={quote.scope_of_work} />
           <QuoteTextSection
@@ -1635,8 +1663,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
                   <Table.Td>{money(contractSubtotal)}</Table.Td>
                 </Table.Tr>
                 <Table.Tr className="quote-total-row">
-                  <Table.Td colSpan={2}>Sales Tax</Table.Td>
-                  <Table.Td>{money(taxAmount)}</Table.Td>
+                  <Table.Td colSpan={2}>{taxLabel}</Table.Td>
+                  <Table.Td>{taxDisplay}</Table.Td>
                 </Table.Tr>
                 <Table.Tr className="quote-grand-row">
                   <Table.Td colSpan={2}>TOTAL ESTIMATED PRICE</Table.Td>

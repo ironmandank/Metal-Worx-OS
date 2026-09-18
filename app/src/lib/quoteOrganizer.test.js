@@ -62,5 +62,6 @@ Due to fluctuations in metal prices this quote is valid for five (5) working day
     expect(result.down_payment_terms).toContain("50%");
     expect(result.price_notes).toContain("$1,575.00");
     expect(result.valid_until).toBe("2026-09-25");
+    expect(result.tax_treatment).toBe("plus");
   });
 });
