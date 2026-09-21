@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import quoteFontRegular from "../assets/fonts/DejaVuSans-Quote.ttf?url";
+import quoteFontBold from "../assets/fonts/DejaVuSans-Quote-Bold.ttf?url";
 
 const PAGE = { width: 612, height: 792, left: 36, right: 36, top: 82, bottom: 42 };
 const COLORS = { black: [22, 24, 27], gray: [232, 232, 232], red: [156, 0, 15], text: [28, 31, 35] };
@@ -40,8 +42,20 @@ function imageFormat(dataUrl) {
   return "PNG";
 }
 
+async function registerQuoteFonts(doc) {
+  const [regular, bold] = await Promise.all([
+    urlToDataUrl(quoteFontRegular),
+    urlToDataUrl(quoteFontBold),
+  ]);
+  doc.addFileToVFS("DejaVuSans-Quote.ttf", regular.split(",")[1]);
+  doc.addFileToVFS("DejaVuSans-Quote-Bold.ttf", bold.split(",")[1]);
+  doc.addFont("DejaVuSans-Quote.ttf", "QuoteSans", "normal");
+  doc.addFont("DejaVuSans-Quote-Bold.ttf", "QuoteSans", "bold");
+}
+
 export async function buildQuotePdf(model) {
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  await registerQuoteFonts(doc);
   const contentWidth = PAGE.width - PAGE.left - PAGE.right;
   let y = PAGE.top;
 
@@ -57,19 +71,19 @@ export async function buildQuotePdf(model) {
     doc.rect(PAGE.left, y + 1, 4, 14, "F");
     doc.setTextColor(...COLORS.black);
     doc.setCharSpace(0);
-    doc.setFont("helvetica", "bold");
+    doc.setFont("QuoteSans", "bold");
     doc.setFontSize(9.5);
     doc.text(String(title).toUpperCase(), PAGE.left + 10, y + 11);
     doc.setDrawColor(90, 90, 90);
     doc.setLineWidth(0.55);
     doc.line(PAGE.left, y + 20, PAGE.width - PAGE.right, y + 20);
-    y += 24;
+    y += 31;
   };
 
   const paragraph = (value, options = {}) => {
     const text = String(value || "").trim();
     if (!text) return;
-    doc.setFont("helvetica", options.bold ? "bold" : "normal");
+    doc.setFont("QuoteSans", options.bold ? "bold" : "normal");
     doc.setFontSize(options.size || 8.25);
     doc.setTextColor(...COLORS.text);
     doc.setCharSpace(0);
@@ -103,7 +117,7 @@ export async function buildQuotePdf(model) {
       ensureSpace(wrapped.length * 10.5 + 5);
       doc.setFillColor(...COLORS.red);
       doc.circle(PAGE.left + 3, y - 3, 1.8, "F");
-      doc.setFont("helvetica", "normal");
+      doc.setFont("QuoteSans", "normal");
       doc.setFontSize(8.25);
       doc.setTextColor(...COLORS.text);
       doc.setCharSpace(0);
@@ -118,7 +132,7 @@ export async function buildQuotePdf(model) {
       margin: { left: PAGE.left, right: PAGE.right, top: PAGE.top, bottom: PAGE.bottom },
       startY: y,
       theme: "grid",
-      styles: { font: "helvetica", fontSize: 8, cellPadding: 3.5, lineColor: [120, 120, 120], lineWidth: 0.45, textColor: COLORS.text, overflow: "linebreak", valign: "top" },
+      styles: { font: "QuoteSans", fontSize: 8, cellPadding: 3.5, lineColor: [120, 120, 120], lineWidth: 0.45, textColor: COLORS.text, overflow: "linebreak", valign: "top" },
       headStyles: { fillColor: COLORS.black, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.75, cellPadding: 3.5 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       ...options,
@@ -128,7 +142,7 @@ export async function buildQuotePdf(model) {
   };
 
   doc.setCharSpace(0);
-  doc.setFont("helvetica", "bold");
+  doc.setFont("QuoteSans", "bold");
   doc.setTextColor(...COLORS.black);
   doc.setFontSize(8);
   doc.text("PROJECT QUOTATION", PAGE.width / 2, y, { align: "center" });
@@ -136,7 +150,7 @@ export async function buildQuotePdf(model) {
   doc.setFontSize(15);
   doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center" });
   y += 15;
-  doc.setFont("helvetica", "normal");
+  doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8.5);
   doc.text(String(model.quoteType || "Custom Metal Fabrication"), PAGE.width / 2, y, { align: "center" });
   y += 14;
@@ -182,7 +196,7 @@ export async function buildQuotePdf(model) {
   pricingBody.push(["", "", "Contract Subtotal", money(model.contractSubtotal)]);
   pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
   pricingBody.push(["", "", "PROJECT TOTAL", money(model.grandTotal)]);
-  doc.setFont("helvetica", "normal");
+  doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8);
   const pricingWidths = [116, 224, 106, 94];
   const estimatedPricingTableHeight = 21 + pricingBody.reduce((total, row) => {
@@ -283,7 +297,7 @@ export async function buildQuotePdf(model) {
   paragraph(model.acceptanceTerms || "By signing below, the customer accepts this quotation, including its scope, pricing, assumptions, exclusions, payment schedule, and stated terms.");
   ensureSpace(62);
   doc.setDrawColor(70, 70, 70);
-  doc.setFont("helvetica", "normal");
+  doc.setFont("QuoteSans", "normal");
   doc.setFontSize(7.5);
   doc.setCharSpace(0);
   const half = (contentWidth - 20) / 2;
@@ -303,12 +317,12 @@ export async function buildQuotePdf(model) {
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     doc.setPage(pageNumber);
     if (logoData) doc.addImage(logoData, imageFormat(logoData), PAGE.left, 24, 142, 42, undefined, "FAST");
-    doc.setFont("helvetica", "bold");
+    doc.setFont("QuoteSans", "bold");
     doc.setCharSpace(0);
     doc.setFontSize(8.2);
     doc.setTextColor(...COLORS.black);
     doc.text("METAL WORX INC.", PAGE.width - PAGE.right, 28, { align: "right" });
-    doc.setFont("helvetica", "normal");
+    doc.setFont("QuoteSans", "normal");
     doc.setFontSize(7.5);
     doc.text("1122 Gillespie St. | Fayetteville, NC 28306", PAGE.width - PAGE.right, 40, { align: "right" });
     doc.text("(910) 438-9353 | info@metalworxinc.net", PAGE.width - PAGE.right, 51, { align: "right" });
