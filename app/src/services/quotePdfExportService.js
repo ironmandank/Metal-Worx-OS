@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const PAGE = { width: 612, height: 792, left: 42, right: 42, top: 94, bottom: 54 };
+const PAGE = { width: 612, height: 792, left: 36, right: 36, top: 82, bottom: 42 };
 const COLORS = { black: [22, 24, 27], gray: [232, 232, 232], red: [156, 0, 15], text: [28, 31, 35] };
 
 function safeName(value) {
@@ -26,12 +26,12 @@ async function urlToDataUrl(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Image could not be loaded (${response.status}).`);
   const blob = await response.blob();
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let start = 0; start < bytes.length; start += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  }
+  return `data:${blob.type || "application/octet-stream"};base64,${btoa(binary)}`;
 }
 
 function imageFormat(dataUrl) {
@@ -52,44 +52,46 @@ export async function buildQuotePdf(model) {
   };
 
   const heading = (title) => {
-    ensureSpace(42);
+    ensureSpace(34);
     doc.setFillColor(...COLORS.red);
     doc.rect(PAGE.left, y + 1, 4, 14, "F");
     doc.setTextColor(...COLORS.black);
+    doc.setCharSpace(0);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(String(title).toUpperCase(), PAGE.left + 11, y + 12);
+    doc.setFontSize(9.5);
+    doc.text(String(title).toUpperCase(), PAGE.left + 10, y + 11);
     doc.setDrawColor(90, 90, 90);
     doc.setLineWidth(0.55);
     doc.line(PAGE.left, y + 20, PAGE.width - PAGE.right, y + 20);
-    y += 30;
+    y += 24;
   };
 
   const paragraph = (value, options = {}) => {
     const text = String(value || "").trim();
     if (!text) return;
     doc.setFont("helvetica", options.bold ? "bold" : "normal");
-    doc.setFontSize(options.size || 9.5);
+    doc.setFontSize(options.size || 8.25);
     doc.setTextColor(...COLORS.text);
+    doc.setCharSpace(0);
     const lines = doc.splitTextToSize(text, options.width || contentWidth);
-    const lineHeight = options.lineHeight || 13;
+    const lineHeight = options.lineHeight || 10.5;
     for (const line of lines) {
       ensureSpace(lineHeight + 3);
       doc.text(line, options.x || PAGE.left, y);
       y += lineHeight;
     }
-    y += options.after ?? 7;
+    y += options.after ?? 4;
   };
 
   const paragraphSection = (title, value, options = {}) => {
     const text = String(value || "").trim();
     if (!text) return;
-    const lineHeight = options.lineHeight || 13;
+    const lineHeight = options.lineHeight || 10.5;
     const lines = doc.splitTextToSize(text, options.width || contentWidth);
     // A short narrative section should stay together. If it cannot fit on the
     // current page, start it on the next page rather than leaving a heading or
     // a single trailing line by itself.
-    const sectionHeight = 30 + lines.length * lineHeight + (options.after ?? 7);
+    const sectionHeight = 24 + lines.length * lineHeight + (options.after ?? 4);
     if (sectionHeight <= PAGE.height - PAGE.top - PAGE.bottom) ensureSpace(sectionHeight);
     heading(title);
     paragraph(text, options);
@@ -98,42 +100,46 @@ export async function buildQuotePdf(model) {
   const bullets = (value) => {
     for (const line of asLines(value)) {
       const wrapped = doc.splitTextToSize(line, contentWidth - 18);
-      ensureSpace(wrapped.length * 13 + 7);
+      ensureSpace(wrapped.length * 10.5 + 5);
       doc.setFillColor(...COLORS.red);
       doc.circle(PAGE.left + 3, y - 3, 1.8, "F");
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
+      doc.setFontSize(8.25);
       doc.setTextColor(...COLORS.text);
+      doc.setCharSpace(0);
       doc.text(wrapped, PAGE.left + 13, y);
-      y += wrapped.length * 13 + 6;
+      y += wrapped.length * 10.5 + 4;
     }
   };
 
   const table = (options) => {
+    doc.setCharSpace(0);
     autoTable(doc, {
       margin: { left: PAGE.left, right: PAGE.right, top: PAGE.top, bottom: PAGE.bottom },
       startY: y,
       theme: "grid",
-      styles: { font: "helvetica", fontSize: 9, cellPadding: 5, lineColor: [120, 120, 120], lineWidth: 0.45, textColor: COLORS.text, overflow: "linebreak", valign: "top" },
-      headStyles: { fillColor: COLORS.black, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5, cellPadding: 5 },
+      styles: { font: "helvetica", fontSize: 8, cellPadding: 3.5, lineColor: [120, 120, 120], lineWidth: 0.45, textColor: COLORS.text, overflow: "linebreak", valign: "top" },
+      headStyles: { fillColor: COLORS.black, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.75, cellPadding: 3.5 },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       ...options,
     });
-    y = doc.lastAutoTable.finalY + 13;
+    y = doc.lastAutoTable.finalY + 8;
+    doc.setCharSpace(0);
   };
 
+  doc.setCharSpace(0);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...COLORS.black);
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.text("PROJECT QUOTATION", PAGE.width / 2, y, { align: "center" });
-  y += 18;
-  doc.setFontSize(17);
-  doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center", maxWidth: contentWidth });
-  y += 17;
+  y += 14;
+  doc.setFontSize(15);
+  doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center" });
+  y += 15;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
+  doc.setFontSize(8.5);
   doc.text(String(model.quoteType || "Custom Metal Fabrication"), PAGE.width / 2, y, { align: "center" });
-  y += 18;
+  y += 14;
 
   const metaRows = [
     ["Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
@@ -156,12 +162,10 @@ export async function buildQuotePdf(model) {
   paragraphSection("Project Summary", model.scopeOfWork || "Project scope will be completed as stated in the approved quotation.");
 
   const scopeRows = [
-    ["Scope of Work", model.scopeOfWork],
     ["Specifications", model.specifications],
     ["Included Services", model.includedServices],
   ].filter((row) => String(row[1] || "").trim());
   if (scopeRows.length) {
-    heading("Scope of Work");
     table({
       head: [["Item", "Description"]],
       body: scopeRows,
@@ -178,18 +182,26 @@ export async function buildQuotePdf(model) {
   pricingBody.push(["", "", "Contract Subtotal", money(model.contractSubtotal)]);
   pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
   pricingBody.push(["", "", "PROJECT TOTAL", money(model.grandTotal)]);
-  // Keep the pricing heading with the table header and at least the first row,
-  // but let the table use the remaining page before continuing on the next one.
-  // Reserving the entire estimated table height created large blank areas when
-  // the full section would not fit even though several rows could.
-  ensureSpace(92);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  const pricingWidths = [116, 224, 106, 94];
+  const estimatedPricingTableHeight = 21 + pricingBody.reduce((total, row) => {
+    const lineCount = Math.max(...row.map((cell, index) => (
+      doc.splitTextToSize(String(cell || ""), pricingWidths[index] - 10).length
+    )));
+    return total + Math.max(17, lineCount * 9.5 + 7);
+  }, 0);
+  const completePricingHeight = 24 + estimatedPricingTableHeight + 8;
+  const usablePageHeight = PAGE.height - PAGE.top - PAGE.bottom;
+  ensureSpace(completePricingHeight <= usablePageHeight ? completePricingHeight : 92);
   heading("Pricing");
   table({
     head: [["Item", "Description", "Basis", "Amount"]],
     body: pricingBody,
+    pageBreak: completePricingHeight <= usablePageHeight ? "avoid" : "auto",
     rowPageBreak: "avoid",
     showHead: "everyPage",
-    columnStyles: { 0: { cellWidth: 118, fontStyle: "bold" }, 1: { cellWidth: 220 }, 2: { cellWidth: 104 }, 3: { cellWidth: 86, halign: "right", fontStyle: "bold" } },
+    columnStyles: { 0: { cellWidth: 116, fontStyle: "bold" }, 1: { cellWidth: 224 }, 2: { cellWidth: 106 }, 3: { cellWidth: 94, halign: "right", fontStyle: "bold" } },
     didParseCell: (data) => {
       if (data.section !== "body") return;
       const label = String(data.row.raw?.[2] || "");
@@ -252,7 +264,7 @@ export async function buildQuotePdf(model) {
         doc.setDrawColor(150, 150, 150);
         doc.rect(x, y, cardWidth, cardHeight);
         doc.addImage(dataUrl, imageFormat(dataUrl), x + 6, y + 6, cardWidth - 12, 130, undefined, "FAST");
-        doc.setFont("helvetica", "normal");
+        doc.setFont("QuoteSans", "normal");
         doc.setFontSize(8);
         doc.setTextColor(...COLORS.text);
         doc.text(String(image.caption || image.image_type || "Project Image"), x + 6, y + 149, { maxWidth: cardWidth - 12 });
@@ -266,27 +278,24 @@ export async function buildQuotePdf(model) {
     }
   }
 
-  ensureSpace(180);
+  ensureSpace(94);
   heading("Acceptance");
   paragraph(model.acceptanceTerms || "By signing below, the customer accepts this quotation, including its scope, pricing, assumptions, exclusions, payment schedule, and stated terms.");
-  ensureSpace(145);
+  ensureSpace(62);
   doc.setDrawColor(70, 70, 70);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(7.5);
+  doc.setCharSpace(0);
   const half = (contentWidth - 20) / 2;
-  doc.line(PAGE.left, y + 28, PAGE.left + half, y + 28);
-  doc.line(PAGE.left + half + 20, y + 28, PAGE.width - PAGE.right, y + 28);
-  doc.text("Customer Authorized Signature", PAGE.left, y + 41);
-  doc.text("Date", PAGE.left + half + 20, y + 41);
-  doc.line(PAGE.left, y + 74, PAGE.left + half, y + 74);
-  doc.line(PAGE.left + half + 20, y + 74, PAGE.width - PAGE.right, y + 74);
-  doc.text("Printed Name / Title", PAGE.left, y + 87);
-  doc.text("Purchase Order No.", PAGE.left + half + 20, y + 87);
-  doc.line(PAGE.left, y + 120, PAGE.left + half, y + 120);
-  doc.line(PAGE.left + half + 20, y + 120, PAGE.width - PAGE.right, y + 120);
-  doc.text("Metal Worx Inc. Representative", PAGE.left, y + 133);
-  doc.text("Date", PAGE.left + half + 20, y + 133);
-  y += 146;
+  doc.line(PAGE.left, y + 18, PAGE.left + half, y + 18);
+  doc.line(PAGE.left + half + 20, y + 18, PAGE.width - PAGE.right, y + 18);
+  doc.text("Customer Authorized Signature", PAGE.left, y + 29);
+  doc.text("Date", PAGE.left + half + 20, y + 29);
+  doc.line(PAGE.left, y + 52, PAGE.left + half, y + 52);
+  doc.line(PAGE.left + half + 20, y + 52, PAGE.width - PAGE.right, y + 52);
+  doc.text("Printed Name / Title", PAGE.left, y + 63);
+  doc.text("Purchase Order No.", PAGE.left + half + 20, y + 63);
+  y += 70;
 
   let logoData = null;
   try { logoData = model.logoUrl ? await urlToDataUrl(model.logoUrl) : null; } catch { logoData = null; }
@@ -295,6 +304,7 @@ export async function buildQuotePdf(model) {
     doc.setPage(pageNumber);
     if (logoData) doc.addImage(logoData, imageFormat(logoData), PAGE.left, 24, 142, 42, undefined, "FAST");
     doc.setFont("helvetica", "bold");
+    doc.setCharSpace(0);
     doc.setFontSize(8.2);
     doc.setTextColor(...COLORS.black);
     doc.text("METAL WORX INC.", PAGE.width - PAGE.right, 28, { align: "right" });
