@@ -1051,43 +1051,43 @@ function DepartmentQueue({
           <Text c="dimmed">Loading {department} work orders...</Text>
         </MWSection>
       ) : (
-        <SimpleGrid cols={{ base: 1, md: 2, xl: department === "Design" ? 4 : 3 }} spacing="lg" align="start">
+        <Stack gap="lg">
           {(queueFilter === "All" || queueFilter === "Ready") && (
             <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
-              <Stack>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderQueueCard)}
-              </Stack>
+              </SimpleGrid>
             </MWSection>
           )}
 
           {(queueFilter === "All" || queueFilter === "In Progress") && (
             <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
-              <Stack>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
-              </Stack>
+              </SimpleGrid>
             </MWSection>
           )}
 
           {(queueFilter === "All" || queueFilter === "Blocked") && (
             <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
-              <Stack>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderQueueCard)}
-              </Stack>
+              </SimpleGrid>
             </MWSection>
           )}
 
           {department === "Design" && (queueFilter === "All" || queueFilter === "Customer Approval") && (
             <MWSection title="Customer Approval" subtitle={`${awaitingApprovalOrders.length} awaiting confirmation`}>
-              <Stack>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {awaitingApprovalOrders.length === 0 ? (
                   <Text c="dimmed">No designs are awaiting customer approval.</Text>
                 ) : (
                   awaitingApprovalOrders.map(renderQueueCard)
                 )}
-              </Stack>
+              </SimpleGrid>
             </MWSection>
           )}
-        </SimpleGrid>
+        </Stack>
       )}
 
       <Modal
