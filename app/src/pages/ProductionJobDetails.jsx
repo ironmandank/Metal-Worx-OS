@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Divider,
+  FileButton,
   Group,
   Image,
   Loader,
@@ -32,12 +33,15 @@ import {
   IconPhone,
   IconRefresh,
   IconRoute,
+  IconUpload,
   IconUser,
 } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 
 import { supabase } from "../lib/supabase";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
+import { uploadOrderImages } from "../components/design/DesignIntakeModal";
 
 function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [job, setJob] = useState(selectedProductionJob || null);
@@ -51,7 +55,42 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [materialRequests, setMaterialRequests] = useState([]);
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function addReferenceFiles(files) {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+
+    if (!job?.customer_order_id) {
+      notifications.show({
+        title: "Order Link Required",
+        message: "This production job must be connected to a customer order before artwork can be added.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setUploadingFiles(true);
+    try {
+      await uploadOrderImages(job.customer_order_id, selectedFiles, "Production Reference");
+      await loadJobFolder();
+      notifications.show({
+        title: "Files Added",
+        message: `${selectedFiles.length} artwork or reference file${selectedFiles.length === 1 ? " was" : "s were"} added to this job.`,
+        color: "green",
+      });
+    } catch (error) {
+      console.error(error);
+      notifications.show({
+        title: "Files Could Not Be Added",
+        message: error?.message || "The selected files could not be uploaded.",
+        color: "red",
+      });
+    } finally {
+      setUploadingFiles(false);
+    }
+  }
 
   const loadJobFolder = useCallback(async () => {
     if (!selectedProductionJob?.id) {
@@ -715,6 +754,20 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
           title="Artwork & Reference Files"
           subtitle={`${referenceImages.length} connected file${referenceImages.length === 1 ? "" : "s"}`}
         >
+          <Group justify="space-between" align="center" mb="md" wrap="wrap">
+            <Text size="sm" c="dimmed">Add customer artwork, design proofs, or production reference images.</Text>
+            <FileButton
+              onChange={addReferenceFiles}
+              accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,application/pdf"
+              multiple
+            >
+              {(props) => (
+                <Button {...props} color="red" leftSection={<IconUpload size={17} />} loading={uploadingFiles}>
+                  Add Images / Files
+                </Button>
+              )}
+            </FileButton>
+          </Group>
           {referenceImages.length === 0 ? (
             <Card withBorder radius="lg" p="xl">
               <Stack align="center" gap="xs">
