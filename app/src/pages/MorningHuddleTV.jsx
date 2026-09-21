@@ -36,8 +36,8 @@ const styles = `
   .tv-kpi span { display:flex; width:100%; min-height:48px; align-items:flex-start; justify-content:center; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
   .tv-kpi strong { display:flex; min-height:58px; margin-top:auto; align-items:center; justify-content:center; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
-  .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
-  .tv-panel { min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
+  .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:stretch; }
+  .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
   .tv-panel.tv-hot-artwork { grid-column:1 / -1; }
   .tv-panel.tv-production { grid-column:span 5; }
