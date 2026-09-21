@@ -1221,18 +1221,19 @@ function ProductionControlCenter({
                       const priority = job?.is_quick_turnaround || job?.rush;
                       const progress = Number(job?.progress_percent || 0);
                       const companyName = getCustomerCompany(customer);
-                      const orderReference =
-                        customerOrder?.order_number ||
-                        project?.project_number ||
-                        job?.production_job_number ||
-                        "Production order";
-
                       return (
                         <Paper
                           key={workOrder.id}
-                          p="lg"
+                          p="md"
                           radius="lg"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openProductionJob(workOrder)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") openProductionJob(workOrder);
+                          }}
                           style={{
+                            cursor: "pointer",
                             background: priority
                               ? "linear-gradient(145deg, rgba(120,20,0,.2), rgba(255,255,255,.025))"
                               : "rgba(255,255,255,.025)",
@@ -1243,7 +1244,7 @@ function ProductionControlCenter({
                             }`,
                           }}
                         >
-                          <Stack gap="md">
+                          <Stack gap="sm">
                             <Group
                               justify="space-between"
                               align="flex-start"
@@ -1273,7 +1274,7 @@ function ProductionControlCenter({
                                 </Group>
 
                                 <Title
-                                  order={3}
+                                  order={4}
                                   c="white"
                                   style={{
                                     overflowWrap: "anywhere",
@@ -1290,13 +1291,7 @@ function ProductionControlCenter({
                                   </Text>
                                 )}
                                 <Text size="sm" c="gray.4" mt={3}>
-                                  {orderReference}
-                                  {job?.production_job_number
-                                    ? ` · ${job.production_job_number}`
-                                    : ""}
-                                  {workOrder.work_order_number
-                                    ? ` · ${workOrder.work_order_number}`
-                                    : ""}
+                                  {workOrder.assigned_to || "Unassigned"} · Due {formatDate(job?.due_date)}
                                 </Text>
                               </Box>
 
@@ -1311,83 +1306,20 @@ function ProductionControlCenter({
                               </ThemeIcon>
                             </Group>
 
-                            <Paper
-                              p="sm"
-                              radius="md"
-                              style={{
-                                background: "rgba(0,0,0,.22)",
-                                border: "1px solid rgba(255,255,255,.06)",
-                              }}
-                            >
-                              <SimpleGrid
-                                cols={{ base: 1, sm: 2 }}
-                                spacing="sm"
-                              >
-                                <Box>
-                                  <Text
-                                    size="xs"
-                                    c="dimmed"
-                                    fw={800}
-                                    tt="uppercase"
-                                  >
-                                    Current Step
-                                  </Text>
-                                  <Text fw={850}>
-                                    {workOrder.step_name || department}
-                                  </Text>
-                                </Box>
-                                <Box>
-                                  <Text
-                                    size="xs"
-                                    c="dimmed"
-                                    fw={800}
-                                    tt="uppercase"
-                                  >
-                                    Quantity
-                                  </Text>
-                                  <Text fw={850}>
-                                    {workOrder.quantity || 1}
-                                  </Text>
-                                </Box>
-                                <Box>
-                                  <Text
-                                    size="xs"
-                                    c="dimmed"
-                                    fw={800}
-                                    tt="uppercase"
-                                  >
-                                    Due
-                                  </Text>
-                                  <Text fw={850}>
-                                    {formatDate(job?.due_date)}
-                                  </Text>
-                                </Box>
-                                <Box>
-                                  <Text
-                                    size="xs"
-                                    c="dimmed"
-                                    fw={800}
-                                    tt="uppercase"
-                                  >
-                                    Progress
-                                  </Text>
-                                  <Text fw={900}>{progress}%</Text>
-                                </Box>
-                              </SimpleGrid>
-                              <Progress
-                                value={progress}
-                                color={progress >= 100 ? "green" : "red"}
-                                size="sm"
-                                radius="xl"
-                                mt="sm"
-                              />
-                            </Paper>
+                            <Group justify="space-between" align="center">
+                              <Text size="sm" fw={800}>{workOrder.step_name || department} · Qty {workOrder.quantity || 1}</Text>
+                              <Text size="sm" fw={900}>{progress}%</Text>
+                            </Group>
+                            <Progress value={progress} color={progress >= 100 ? "green" : "red"} size="sm" radius="xl" />
 
                             <Group grow wrap="wrap">
                               <Button
                                 variant="light"
                                 color="gray"
-                                onClick={() => openProductionJob(workOrder)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openProductionJob(workOrder);
+                                }}
                               >
                                 Open Job
                               </Button>
@@ -1397,7 +1329,10 @@ function ProductionControlCenter({
                                   color="red"
                                   leftSection={<IconPlayerPlay size={17} />}
                                   loading={updatingId === workOrder.id}
-                                  onClick={() => startWorkOrder(workOrder)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    startWorkOrder(workOrder);
+                                  }}
                                 >
                                   Start Work
                                 </Button>
@@ -1408,7 +1343,10 @@ function ProductionControlCenter({
                                   color="green"
                                   leftSection={<IconCheck size={17} />}
                                   loading={updatingId === workOrder.id}
-                                  onClick={() => openCompletion(workOrder)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openCompletion(workOrder);
+                                  }}
                                 >
                                   Complete Step
                                 </Button>
@@ -1431,7 +1369,10 @@ function ProductionControlCenter({
                                   variant="subtle"
                                   color="orange"
                                   leftSection={<IconAlertTriangle size={17} />}
-                                  onClick={() => openBypass(workOrder)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openBypass(workOrder);
+                                  }}
                                 >
                                   Admin Bypass
                                 </Button>

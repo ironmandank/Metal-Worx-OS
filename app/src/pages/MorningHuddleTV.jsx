@@ -40,8 +40,8 @@ const styles = `
   .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
   .tv-panel.tv-hot-artwork { grid-column:1 / -1; }
-  .tv-panel.tv-production { grid-column:span 5; }
-  .tv-panel.tv-field { grid-column:span 7; }
+  .tv-panel.tv-production { grid-column:span 6; }
+  .tv-panel.tv-field { grid-column:span 6; }
   .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:13px 16px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(17px,1.25vw,24px); line-height:1.2; text-transform:uppercase; }
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
   .tv-list { list-style:none; padding:0; margin:0; }

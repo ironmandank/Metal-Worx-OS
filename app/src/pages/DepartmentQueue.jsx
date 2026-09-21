@@ -19,6 +19,7 @@ import {
 import {
   IconAlertTriangle,
   IconClock,
+  IconChevronRight,
   IconFlag,
   IconInfoCircle,
   IconHistory,
@@ -62,6 +63,7 @@ function DepartmentQueue({
   const [activityTarget, setActivityTarget] = useState(null);
   const [activities, setActivities] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
+  const [detailTarget, setDetailTarget] = useState(null);
 
   useEffect(() => {
     loadQueue();
@@ -920,6 +922,80 @@ function DepartmentQueue({
     );
   }
 
+  function renderQueueCard(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id];
+    const job = detail?.job;
+    const customer = detail?.customer;
+    const project = detail?.project;
+    const customerName = project?.contact_name || getCustomerName(customer);
+    const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
+    const overdue = isPastDue(job?.due_date);
+
+    return (
+      <Card
+        key={workOrder.id}
+        withBorder
+        radius="lg"
+        p="md"
+        role="button"
+        tabIndex={0}
+        onClick={() => setDetailTarget(workOrder)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") setDetailTarget(workOrder);
+        }}
+        style={{ cursor: "pointer" }}
+      >
+        <Stack gap="sm">
+          <Group justify="space-between" align="flex-start" wrap="nowrap">
+            <Group gap={6} wrap="wrap">
+              <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
+              {overdue && <Badge color="red">Overdue</Badge>}
+              {workOrder.priority === "High" && <Badge color="orange">High Priority</Badge>}
+            </Group>
+            <IconChevronRight size={20} color="var(--mantine-color-dimmed)" />
+          </Group>
+
+          <div>
+            <Text fw={900} size="lg" lineClamp={2}>{customerName} — {workName}</Text>
+            <Text size="sm" c="dimmed" mt={3}>
+              {workOrder.assigned_to || "Unassigned"} · Due {formatDate(job?.due_date)} · {getStationAge(workOrder)}
+            </Text>
+          </div>
+
+          <Progress value={job?.progress_percent || 0} color="red" size="sm" radius="xl" />
+
+          <Group justify="space-between" align="center" wrap="nowrap">
+            <Text size="xs" c="dimmed">Click to view files, notes, materials, and actions</Text>
+            {workOrder.status === "Ready" && (
+              <Button
+                size="xs"
+                color="red"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  startWorkOrder(workOrder);
+                }}
+              >
+                Start
+              </Button>
+            )}
+            {workOrder.status === "In Progress" && department !== "Design" && (
+              <Button
+                size="xs"
+                color="green"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  completeWorkOrder(workOrder);
+                }}
+              >
+                Complete
+              </Button>
+            )}
+          </Group>
+        </Stack>
+      </Card>
+    );
+  }
+
   return (
     <>
       <MWPageHeader
@@ -974,7 +1050,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "In Progress") && (
             <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
               <Stack>
-                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderWorkOrder)}
+                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
               </Stack>
             </MWSection>
           )}
@@ -982,7 +1058,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Ready") && (
             <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
               <Stack>
-                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderWorkOrder)}
+                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderQueueCard)}
               </Stack>
             </MWSection>
           )}
@@ -990,7 +1066,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Blocked") && (
             <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
               <Stack>
-                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderWorkOrder)}
+                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderQueueCard)}
               </Stack>
             </MWSection>
           )}
@@ -1001,13 +1077,24 @@ function DepartmentQueue({
                 {awaitingApprovalOrders.length === 0 ? (
                   <Text c="dimmed">No designs are awaiting customer approval.</Text>
                 ) : (
-                  awaitingApprovalOrders.map(renderWorkOrder)
+                  awaitingApprovalOrders.map(renderQueueCard)
                 )}
               </Stack>
             </MWSection>
           )}
         </SimpleGrid>
       )}
+
+      <Modal
+        opened={Boolean(detailTarget)}
+        onClose={() => setDetailTarget(null)}
+        title="Work Details & Actions"
+        centered
+        size="xl"
+        scrollAreaComponent={Modal.NativeScrollArea}
+      >
+        {detailTarget && renderWorkOrder(detailTarget)}
+      </Modal>
 
       <Modal
         opened={Boolean(activityTarget)}

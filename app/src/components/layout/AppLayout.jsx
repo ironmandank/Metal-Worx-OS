@@ -109,14 +109,14 @@ const PRIMARY_NAV = [
   },
   {
     page: "quickTurnaround",
-    label: "Hot",
+    label: "Artwork",
     fullLabel: "Hot Artwork",
     icon: IconBolt,
   },
   {
     page: "hotToday",
-    label: "Hot",
-    fullLabel: "Hot Today Control",
+    label: "Today",
+    fullLabel: "Today's Priorities",
     icon: IconFlame,
   },
 ];
@@ -304,12 +304,6 @@ const NAV_GROUPS = [
         page: "productionJobs",
         label: "Production Jobs",
         icon: IconBuildingFactory2,
-      },
-      {
-        page: "designQueue",
-        label: "Design Intake & Queue",
-        section: "Design Work",
-        icon: IconPalette,
       },
     ],
   },
