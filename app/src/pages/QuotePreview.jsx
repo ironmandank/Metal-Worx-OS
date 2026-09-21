@@ -25,6 +25,7 @@ import companyLogo from "../assets/metal-worx-official-transparent.png";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
+import { downloadQuotePdf } from "../services/quotePdfExportService";
 
 const COMPANY_LOGO_URL = companyLogo;
 
@@ -471,6 +472,53 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const responsibilities = splitLines(quote?.customer_responsibilities);
   const assumptions = splitLines(quote?.assumptions);
   const exclusions = splitLines(quote?.exclusions);
+
+  async function exportPdf() {
+    try {
+      await downloadQuotePdf({
+        logoUrl: COMPANY_LOGO_URL,
+        quoteNumber: quote.quote_number,
+        quoteDate: formatLongDate(quoteDate),
+        validThrough: formatLongDate(quote.valid_until),
+        status: quote.status,
+        preparedFor: projectCompany || projectPerson,
+        preparedBy: quote.prepared_by || "Metal Worx Inc.",
+        company: projectCompany,
+        contact: [projectPerson, selectedProject?.contact_phone || quote.contact_phone, quote.contact_email].filter(Boolean).join("\n"),
+        projectItem,
+        quoteType: selectedProject?.project_type || selectedProject?.project_category || quote.quote_type,
+        projectLocation,
+        scopeOfWork: quote.scope_of_work,
+        specifications: quote.specifications,
+        includedServices: quote.included_services,
+        pricingRows,
+        contractSubtotal,
+        taxLabel,
+        taxDisplay,
+        taxAmount,
+        taxNotice,
+        grandTotal,
+        priceNotes: quote.price_notes,
+        schedule: quote.project_schedule,
+        customerResponsibilities: quote.customer_responsibilities,
+        assumptions: quote.assumptions,
+        exclusions: quote.exclusions,
+        safetyNotice: quote.safety_technical_notice,
+        downPaymentTerms: quote.down_payment_terms,
+        paymentTerms: quote.payment_terms,
+        warrantyTerms: quote.warranty_terms,
+        disclaimer: quote.disclaimer,
+        acceptanceTerms: quote.acceptance_terms,
+        images: quoteImages,
+      });
+    } catch (error) {
+      notifications.show({
+        title: "PDF Export Failed",
+        message: error.message || "Unable to create the professional quote PDF.",
+        color: "red",
+      });
+    }
+  }
 
   async function exportWord() {
     try {
@@ -1520,12 +1568,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <Button
               color="red"
               disabled={unpricedMaterials.length > 0}
-              onClick={() => {
-                setTimeout(() => {
-                  window.focus();
-                  window.print();
-                }, 100);
-              }}
+              onClick={exportPdf}
             >
               Export PDF
             </Button>
