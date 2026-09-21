@@ -257,6 +257,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [quickUpdate, setQuickUpdate] = useState({ status: "On Track", work_completed: "", work_in_progress: "", next_steps: "", blockers: "", leadership_attention_required: false });
   const [savingQuickUpdate, setSavingQuickUpdate] = useState(false);
   const [restoringProjectId, setRestoringProjectId] = useState(null);
+  const [completingProjectId, setCompletingProjectId] = useState(null);
   const [selectedAlertKey, setSelectedAlertKey] = useState(null);
 
   useEffect(() => {
@@ -1017,21 +1018,30 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
   async function completeProject(project) {
     if (!window.confirm(`Mark "${project.project_name || project.project_number}" complete and remove it from the active-project board?`)) return;
-    const { error } = await supabase
-      .from("projects")
-      .update({
-        status: "Completed",
-        percent_complete: 100,
-        completed_at: new Date().toISOString(),
-        next_action: "Project complete",
-        is_active: false,
-      })
-      .eq("id", project.id);
-    if (error) {
+    setCompletingProjectId(project.id);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({
+          status: "Completed",
+          percent_complete: 100,
+          completed_at: new Date().toISOString(),
+          next_action: "Project complete",
+          is_active: false,
+        })
+        .eq("id", project.id);
+      if (error) throw error;
+      notifications.show({
+        title: "Project Completed",
+        message: `${project.project_name || project.project_number || "The project"} was moved to Completed.`,
+        color: "green",
+      });
+      await loadProjects();
+    } catch (error) {
       setErrorMessage(error.message || "The project could not be completed.");
-      return;
+    } finally {
+      setCompletingProjectId(null);
     }
-    await loadProjects();
   }
 
   async function reopenProject(project) {
@@ -1548,6 +1558,19 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         }}
                       >
                         Update
+                      </Button>
+                      <Button
+                        size="xs"
+                        color="green"
+                        leftSection={<IconCircleCheck size={14} />}
+                        loading={completingProjectId === project.id}
+                        style={{ gridColumn: "1 / -1" }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          completeProject(project);
+                        }}
+                      >
+                        Mark Complete
                       </Button>
                       {isAdministrator && (
                         <Button
