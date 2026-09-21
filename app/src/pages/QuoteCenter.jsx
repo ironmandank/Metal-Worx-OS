@@ -90,6 +90,10 @@ function money(value) {
   });
 }
 
+function organizerItemId() {
+  return `quote-item-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 function formatDate(value) {
   if (!value) return "Not set";
   const date = new Date(String(value).length === 10 ? `${value}T12:00:00` : value);
@@ -583,7 +587,14 @@ function QuoteCenter({
       });
       return;
     }
-    setOrganizedQuote(organizeQuoteText(pasteText));
+    const organized = organizeQuoteText(pasteText);
+    setOrganizedQuote({
+      ...organized,
+      items: organized.items.map((item) => ({
+        ...item,
+        _editorId: organizerItemId(),
+      })),
+    });
     notifications.show({
       title: "Quote Organized",
       message: "Review every field and line item before creating the draft quote.",
@@ -685,7 +696,15 @@ function QuoteCenter({
       ...(current || emptyOrganizedQuote()),
       items: [
         ...(current?.items || []),
-        { item_type: "Service", title: "", description: "", quantity: 1, unit: "Each", unit_price: 0 },
+        {
+          _editorId: organizerItemId(),
+          item_type: "Service",
+          title: "",
+          description: "",
+          quantity: 1,
+          unit: "Each",
+          unit_price: 0,
+        },
       ],
     }));
   }
@@ -1329,7 +1348,7 @@ function QuoteCenter({
                     <Button size="xs" variant="light" onClick={addOrganizedItem}>Add Line Item</Button>
                   </Group>
                   {organizedQuote.items.map((item, index) => (
-                    <Card key={`${index}-${item.title}`} withBorder radius="md" p="md">
+                    <Card key={item._editorId || `organized-item-${index}`} withBorder radius="md" p="md">
                       <Stack gap="sm">
                         <SimpleGrid cols={{ base: 1, md: 4 }}>
                           <TextInput label="Item" value={item.title} onChange={(event) => updateOrganizedItem(index, "title", event.currentTarget.value)} />

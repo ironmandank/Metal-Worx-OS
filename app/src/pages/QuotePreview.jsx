@@ -247,7 +247,7 @@ function wordBulletBlock(value) {
 function QuoteTextSection({ title, value, className = "" }) {
   if (!String(value || "").trim()) return null;
   return (
-    <section className={`quote-section ${className}`.trim()}>
+    <section className={`quote-section quote-text-section ${className}`.trim()}>
       <h2>{title}</h2>
       <div className="quote-text">{value}</div>
     </section>
@@ -1046,6 +1046,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
         .quote-section {
           margin-top: 19px;
+          display: flow-root;
+          clear: both;
         }
 
         .quote-section h2 {
@@ -1077,6 +1079,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           width: 100%;
           border-collapse: collapse;
           font-size: 12px;
+        }
+
+        .quote-table thead {
+          display: table-header-group;
         }
 
         .quote-table th {
@@ -1344,6 +1350,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
           .quote-section {
             margin-top: 12px;
+            padding-top: 1px;
+            display: flow-root;
+            clear: both;
+            overflow: visible;
           }
 
           .quote-section h2 {
@@ -1358,6 +1368,24 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           .quote-list {
             font-size: 11px;
             line-height: 1.33;
+          }
+
+          .quote-text {
+            orphans: 3;
+            widows: 3;
+          }
+
+          .quote-text-section {
+            break-inside: avoid-page;
+            page-break-inside: avoid;
+          }
+
+          .quote-section > h2 + .quote-table,
+          .quote-section > h2 + .quote-text,
+          .quote-section > h2 + .quote-list,
+          .quote-section > h2 + .quote-terms-list {
+            break-before: avoid-page;
+            page-break-before: avoid;
           }
 
           .quote-list li {
@@ -1624,7 +1652,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             value={quote.included_services}
           />
 
-          <section className="quote-section">
+          <section className="quote-section quote-pricing-section">
             <h2>Price Breakdown</h2>
             <Table className="quote-table">
               <Table.Thead>

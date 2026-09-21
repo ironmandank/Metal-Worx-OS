@@ -1028,6 +1028,9 @@ function DepartmentQueue({
               ["Ready", readyOrders.length],
               ["In Progress", inProgressOrders.length],
               ["Blocked", blockedOrders.length],
+              ...(department === "Design"
+                ? [["Customer Approval", awaitingApprovalOrders.length]]
+                : []),
             ].map(([label, count]) => (
               <Button
                 key={label}
@@ -1048,19 +1051,19 @@ function DepartmentQueue({
           <Text c="dimmed">Loading {department} work orders...</Text>
         </MWSection>
       ) : (
-        <SimpleGrid cols={{ base: 1, lg: 2, xl: department === "Design" ? 3 : 2 }} spacing="lg">
-          {(queueFilter === "All" || queueFilter === "In Progress") && (
-            <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
-              <Stack>
-                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
-              </Stack>
-            </MWSection>
-          )}
-
+        <SimpleGrid cols={{ base: 1, md: 2, xl: department === "Design" ? 4 : 3 }} spacing="lg" align="start">
           {(queueFilter === "All" || queueFilter === "Ready") && (
             <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
               <Stack>
                 {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderQueueCard)}
+              </Stack>
+            </MWSection>
+          )}
+
+          {(queueFilter === "All" || queueFilter === "In Progress") && (
+            <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
+              <Stack>
+                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
               </Stack>
             </MWSection>
           )}
@@ -1073,7 +1076,7 @@ function DepartmentQueue({
             </MWSection>
           )}
 
-          {department === "Design" && queueFilter === "All" && (
+          {department === "Design" && (queueFilter === "All" || queueFilter === "Customer Approval") && (
             <MWSection title="Customer Approval" subtitle={`${awaitingApprovalOrders.length} awaiting confirmation`}>
               <Stack>
                 {awaitingApprovalOrders.length === 0 ? (

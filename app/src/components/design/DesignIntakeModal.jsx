@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   Alert,
   Button,
   Checkbox,
-  FileInput,
+  FileButton,
   Group,
   Modal,
   Select,
@@ -79,11 +79,13 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [files, setFiles] = useState([]);
   const [saving, setSaving] = useState(false);
+  const resetFilePicker = useRef(null);
 
   useEffect(() => {
     if (opened) {
       setForm({ ...DEFAULT_FORM, dateOrdered: new Date() });
       setFiles([]);
+      resetFilePicker.current?.();
     }
   }, [opened]);
 
@@ -280,16 +282,46 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           <Select label="Assigned Designer" data={["Kory", "Design Team", "Dan"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || "Kory")} />
         </SimpleGrid>
 
-        <FileInput
-          label={needsDesign ? "Customer Reference Images / Files" : "Existing Design Reference (Optional)"}
-          placeholder="Upload one or more files"
-          leftSection={<IconUpload size={16} />}
-          multiple
-          clearable
-          value={files}
-          onChange={setFiles}
-          accept="image/*,.pdf,.svg,.dxf,.cdr"
-        />
+        <Stack gap={6}>
+          <Text size="sm" fw={700}>
+            {needsDesign ? "Customer Reference Images / Files" : "Existing Design Reference (Optional)"}
+          </Text>
+          <Group gap="sm" align="center">
+            <FileButton
+              resetRef={resetFilePicker}
+              multiple
+              accept="image/png,image/jpeg,image/webp,application/pdf,.svg,.dxf,.cdr"
+              onChange={(selected) => setFiles(Array.isArray(selected) ? selected : selected ? [selected] : [])}
+            >
+              {(props) => (
+                <Button {...props} variant="default" leftSection={<IconUpload size={16} />} disabled={saving}>
+                  Choose Files
+                </Button>
+              )}
+            </FileButton>
+            <Text size="sm" c="dimmed">
+              {files.length ? `${files.length} file${files.length === 1 ? "" : "s"} selected` : "No files selected"}
+            </Text>
+            {files.length > 0 && (
+              <Button
+                size="xs"
+                variant="subtle"
+                color="gray"
+                onClick={() => {
+                  setFiles([]);
+                  resetFilePicker.current?.();
+                }}
+              >
+                Clear
+              </Button>
+            )}
+          </Group>
+          {files.length > 0 && (
+            <Text size="xs" c="dimmed">
+              {files.map((file) => file.name).join(" • ")}
+            </Text>
+          )}
+        </Stack>
 
         {feeRequired ? (
           <Stack gap="xs">
