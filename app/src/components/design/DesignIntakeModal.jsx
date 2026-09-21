@@ -93,6 +93,26 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function addReferenceImage(selected) {
+    if (!selected) return;
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(selected.type)) {
+      notifications.show({
+        title: "Image Type Not Supported",
+        message: "Choose a JPG, PNG, or WebP image. Design files can be attached from the job after it is created.",
+        color: "orange",
+      });
+      resetFilePicker.current?.();
+      return;
+    }
+    setFiles((current) => [...current, selected]);
+    resetFilePicker.current?.();
+  }
+
+  function removeReferenceImage(index) {
+    setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
+  }
+
   const needsDesign = form.designSource !== "Design Already on File";
   const feeRequired = form.designSource === "New Design Required";
 
@@ -289,13 +309,12 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           <Group gap="sm" align="center">
             <FileButton
               resetRef={resetFilePicker}
-              multiple
-              accept="image/png,image/jpeg,image/webp,application/pdf,.svg,.dxf,.cdr"
-              onChange={(selected) => setFiles(Array.isArray(selected) ? selected : selected ? [selected] : [])}
+              accept=".jpg,.jpeg,.png,.webp"
+              onChange={addReferenceImage}
             >
               {(props) => (
                 <Button {...props} variant="default" leftSection={<IconUpload size={16} />} disabled={saving}>
-                  Choose Files
+                  {files.length ? "Add Another Image" : "Add Image"}
                 </Button>
               )}
             </FileButton>
@@ -317,9 +336,16 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             )}
           </Group>
           {files.length > 0 && (
-            <Text size="xs" c="dimmed">
-              {files.map((file) => file.name).join(" • ")}
-            </Text>
+            <Stack gap={4}>
+              {files.map((file, index) => (
+                <Group key={`${file.name}-${file.lastModified}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
+                  <Text size="xs" c="dimmed" truncate>{file.name}</Text>
+                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => removeReferenceImage(index)}>
+                    Remove
+                  </Button>
+                </Group>
+              ))}
+            </Stack>
           )}
         </Stack>
 
