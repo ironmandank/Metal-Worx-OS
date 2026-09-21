@@ -1459,10 +1459,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           }
 
           .quote-footer {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: -.31in;
+            position: static;
+            margin-top: 18px;
+            padding-top: 6px;
+            border-top: 1px solid #aaa;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
           }
 
           .quote-running-header,
