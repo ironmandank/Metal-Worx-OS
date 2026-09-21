@@ -964,10 +964,11 @@ function DepartmentQueue({
 
           <Progress value={job?.progress_percent || 0} color="red" size="sm" radius="xl" />
 
-          <Group justify="space-between" align="center" wrap="nowrap">
-            <Text size="xs" c="dimmed">Click to view files, notes, materials, and actions</Text>
+          <Stack gap={6}>
+            <Text size="xs" c="dimmed" ta="center">Click the card to view files, notes, materials, and actions</Text>
             {workOrder.status === "Ready" && (
               <Button
+                fullWidth
                 size="xs"
                 color="red"
                 onClick={(event) => {
@@ -980,6 +981,7 @@ function DepartmentQueue({
             )}
             {workOrder.status === "In Progress" && department !== "Design" && (
               <Button
+                fullWidth
                 size="xs"
                 color="green"
                 onClick={(event) => {
@@ -990,7 +992,7 @@ function DepartmentQueue({
                 Complete
               </Button>
             )}
-          </Group>
+          </Stack>
         </Stack>
       </Card>
     );
