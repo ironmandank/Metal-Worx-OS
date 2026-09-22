@@ -23,7 +23,7 @@ function dateValue(value) {
   return value ? new Date(`${String(value).slice(0, 10)}T12:00:00`) : null;
 }
 
-function ProjectControlCenter({ project, activeUser, onProjectUpdated }) {
+function ProjectControlCenter({ project, activeUser, onProjectUpdated, section = null }) {
   const [changeOrders, setChangeOrders] = useState([]);
   const [communications, setCommunications] = useState([]);
   const [files, setFiles] = useState([]);
@@ -150,8 +150,8 @@ function ProjectControlCenter({ project, activeUser, onProjectUpdated }) {
 
   return <Stack gap="lg">
     {alerts.length > 0 && <Alert color="orange" icon={<IconAlertTriangle size={18} />} title="Project attention required">{alerts.join(" • ")}</Alert>}
-    <Tabs defaultValue="actions">
-      <Tabs.List grow><Tabs.Tab value="actions">Next Action & Blockers</Tabs.Tab><Tabs.Tab value="changes">Change Orders ({changeOrders.length})</Tabs.Tab><Tabs.Tab value="communications">Communication ({communications.length})</Tabs.Tab><Tabs.Tab value="closeout">Closeout Readiness</Tabs.Tab></Tabs.List>
+    <Tabs {...(section ? { value: section } : { defaultValue: "actions" })}>
+      {!section && <Tabs.List grow><Tabs.Tab value="actions">Next Action & Blockers</Tabs.Tab><Tabs.Tab value="changes">Change Orders ({changeOrders.length})</Tabs.Tab><Tabs.Tab value="communications">Communication ({communications.length})</Tabs.Tab><Tabs.Tab value="closeout">Closeout Readiness</Tabs.Tab></Tabs.List>}
 
       <Tabs.Panel value="actions" pt="lg"><SimpleGrid cols={{ base: 1, lg: 2 }}>
         <Card withBorder radius="lg" p="lg"><Stack><Title order={4}>Unified Next Action</Title><TextInput label="What happens next?" value={nextActionDraft.action} onChange={(event) => setNextActionDraft((draft) => ({ ...draft, action: event.currentTarget.value }))} /><TextInput label="Owner" value={nextActionDraft.owner} onChange={(event) => setNextActionDraft((draft) => ({ ...draft, owner: event.currentTarget.value }))} /><DateInput label="Due date" value={nextActionDraft.due} onChange={(value) => setNextActionDraft((draft) => ({ ...draft, due: value }))} clearable /><Button color="red" loading={saving} onClick={() => updateProject({ next_action: nextActionDraft.action || null, next_action_owner: nextActionDraft.owner || null, next_action_due: nextActionDraft.due ? nextActionDraft.due.toISOString().slice(0, 10) : null })}>Save Next Action</Button></Stack></Card>

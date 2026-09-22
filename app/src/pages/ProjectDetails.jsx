@@ -27,7 +27,6 @@ import { DateInput, DateTimePicker } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity,
-  IconAdjustments,
   IconArrowRight,
   IconBuilding,
   IconBolt,
@@ -51,7 +50,6 @@ import {
   IconRoute,
   IconSettingsAutomation,
   IconShoppingCart,
-  IconPhoto,
   IconTimeline,
   IconUser,
   IconUsers,
@@ -367,10 +365,36 @@ function ProjectDetails({
   const [activeTab, setActiveTab] = useState(selectedProject?.initialTab || "overview");
   const tabGroup = useMemo(() => {
     if (["workflow", "production", "schedule", "tracking"].includes(activeTab)) return "work";
-    if (activeTab === "procurement") return "financial";
-    if (["activity", "controls", "story", "notes", "package"].includes(activeTab)) return "records";
+    if (["procurement", "changes"].includes(activeTab)) return "financial";
+    if (["activity", "story", "communications", "notes", "package", "closeout"].includes(activeTab)) return "records";
     return "command";
   }, [activeTab]);
+  const closeoutAvailable = ["Completed", "Installation Complete", "Ready for Closeout"].includes(project?.status)
+    || Number(project?.percent_complete || 0) >= 90;
+  const workspaceViews = useMemo(() => {
+    if (tabGroup === "work") return [
+      { value: "workflow", label: "Workflow" },
+      { value: "production", label: "Production" },
+      { value: "schedule", label: "Field Schedule" },
+      { value: "tracking", label: "Daily Updates" },
+    ];
+    if (tabGroup === "financial") return [
+      { value: "procurement", label: "Money & Materials" },
+      { value: "changes", label: "Change Orders" },
+    ];
+    if (tabGroup === "records") return [
+      { value: "story", label: "Story Board & PDF Exports" },
+      { value: "communications", label: "Customer Communication" },
+      { value: "activity", label: "Activity History" },
+      { value: "notes", label: "Project Notes" },
+      { value: "package", label: "Files & Photos" },
+      ...(closeoutAvailable ? [{ value: "closeout", label: "Project Closeout" }] : []),
+    ];
+    return [
+      { value: "overview", label: "Project Overview" },
+      { value: "controls", label: "Next Action & Blockers" },
+    ];
+  }, [closeoutAvailable, tabGroup]);
 
   const [materialsLoading, setMaterialsLoading] = useState(false);
 
@@ -2108,10 +2132,10 @@ function ProjectDetails({
             </SimpleGrid>
             <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="xs">
               {[
-                ["command", "Overview", "overview"],
+                ["command", "Project Overview", "overview"],
                 ["work", "Work & Schedule", "workflow"],
-                ["financial", "Money & Materials", "procurement"],
-                ["records", "Controls, Story & Files", "controls"],
+                ["financial", "Money, Materials & Changes", "procurement"],
+                ["records", "Updates, Story & Files", "story"],
               ].map(([group, label, target]) => (
                 <Button
                   key={group}
@@ -2136,83 +2160,16 @@ function ProjectDetails({
           onChange={(value) => setActiveTab(value || "overview")}
           keepMounted={false}
         >
-          <Tabs.List
-            grow
-            mb="lg"
-            style={{
-              gap: 4,
-              padding: 6,
-              borderRadius: "var(--mantine-radius-lg)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.025)",
-              flexWrap: "wrap",
-            }}
-          >
-            {tabGroup === "command" && <Tabs.Tab value="overview" leftSection={<IconBuilding size={16} />}>
-              Overview
-            </Tabs.Tab>}
-
-            {tabGroup === "work" && <Tabs.Tab value="workflow" leftSection={<IconTimeline size={16} />}>
-              Workflow
-            </Tabs.Tab>}
-
-            {tabGroup === "financial" && <Tabs.Tab
-              value="procurement"
-              leftSection={<IconShoppingCart size={16} />}
-              rightSection={
-                procurementSummary.total > 0 ? (
-                  <MWStatusBadge
-                    status="Active"
-                    label={String(procurementSummary.total)}
-                    color="red"
-                    size="xs"
-                    showIcon={false}
-                    variant="filled"
-                  />
-                ) : null
-              }
-            >
-              Procurement
-            </Tabs.Tab>}
-
-            {tabGroup === "work" && <Tabs.Tab
-              value="production"
-              leftSection={<IconSettingsAutomation size={16} />}
-            >
-              Production
-            </Tabs.Tab>}
-
-            {tabGroup === "work" && <Tabs.Tab value="schedule" leftSection={<IconCalendar size={16} />}>
-              Field Schedule
-            </Tabs.Tab>}
-
-            {tabGroup === "records" && <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
-              Activity History
-            </Tabs.Tab>}
-
-            {tabGroup === "records" && <Tabs.Tab value="controls" leftSection={<IconAdjustments size={16} />}>
-              Controls & Changes
-            </Tabs.Tab>}
-
-            {tabGroup === "records" && <Tabs.Tab value="story" leftSection={<IconPhoto size={16} />}>
-              Story Board
-            </Tabs.Tab>}
-
-            {tabGroup === "records" && <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
-              Project Notes
-            </Tabs.Tab>}
-
-            {tabGroup === "work" && <Tabs.Tab
-              value="tracking"
-              leftSection={<IconClipboardCheck size={16} />}
-            >
-              Daily Updates
-            </Tabs.Tab>}
-
-            {tabGroup === "records" && <Tabs.Tab value="package" leftSection={<IconPackage size={16} />}>
-              Files & Photos
-            </Tabs.Tab>}
-          </Tabs.List>
+          <Paper p="md" withBorder radius="lg" mb="lg">
+            <Select
+              label="Workspace View"
+              description="Choose what you need without opening another project screen."
+              data={workspaceViews}
+              value={activeTab}
+              onChange={(value) => value && setActiveTab(value)}
+              allowDeselect={false}
+            />
+          </Paper>
 
           <Tabs.Panel value="overview">
             <Stack gap="lg">
@@ -3781,7 +3738,19 @@ function ProjectDetails({
           </Tabs.Panel>
 
           <Tabs.Panel value="controls">
-            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} />
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="actions" />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="changes">
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="changes" />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="communications">
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="communications" />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="closeout">
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="closeout" />
           </Tabs.Panel>
 
           <Tabs.Panel value="story">
