@@ -36,6 +36,19 @@ const STORY_STAGES = [
   "Completed Project",
 ];
 
+const SSU_EXAMPLE = [
+  { id: "ssu-9268", file_name: "IMG_9268.jpeg", story_stage: "Fabrication", description: "Building the Structural Foundation — Our fabrication team welds the interior floor structure, creating a strong foundation for the steel-lined container.", example_url: "/storyboard-examples/ssu/IMG_9268.svg" },
+  { id: "ssu-9315", file_name: "IMG_9315.jpeg", story_stage: "Fabrication", description: "Positioning the Steel Floor — Steel floor sections are positioned and aligned throughout the container before final welding.", example_url: "/storyboard-examples/ssu/IMG_9315.svg" },
+  { id: "ssu-9316", file_name: "IMG_9316.jpeg", story_stage: "Test Fit", description: "Checking Fit and Alignment — Each section is checked for fit, spacing, and accessibility before the installation is finalized.", example_url: "/storyboard-examples/ssu/IMG_9316.svg" },
+  { id: "ssu-9320", file_name: "IMG_9320.jpeg", story_stage: "Fabrication", description: "Reinforcing the Upper Structure — Custom steel framing is installed around the upper opening to strengthen the enclosure and support the interior lining.", example_url: "/storyboard-examples/ssu/IMG_9320.svg" },
+  { id: "ssu-9321", file_name: "IMG_9321.jpeg", story_stage: "Installation", description: "Creating a Continuous Steel Floor — The fitted floor panels create a durable working surface from the entrance to the rear wall.", example_url: "/storyboard-examples/ssu/IMG_9321.svg" },
+  { id: "ssu-9330", file_name: "IMG_9330.jpeg", story_stage: "Fabrication", description: "Installing Wall Support Rails — Horizontal steel supports are welded along the container walls to provide secure mounting points for future equipment and components.", example_url: "/storyboard-examples/ssu/IMG_9330.svg" },
+  { id: "ssu-9331", file_name: "IMG_9331.jpeg", story_stage: "Fabrication", description: "Full-Length Wall Reinforcement — The wall-support system is aligned and welded throughout the full length of the container.", example_url: "/storyboard-examples/ssu/IMG_9331.svg" },
+  { id: "ssu-9334", file_name: "IMG_9334.jpeg", story_stage: "Installation", description: "Enclosing the End Wall — Custom-cut steel panels are fitted to the end wall and secured around the reinforced structure.", example_url: "/storyboard-examples/ssu/IMG_9334.svg" },
+  { id: "ssu-9335", file_name: "IMG_9335.jpeg", story_stage: "Installation", description: "Completing the Interior Steel Lining — Final wall sections and attachment points create a strong and functional interior enclosure.", example_url: "/storyboard-examples/ssu/IMG_9335.svg" },
+  { id: "ssu-9336", file_name: "IMG_9336.jpeg", story_stage: "Completed Project", description: "Metal Fabrication Complete — The custom interior steel fabrication is complete and ready for the customer's next construction and equipment-installation phase.", example_url: "/storyboard-examples/ssu/IMG_9336.svg", is_cover_photo: true },
+];
+
 function safeFileName(value) {
   return String(value || "progress-photo")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -88,14 +101,19 @@ function ProjectStoryBoard({ project, activeUser }) {
   }, [project?.id]);
 
   const visibleFiles = useMemo(
-    () => view === "Customer Story" ? files.filter((file) => file.customer_visible) : files,
+    () => view === "SSU Example" ? SSU_EXAMPLE : view === "Customer Story" ? files.filter((file) => file.customer_visible) : files,
     [files, view],
   );
+
+  const isExample = view === "SSU Example";
 
   const completedStages = useMemo(
     () => new Set(files.map((file) => file.story_stage).filter(Boolean)).size,
     [files],
   );
+  const displayedStageCount = isExample
+    ? new Set(SSU_EXAMPLE.map((file) => file.story_stage)).size
+    : completedStages;
 
   async function uploadPhotos() {
     if (!selectedFiles.length) {
@@ -163,9 +181,9 @@ function ProjectStoryBoard({ project, activeUser }) {
             <Title order={2}>{project.project_name || "Large Project"}</Title>
             <Text c="dimmed">{project.project_number} · Custom Metal. Built to Last.</Text>
           </div>
-          <Badge color="red" variant="filled" size="lg">{completedStages} / {STORY_STAGES.length} stages documented</Badge>
+          <Badge color="red" variant="filled" size="lg">{displayedStageCount} / {STORY_STAGES.length} stages documented</Badge>
         </Group>
-        <Progress mt="lg" value={(completedStages / STORY_STAGES.length) * 100} color="red" size="lg" radius="xl" />
+        <Progress mt="lg" value={(displayedStageCount / STORY_STAGES.length) * 100} color="red" size="lg" radius="xl" />
       </Paper>
 
       <Card withBorder radius="lg" p="lg">
@@ -186,8 +204,15 @@ function ProjectStoryBoard({ project, activeUser }) {
 
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Follow the build from the original scope through installation.</Text></div>
-        <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story"]} />
+        <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Example"]} />
       </Group>
+
+      {isExample && (
+        <Alert color="red" icon={<IconStar size={18} />} title="Example: SSU Two-Container Project">
+          <Text size="sm">Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.</Text>
+          <Text size="sm" fw={900} mt="xs">Custom Metal. Built to Last. · Veteran Owned · American Made · Built Strong. Finished Right.</Text>
+        </Alert>
+      )}
 
       {view === "Customer Story" && !files.some((file) => file.customer_visible) && (
         <Alert color="blue" icon={<IconEye size={18} />}>No photographs have been approved for the customer story yet.</Alert>
@@ -206,10 +231,10 @@ function ProjectStoryBoard({ project, activeUser }) {
                 <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }}>
                   {stageFiles.map((file) => (
                     <Card key={file.id} withBorder radius="md" p="xs">
-                      <Image src={urls[file.id]} alt={file.description || file.file_name} h={220} fit="cover" radius="sm" />
+                      <Image src={file.example_url || urls[file.id]} alt={file.description || file.file_name} h={220} fit="cover" radius="sm" />
                       <Stack gap={6} mt="sm">
-                        <Group justify="space-between" gap="xs"><Text fw={800} size="sm" lineClamp={1}>{file.description || file.file_name}</Text>{file.is_cover_photo && <Badge color="yellow" leftSection={<IconStar size={12} />}>Cover</Badge>}</Group>
-                        <Text size="xs" c="dimmed">{new Date(file.photo_taken_at || file.created_at).toLocaleString()} · {file.uploaded_by || "Metal Worx"}</Text>
+                        <Group justify="space-between" gap="xs" align="flex-start"><Text fw={800} size="sm" style={{ flex: 1 }}>{file.description || file.file_name}</Text>{file.is_cover_photo && <Badge color="yellow" leftSection={<IconStar size={12} />}>Cover</Badge>}</Group>
+                        <Text size="xs" c="dimmed">{isExample ? "SSU Two-Container Project · Customer-facing example" : `${new Date(file.photo_taken_at || file.created_at).toLocaleString()} · ${file.uploaded_by || "Metal Worx"}`}</Text>
                         {view === "Internal Story Board" && <Group grow>
                           <Button size="xs" variant="light" color={file.customer_visible ? "green" : "gray"} onClick={() => updatePhoto(file, { customer_visible: !file.customer_visible })}>{file.customer_visible ? "Customer Visible" : "Internal Only"}</Button>
                           <Button size="xs" variant="light" color="yellow" leftSection={<IconFlag size={14} />} onClick={() => updatePhoto(file, { is_cover_photo: true })}>Set Cover</Button>
