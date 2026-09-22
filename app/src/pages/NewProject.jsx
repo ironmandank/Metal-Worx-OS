@@ -94,6 +94,9 @@ function prepareIntakeDraft(sourceText) {
   };
   const projectName = findValue(["project", "project name", "job", "job name", "title"]) || lines[0] || "";
   const customerName = findValue(["customer", "client", "company"]);
+  const phone = findValue(["phone", "phone number", "telephone", "mobile"]);
+  const email = findValue(["email", "email address"]);
+  const address = findValue(["address", "project address", "job address", "site address"]);
   const assignedTo = findValue(["assigned to", "project lead", "lead", "owner"]);
   const dueDate = findValue(["due", "due date", "needed by", "required by"]);
   const checklist = lines.filter((line) => /^(task|checklist|to do|todo|step)\s*:/i.test(line)).map((line) => cleanLine(line.slice(line.indexOf(":") + 1))).filter(Boolean);
@@ -102,7 +105,28 @@ function prepareIntakeDraft(sourceText) {
     const match = line.match(/^(.*?)(?:\s+|\s*[-–—:]\s*)\$([\d,]+(?:\.\d{1,2})?)$/);
     return match ? { title: cleanLine(match[1]), quantity: 1, unit_price: Number(match[2].replace(/,/g, "")) } : null;
   }).filter(Boolean);
-  return { projectName, customerName, assignedTo, dueDate, checklist, materials, quoteItems, sourceText: String(sourceText || "").trim() };
+  return { projectName, customerName, phone, email, address, assignedTo, dueDate, checklist, materials, quoteItems, sourceText: String(sourceText || "").trim() };
+}
+
+function normalizeMatchValue(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findMatchingCustomer(customers, draft) {
+  const targetName = normalizeMatchValue(draft.customerName);
+  const targetPhone = normalizeMatchValue(draft.phone);
+  const targetEmail = String(draft.email || "").trim().toLowerCase();
+  if (!targetName && !targetPhone && !targetEmail) return null;
+  return customers.find((customer) => {
+    const names = [
+      customer.company_name,
+      customer.contact_name,
+      `${customer.first_name || ""} ${customer.last_name || ""}`.trim(),
+    ].map(normalizeMatchValue).filter(Boolean);
+    return (targetEmail && String(customer.email || "").trim().toLowerCase() === targetEmail)
+      || (targetPhone && normalizeMatchValue(customer.phone) === targetPhone)
+      || (targetName && names.includes(targetName));
+  }) || null;
 }
 
 async function readIntakeFile(file) {
@@ -216,6 +240,7 @@ function NewProject({ setPage }) {
   const [intakeChecklist, setIntakeChecklist] = useState([]);
   const [intakeQuoteItems, setIntakeQuoteItems] = useState([]);
   const [preparingIntake, setPreparingIntake] = useState(false);
+  const [intakeMatchMessage, setIntakeMatchMessage] = useState("");
   const [showAdvancedWorkflow, setShowAdvancedWorkflow] = useState(false);
 
   const [
@@ -259,6 +284,9 @@ function NewProject({ setPage }) {
       install_required: true,
 
       site_visit_date: null,
+      site_visit_outcome: null,
+      site_visit_result_notes: "",
+      promised_quote_date: null,
       install_date: null,
       due_date: null,
       planned_start_date: null,
@@ -391,11 +419,32 @@ function NewProject({ setPage }) {
       const source = [intakeText, fileText].filter(Boolean).join("\n\n");
       if (!source.trim()) throw new Error("Paste a project write-up or choose a supported document first.");
       const draft = prepareIntakeDraft(source);
+      const matchedCustomer = findMatchingCustomer(customers, draft);
       setIntakeDraft(draft);
       setIntakeChecklist(draft.checklist);
       setIntakeQuoteItems(draft.quoteItems);
-      setFormData((current) => ({ ...current, project_name: draft.projectName || current.project_name, assigned_to: draft.assignedTo || current.assigned_to, due_date: /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate) ? draft.dueDate : current.due_date, notes: draft.sourceText }));
-      if (!projectPath) applyProjectPreset("General Project");
+      setFormData((current) => ({
+        ...current,
+        project_name: draft.projectName || current.project_name,
+        customer_id: matchedCustomer ? String(matchedCustomer.id) : current.customer_id,
+        contact_name: matchedCustomer
+          ? (matchedCustomer.company_name || `${matchedCustomer.first_name || ""} ${matchedCustomer.last_name || ""}`.trim())
+          : (draft.customerName || current.contact_name),
+        contact_phone: matchedCustomer?.phone || draft.phone || current.contact_phone,
+        job_address: matchedCustomer?.address || draft.address || current.job_address,
+        city: matchedCustomer?.city || current.city,
+        state: matchedCustomer?.state || current.state,
+        zip_code: matchedCustomer?.zip || current.zip_code,
+        assigned_to: draft.assignedTo || current.assigned_to,
+        due_date: /^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate) ? draft.dueDate : current.due_date,
+        notes: draft.sourceText,
+      }));
+      setIntakeMatchMessage(matchedCustomer
+        ? `Matched existing customer: ${matchedCustomer.company_name || `${matchedCustomer.first_name || ""} ${matchedCustomer.last_name || ""}`.trim()}`
+        : draft.customerName
+          ? `No existing customer match found for ${draft.customerName}. Review the customer before saving.`
+          : "No customer name was detected. Select the customer before saving.");
+      if (!projectPath) applyProjectPreset("Site Visit / Estimate");
       if (draft.materials.length) setMaterialRequests(draft.materials.map((item) => ({ ...createBlankMaterialRequest(), item })));
       notifications.show({ title: "Project Draft Prepared", message: "Review every field, quote item, material, and checklist item before creating the project.", color: "blue" });
     } catch (error) {
@@ -460,6 +509,35 @@ function NewProject({ setPage }) {
     setProjectPath(value);
 
     const presets = {
+      "Site Visit / Estimate": {
+        customer_approval_required: true,
+        project_category: "Estimate / Site Visit",
+        work_location: "Field",
+        site_visit_required: true,
+        measurements_required: true,
+        quote_required: true,
+        fabrication_required: false,
+        test_fit_required: false,
+        finish_required: false,
+        install_required: false,
+        quote_status: "Not Started",
+        approval_status: "Pending",
+        down_payment_required: false,
+        down_payment_status: "Not Required",
+        balance_status: "Not Required",
+        material_status: "Not Needed",
+        materials_ordered: false,
+        materials_received: false,
+        fabrication_status: "Not Required",
+        test_fit_status: "Not Required",
+        finish_status: "Not Required",
+        ready_for_install: false,
+        install_status: "Not Required",
+        final_inspection_status: "Not Required",
+        next_action: "Schedule Chad site visit",
+        assigned_to: "Chad",
+        percent_complete: 0,
+      },
       "Field Fabrication Project":
         {
           customer_approval_required:
@@ -1255,12 +1333,13 @@ function NewProject({ setPage }) {
         }}
         spacing="lg"
       >
-        <MWSection title="Project Intake Assistant">
+        <MWSection title="Paste to Organize">
           <Stack>
-            <Alert color="blue" title="Review before creation">Paste a project email or write-up, or upload PDF, Word, Excel, text, CSV, or Markdown. The assistant prepares a draft locally; it does not save records until you click Create Project.</Alert>
+            <Alert color="blue" title="Turn the customer request into a project draft">Paste an email or project write-up, or upload PDF, Word, Excel, text, CSV, or Markdown. Metal Worx OS organizes the customer, scope, dates, pricing, materials, and checklist for review before anything is saved.</Alert>
             <FileInput label="Project document" placeholder="Choose PDF, DOCX, XLSX, XLS, TXT, CSV, or MD" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md" value={intakeFile} onChange={setIntakeFile} clearable />
             <Textarea label="Project write-up" placeholder="Paste the customer request, scope, tasks, materials, pricing, dates, and project lead here…" minRows={7} autosize value={intakeText} onChange={(event) => setIntakeText(event.currentTarget.value)} />
-            <Button color="blue" loading={preparingIntake} onClick={prepareProjectIntake}>Prepare Project Draft</Button>
+            <Button color="red" loading={preparingIntake} onClick={prepareProjectIntake}>Paste to Organize</Button>
+            {intakeMatchMessage && <Alert color={intakeMatchMessage.startsWith("Matched") ? "green" : "orange"}>{intakeMatchMessage}</Alert>}
             {intakeDraft && <Alert color="green" title="Draft prepared"><Text size="sm">Project: {intakeDraft.projectName || "Review required"}</Text><Text size="sm">Checklist items: {intakeChecklist.length} · Quote items: {intakeQuoteItems.length} · Materials: {intakeDraft.materials.length}</Text><Text size="xs" c="dimmed" mt="xs">Review and edit the regular project fields below before saving.</Text></Alert>}
           </Stack>
         </MWSection>
@@ -1270,6 +1349,7 @@ function NewProject({ setPage }) {
               label="Quick Setup"
               placeholder="Choose a project path"
               data={[
+                "Site Visit / Estimate",
                 "Field Fabrication Project",
                 "Shop Fabrication / Repair",
                 "General Project",
