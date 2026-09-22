@@ -124,48 +124,96 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
   const stageOrder = [...new Set(prepared.map((file) => file.story_stage || "Project Progress"))];
   for (const stage of stageOrder) {
     const stageFiles = prepared.filter((file) => (file.story_stage || "Project Progress") === stage);
+    if (template === "industrial") {
+      for (const [index, file] of stageFiles.entries()) {
+        doc.addPage();
+        doc.setFillColor(...BLACK);
+        doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+        doc.setFillColor(...theme.accent);
+        doc.rect(0, 0, 14, PAGE.height, "F");
+        if (file.image) addContainedImage(doc, file.image, 34, 34, 474, 520);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("StorySans", "bold");
+        doc.setFontSize(10);
+        doc.text(`${String(index + 1).padStart(2, "0")}  /  ${String(stageFiles.length).padStart(2, "0")}`, 538, 58);
+        doc.setTextColor(...theme.accent);
+        doc.setFontSize(13);
+        doc.text(clean(stage).toUpperCase(), 538, 102);
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        const caption = doc.splitTextToSize(clean(file.description || file.file_name), 210);
+        doc.text(caption, 538, 148, { lineHeightFactor: 1.25 });
+        doc.setDrawColor(...theme.accent);
+        doc.setLineWidth(3);
+        doc.line(538, 330, 600, 330);
+        doc.setFont("StorySans", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(180, 180, 180);
+        doc.text(internal ? clean(file.file_name) : "Project progress documentation", 538, 364);
+      }
+      continue;
+    }
+
+    if (template === "portfolio") {
+      for (const file of stageFiles) {
+        doc.addPage();
+        doc.setFillColor(250, 249, 247);
+        doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+        doc.setFillColor(...theme.accent);
+        doc.rect(0, 0, 184, PAGE.height, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("StorySans", "bold");
+        doc.setFontSize(12);
+        doc.text("PROJECT STORY", 32, 54);
+        doc.setFontSize(24);
+        doc.text(doc.splitTextToSize(clean(stage), 125), 32, 104, { lineHeightFactor: 1.15 });
+        doc.setFont("StorySans", "normal");
+        doc.setFontSize(9);
+        doc.text(doc.splitTextToSize(clean(file.description || file.file_name), 125), 32, 236, { lineHeightFactor: 1.45 });
+        if (file.image) addContainedImage(doc, file.image, 208, 34, 550, 440);
+        doc.setTextColor(...BLACK);
+        doc.setFont("StorySans", "bold");
+        doc.setFontSize(13);
+        doc.text(clean(projectTitle), 208, 514);
+        doc.setFont("StorySans", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text(internal ? clean(file.file_name) : "Project progress presentation", 208, 536);
+      }
+      continue;
+    }
+
     doc.addPage();
     doc.setFillColor(...theme.dark);
-    doc.rect(0, 0, PAGE.width, 58, "F");
+    doc.rect(0, 0, PAGE.width, 68, "F");
     doc.setFillColor(...theme.accent);
-    doc.rect(0, 0, 8, 58, "F");
+    doc.rect(0, 0, 8, 68, "F");
     doc.setTextColor(...theme.coverText);
     doc.setFont("StorySans", "bold");
     doc.setFontSize(18);
-    doc.text(clean(stage).toUpperCase(), PAGE.left, 37);
-    let itemIndex = 0;
-    for (const file of stageFiles) {
-      if (itemIndex > 0 && itemIndex % 2 === 0) {
+    doc.text(clean(stage).toUpperCase(), PAGE.left, 35);
+    doc.setFont("StorySans", "normal");
+    doc.setFontSize(8);
+    doc.text("FIELD PROGRESS REPORT", PAGE.width - PAGE.right, 35, { align: "right" });
+    for (const [index, file] of stageFiles.entries()) {
+      if (index > 0 && index % 2 === 0) {
         doc.addPage();
-        doc.setFillColor(...theme.dark);
-        doc.rect(0, 0, PAGE.width, 58, "F");
-        doc.setFillColor(...theme.accent);
-        doc.rect(0, 0, 8, 58, "F");
-        doc.setTextColor(...theme.coverText);
-        doc.setFont("StorySans", "bold");
-        doc.setFontSize(18);
-        doc.text(clean(stage).toUpperCase(), PAGE.left, 37);
       }
-      const cardWidth = (contentWidth - 18) / 2;
-      const x = PAGE.left + (itemIndex % 2) * (cardWidth + 18);
-      const y = 82;
-      doc.setDrawColor(215, 215, 215);
-      doc.setFillColor(250, 250, 250);
-      doc.roundedRect(x, y, cardWidth, 448, 7, 7, "FD");
-      if (file.image) addContainedImage(doc, file.image, x + 10, y + 10, cardWidth - 20, 286);
+      const row = index % 2;
+      const y = 86 + row * 234;
+      doc.setDrawColor(190, 194, 198);
+      doc.setFillColor(246, 247, 248);
+      doc.roundedRect(PAGE.left, y, contentWidth, 214, 4, 4, "FD");
+      if (file.image) addContainedImage(doc, file.image, PAGE.left + 10, y + 10, 300, 194);
       doc.setTextColor(...BLACK);
       doc.setFont("StorySans", "bold");
       doc.setFontSize(12);
-      const captionLines = doc.splitTextToSize(clean(file.description || file.file_name), cardWidth - 28);
-      doc.text(captionLines, x + 14, y + 324, { lineHeightFactor: 1.4 });
+      doc.text(doc.splitTextToSize(clean(file.description || file.file_name), 340), PAGE.left + 330, y + 32, { lineHeightFactor: 1.35 });
       doc.setFont("StorySans", "normal");
       doc.setFontSize(8);
-      doc.setTextColor(105, 105, 105);
-      const meta = internal
-        ? [file.file_name, file.uploaded_by].filter(Boolean).map(clean).join(" | ")
-        : "Customer progress update";
-      doc.text(doc.splitTextToSize(meta, cardWidth - 28), x + 14, y + 422);
-      itemIndex += 1;
+      doc.setTextColor(95, 100, 105);
+      const meta = internal ? [file.file_name, file.uploaded_by].filter(Boolean).map(clean).join(" | ") : "Customer progress update";
+      doc.text(doc.splitTextToSize(meta, 340), PAGE.left + 330, y + 184);
     }
   }
 
