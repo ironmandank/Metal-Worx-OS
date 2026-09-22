@@ -41,7 +41,7 @@ import { notifications } from "@mantine/notifications";
 import { supabase } from "../lib/supabase";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
-import { uploadOrderImages } from "../components/design/DesignIntakeModal";
+import { uploadOrderImages } from "../services/orderImageService";
 
 function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [job, setJob] = useState(selectedProductionJob || null);
