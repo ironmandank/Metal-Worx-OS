@@ -107,11 +107,11 @@ function ProjectStoryBoard({ project, activeUser }) {
   }, [project?.id]);
 
   const visibleFiles = useMemo(
-    () => view === "SSU Example" ? SSU_EXAMPLE : view === "Customer Story" ? files.filter((file) => file.customer_visible) : files,
+    () => view === "SSU Connex Story Board" ? SSU_EXAMPLE : view === "Customer Story" ? files.filter((file) => file.customer_visible) : files,
     [files, view],
   );
 
-  const isExample = view === "SSU Example";
+  const isExample = view === "SSU Connex Story Board";
 
   const completedStages = useMemo(
     () => new Set(files.map((file) => file.story_stage).filter(Boolean)).size,
@@ -239,12 +239,12 @@ function ProjectStoryBoard({ project, activeUser }) {
         <Group gap="xs">
           <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal PDF</Button>
           <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer PDF</Button>
-          <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Example"]} />
+          <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Connex Story Board"]} />
         </Group>
       </Group>
 
       {isExample && (
-        <Alert color="red" icon={<IconStar size={18} />} title="Example: SSU Two-Container Project">
+        <Alert color="red" icon={<IconStar size={18} />} title="SSU Connex Story Board - Two-Container Project">
           <Text size="sm">{SSU_OVERVIEW}</Text>
           <Text size="sm" fw={900} mt="xs">Custom Metal. Built to Last. · Veteran Owned · American Made · Built Strong. Finished Right.</Text>
         </Alert>
