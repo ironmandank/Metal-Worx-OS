@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Badge,
@@ -41,6 +41,8 @@ import {
 } from "../lib/productionWorkflow";
 import { uploadOrderImages } from "../components/design/DesignIntakeModal";
 import { notifyTeam } from "../services/teamNotificationService";
+import { getTodaysHotTodayItems } from "../services/hotTodayService";
+import { getDesignPriority, sortDesignQueue } from "../lib/designPriority";
 
 function DepartmentQueue({
   department,
@@ -64,6 +66,7 @@ function DepartmentQueue({
   const [activities, setActivities] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [detailTarget, setDetailTarget] = useState(null);
+  const [hotTodayItems, setHotTodayItems] = useState([]);
 
   useEffect(() => {
     loadQueue();
@@ -88,7 +91,17 @@ function DepartmentQueue({
     const queue = data || [];
 
     setWorkOrders(queue);
-    await loadJobDetails(queue);
+    await Promise.all([
+      loadJobDetails(queue),
+      department === "Design"
+        ? getTodaysHotTodayItems({ department: "Design" })
+            .then(setHotTodayItems)
+            .catch((hotError) => {
+              console.warn("Hot Today design ranking unavailable:", hotError);
+              setHotTodayItems([]);
+            })
+        : Promise.resolve(),
+    ]);
     setLoading(false);
   }
 
@@ -616,9 +629,12 @@ function DepartmentQueue({
     }
   }
 
-  const readyOrders = workOrders.filter(
-    (workOrder) => workOrder.status === "Ready"
-  );
+  const readyOrders = useMemo(() => {
+    const ready = workOrders.filter((workOrder) => workOrder.status === "Ready");
+    return department === "Design"
+      ? sortDesignQueue(ready, jobDetails, hotTodayItems)
+      : ready;
+  }, [department, hotTodayItems, jobDetails, workOrders]);
 
   const awaitingApprovalOrders = workOrders.filter((workOrder) => {
     const order = jobDetails[workOrder.production_job_id]?.order;
@@ -922,7 +938,7 @@ function DepartmentQueue({
     );
   }
 
-  function renderQueueCard(workOrder) {
+  function renderQueueCard(workOrder, index) {
     const detail = jobDetails[workOrder.production_job_id];
     const job = detail?.job;
     const customer = detail?.customer;
@@ -930,6 +946,9 @@ function DepartmentQueue({
     const customerName = project?.contact_name || getCustomerName(customer);
     const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
+    const designRank = department === "Design" && workOrder.status === "Ready"
+      ? getDesignPriority(workOrder, detail, hotTodayItems)
+      : null;
 
     return (
       <Card
@@ -948,6 +967,11 @@ function DepartmentQueue({
         <Stack gap="sm">
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Group gap={6} wrap="wrap">
+              {designRank && (
+                <Badge color={designRank.color} variant="filled">
+                  #{index + 1} · {designRank.reason}
+                </Badge>
+              )}
               <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
               {overdue && <Badge color="red">Overdue</Badge>}
               {workOrder.priority === "High" && <Badge color="orange">High Priority</Badge>}
