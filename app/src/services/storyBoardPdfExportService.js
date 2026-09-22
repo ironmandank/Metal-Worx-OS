@@ -3,7 +3,7 @@ import metalWorxLogo from "../assets/metal-worx-logo.png";
 import quoteFontRegular from "../assets/fonts/DejaVuSans-Quote.ttf?url";
 import quoteFontBold from "../assets/fonts/DejaVuSans-Quote-Bold.ttf?url";
 
-const PAGE = { width: 612, height: 792, left: 42, right: 42, top: 54, bottom: 48 };
+const PAGE = { width: 792, height: 612, left: 44, right: 44, top: 48, bottom: 42 };
 const RED = [156, 0, 15];
 const BLACK = [24, 25, 27];
 
@@ -64,9 +64,14 @@ function addContainedImage(doc, data, x, y, width, height) {
   doc.addImage(data, imageFormat(data), imageX, imageY, renderedWidth, renderedHeight, undefined, "FAST");
 }
 
-export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = "internal", overview = "" }) {
+export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = "internal", overview = "", template = "industrial" }) {
   const internal = mode === "internal";
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  const theme = template === "portfolio"
+    ? { accent: [156, 0, 15], dark: [238, 238, 238], coverText: [28, 29, 31], coverMuted: [85, 85, 85] }
+    : template === "field"
+      ? { accent: [180, 35, 45], dark: [47, 52, 57], coverText: [255, 255, 255], coverMuted: [205, 205, 205] }
+      : { accent: RED, dark: BLACK, coverText: [255, 255, 255], coverMuted: [205, 205, 205] };
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter", compress: true });
   await registerFonts(doc);
   const contentWidth = PAGE.width - PAGE.left - PAGE.right;
   const prepared = [];
@@ -84,73 +89,83 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
     try { logo = await urlToDataUrl(metalWorxLogo); } catch { /* The PDF remains usable without the logo image. */ }
   }
 
-  doc.setFillColor(...BLACK);
+  doc.setFillColor(...theme.dark);
   doc.rect(0, 0, PAGE.width, PAGE.height, "F");
-  doc.setFillColor(...RED);
+  doc.setFillColor(...theme.accent);
   doc.rect(0, 0, 12, PAGE.height, "F");
-  if (logo) addContainedImage(doc, logo, PAGE.left, 56, 180, 70);
-  doc.setTextColor(255, 255, 255);
+  if (logo) addContainedImage(doc, logo, PAGE.left, 44, 170, 66);
+  doc.setTextColor(...theme.coverText);
   doc.setFont("StorySans", "bold");
-  doc.setFontSize(internal ? 28 : 31);
-  doc.text(internal ? "PROJECT STORY BOARD" : "PROJECT PROGRESS STORY", PAGE.left, internal ? 180 : 120);
-  doc.setFillColor(...RED);
-  doc.rect(PAGE.left, internal ? 198 : 138, 88, 5, "F");
-  doc.setFontSize(20);
+  doc.setFontSize(internal ? 29 : 32);
+  doc.text(internal ? "INTERNAL PROJECT RECORD" : "CUSTOMER PROJECT PRESENTATION", PAGE.left, internal ? 166 : 108);
+  doc.setFillColor(...theme.accent);
+  doc.rect(PAGE.left, internal ? 184 : 126, 96, 5, "F");
+  doc.setFontSize(23);
   const projectTitle = clean(project.project_name || "Custom Metal Project");
-  doc.text(doc.splitTextToSize(projectTitle, contentWidth), PAGE.left, internal ? 242 : 182);
+  doc.text(doc.splitTextToSize(projectTitle, contentWidth), PAGE.left, internal ? 228 : 170);
   doc.setFont("StorySans", "normal");
   doc.setFontSize(11);
-  doc.setTextColor(205, 205, 205);
+  doc.setTextColor(...theme.coverMuted);
   const details = [project.project_number, project.contact_name].filter(Boolean).map(clean).join("  |  ");
-  if (details) doc.text(details, PAGE.left, internal ? 292 : 232);
+  if (details) doc.text(details, PAGE.left, internal ? 276 : 218);
   if (overview) {
     doc.setFontSize(10.5);
-    doc.setTextColor(232, 232, 232);
-    doc.text(doc.splitTextToSize(clean(overview), contentWidth), PAGE.left, internal ? 344 : 286, { lineHeightFactor: 1.45 });
+    doc.setTextColor(...theme.coverText);
+    doc.text(doc.splitTextToSize(clean(overview), 520), PAGE.left, internal ? 324 : 266, { lineHeightFactor: 1.45 });
   }
   doc.setFont("StorySans", "bold");
   doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text(internal ? "CUSTOM METAL. BUILT TO LAST." : "PROJECT PHOTOGRAPHIC PROGRESS RECORD", PAGE.left, 700);
+  doc.setTextColor(...theme.coverText);
+  doc.text(internal ? "CUSTOM METAL. BUILT TO LAST." : "PROJECT PHOTOGRAPHIC PROGRESS RECORD", PAGE.left, 532);
   doc.setFont("StorySans", "normal");
-  doc.setTextColor(180, 180, 180);
-  doc.text(internal ? "Veteran Owned | American Made | Built Strong. Finished Right." : "Prepared for customer review", PAGE.left, 722);
+  doc.setTextColor(...theme.coverMuted);
+  doc.text(internal ? "Veteran Owned | American Made | Built Strong. Finished Right." : "Prepared for customer review", PAGE.left, 554);
 
   const stageOrder = [...new Set(prepared.map((file) => file.story_stage || "Project Progress"))];
   for (const stage of stageOrder) {
     const stageFiles = prepared.filter((file) => (file.story_stage || "Project Progress") === stage);
     doc.addPage();
-    doc.setFillColor(...BLACK);
+    doc.setFillColor(...theme.dark);
     doc.rect(0, 0, PAGE.width, 58, "F");
-    doc.setFillColor(...RED);
+    doc.setFillColor(...theme.accent);
     doc.rect(0, 0, 8, 58, "F");
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(...theme.coverText);
     doc.setFont("StorySans", "bold");
     doc.setFontSize(18);
     doc.text(clean(stage).toUpperCase(), PAGE.left, 37);
-    let y = 82;
+    let itemIndex = 0;
     for (const file of stageFiles) {
-      if (y + 184 > PAGE.height - PAGE.bottom) {
+      if (itemIndex > 0 && itemIndex % 2 === 0) {
         doc.addPage();
-        y = PAGE.top;
+        doc.setFillColor(...theme.dark);
+        doc.rect(0, 0, PAGE.width, 58, "F");
+        doc.setFillColor(...theme.accent);
+        doc.rect(0, 0, 8, 58, "F");
+        doc.setTextColor(...theme.coverText);
+        doc.setFont("StorySans", "bold");
+        doc.setFontSize(18);
+        doc.text(clean(stage).toUpperCase(), PAGE.left, 37);
       }
+      const cardWidth = (contentWidth - 18) / 2;
+      const x = PAGE.left + (itemIndex % 2) * (cardWidth + 18);
+      const y = 82;
       doc.setDrawColor(215, 215, 215);
       doc.setFillColor(250, 250, 250);
-      doc.roundedRect(PAGE.left, y, contentWidth, 172, 7, 7, "FD");
-      if (file.image) addContainedImage(doc, file.image, PAGE.left + 10, y + 10, 212, 152);
+      doc.roundedRect(x, y, cardWidth, 448, 7, 7, "FD");
+      if (file.image) addContainedImage(doc, file.image, x + 10, y + 10, cardWidth - 20, 286);
       doc.setTextColor(...BLACK);
       doc.setFont("StorySans", "bold");
-      doc.setFontSize(11);
-      const captionLines = doc.splitTextToSize(clean(file.description || file.file_name), contentWidth - 248);
-      doc.text(captionLines, PAGE.left + 238, y + 27, { lineHeightFactor: 1.35 });
+      doc.setFontSize(12);
+      const captionLines = doc.splitTextToSize(clean(file.description || file.file_name), cardWidth - 28);
+      doc.text(captionLines, x + 14, y + 324, { lineHeightFactor: 1.4 });
       doc.setFont("StorySans", "normal");
       doc.setFontSize(8);
       doc.setTextColor(105, 105, 105);
       const meta = internal
         ? [file.file_name, file.uploaded_by].filter(Boolean).map(clean).join(" | ")
         : "Customer progress update";
-      doc.text(doc.splitTextToSize(meta, contentWidth - 248), PAGE.left + 238, y + 145);
-      y += 188;
+      doc.text(doc.splitTextToSize(meta, cardWidth - 28), x + 14, y + 422);
+      itemIndex += 1;
     }
   }
 
@@ -160,10 +175,10 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
     doc.setFont("StorySans", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(page === 1 ? 175 : 110, page === 1 ? 175 : 110, page === 1 ? 175 : 110);
-    doc.text(internal ? "Metal Worx Inc. | Fayetteville, NC" : clean(project.project_name || "Project Progress"), PAGE.left, 770);
-    doc.text(`Page ${page} of ${pages}`, PAGE.width - PAGE.right, 770, { align: "right" });
+    doc.text(internal ? "Metal Worx Inc. | Fayetteville, NC" : clean(project.project_name || "Project Progress"), PAGE.left, 592);
+    doc.text(`Page ${page} of ${pages}`, PAGE.width - PAGE.right, 592, { align: "right" });
   }
 
-  const suffix = internal ? "Internal-Story-Board" : "Customer-Progress-Story";
+  const suffix = internal ? "Internal-Project-Record" : "Customer-Project-Presentation";
   doc.save(`${safeName(project.project_number || project.project_name)}-${suffix}.pdf`);
 }
