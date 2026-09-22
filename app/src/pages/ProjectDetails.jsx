@@ -368,7 +368,7 @@ function ProjectDetails({
   const tabGroup = useMemo(() => {
     if (["workflow", "production", "schedule", "tracking"].includes(activeTab)) return "work";
     if (activeTab === "procurement") return "financial";
-    if (["activity", "notes", "package"].includes(activeTab)) return "records";
+    if (["activity", "controls", "story", "notes", "package"].includes(activeTab)) return "records";
     return "command";
   }, [activeTab]);
 
