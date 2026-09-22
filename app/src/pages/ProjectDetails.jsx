@@ -50,6 +50,7 @@ import {
   IconRoute,
   IconSettingsAutomation,
   IconShoppingCart,
+  IconPhoto,
   IconTimeline,
   IconUser,
   IconUsers,
@@ -73,6 +74,7 @@ import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
 import ProjectActivityTimeline from "../components/ProjectActivityTimeline";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
+import ProjectStoryBoard from "../components/ProjectStoryBoard";
 import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
 function money(value) {
@@ -957,6 +959,15 @@ function ProjectDetails({
       return projectData.site_visit_status === "Scheduled"
         ? "Complete the scheduled site visit"
         : "Schedule the site visit";
+    }
+
+    if (projectData.site_visit_status === "Completed") {
+      if (!projectData.site_visit_outcome) return "Record the site visit outcome";
+      if (projectData.site_visit_outcome === "Waiting on Customer") return "Follow up with the customer after the site visit";
+      if (projectData.site_visit_outcome === "Needs Measurements") return "Complete the remaining project measurements";
+      if (projectData.site_visit_outcome === "Needs Design / Engineering") return "Send the project for design or engineering review";
+      if (projectData.site_visit_outcome === "Lost / Declined") return "Close or archive the declined opportunity";
+      if (projectData.site_visit_outcome === "No Quote Needed") return "Review and close the site-visit record";
     }
 
     if (
@@ -2098,7 +2109,7 @@ function ProjectDetails({
                 ["command", "Overview", "overview"],
                 ["work", "Work & Schedule", "workflow"],
                 ["financial", "Money & Materials", "procurement"],
-                ["records", "Updates & Files", "activity"],
+                ["records", "Story, Updates & Files", "story"],
               ].map(([group, label, target]) => (
                 <Button
                   key={group}
@@ -2175,6 +2186,10 @@ function ProjectDetails({
 
             {tabGroup === "records" && <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
               Activity History
+            </Tabs.Tab>}
+
+            {tabGroup === "records" && <Tabs.Tab value="story" leftSection={<IconPhoto size={16} />}>
+              Story Board
             </Tabs.Tab>}
 
             {tabGroup === "records" && <Tabs.Tab value="notes" leftSection={<IconNotes size={16} />}>
@@ -2512,25 +2527,65 @@ function ProjectDetails({
                 >
                   <Stack gap="md">
                     {project.site_visit_required && (
-                      <Select
-                        label="Site Visit Status"
-                        data={[
-                          "Not Required",
-                          "Not Started",
-                          "Scheduled",
-                          "Completed",
-                        ]}
-                        value={project.site_visit_status || "Not Started"}
-                        onChange={(value) => {
-                          if (!value) {
-                            return;
-                          }
-
-                          updateProject({
-                            site_visit_status: value,
-                          });
-                        }}
-                      />
+                      <>
+                        <Select
+                          label="Site Visit Status"
+                          data={[
+                            "Not Required",
+                            "Not Started",
+                            "Scheduled",
+                            "Completed",
+                          ]}
+                          value={project.site_visit_status || "Not Started"}
+                          onChange={(value) => {
+                            if (!value) return;
+                            updateProject({ site_visit_status: value });
+                          }}
+                        />
+                        {project.site_visit_status === "Completed" && (
+                          <>
+                            <Select
+                              label="Site Visit Outcome"
+                              placeholder="Choose what happens next"
+                              data={[
+                                "Ready for Quote",
+                                "Waiting on Customer",
+                                "Needs Measurements",
+                                "Needs Design / Engineering",
+                                "No Quote Needed",
+                                "Lost / Declined",
+                              ]}
+                              value={project.site_visit_outcome || null}
+                              onChange={(value) => {
+                                if (!value) return;
+                                updateProject({
+                                  site_visit_outcome: value,
+                                  quote_required: value === "No Quote Needed" || value === "Lost / Declined"
+                                    ? false
+                                    : project.quote_required,
+                                  quote_status: value === "No Quote Needed" || value === "Lost / Declined"
+                                    ? "Not Required"
+                                    : project.quote_status,
+                                });
+                              }}
+                            />
+                            <DateInput
+                              label="Promised Quote Date"
+                              value={project.promised_quote_date ? new Date(`${project.promised_quote_date}T12:00:00`) : null}
+                              onChange={(value) => updateProject({ promised_quote_date: value ? value.toISOString().slice(0, 10) : null })}
+                              clearable
+                            />
+                            <Textarea
+                              label="Site Visit Result Notes"
+                              minRows={3}
+                              value={project.site_visit_result_notes || ""}
+                              onChange={(event) => updateLocal("site_visit_result_notes", event.currentTarget.value)}
+                              onBlur={() => updateProject({ site_visit_result_notes: project.site_visit_result_notes || null })}
+                              placeholder="Measurements, customer decisions, missing information, and next steps…"
+                            />
+                          </>
+                        )}
+                      </>
                     )}
 
                     {project.measurements_required && (
@@ -3717,6 +3772,10 @@ function ProjectDetails({
               )}
             </MWSection>
             </Box>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="story">
+            <ProjectStoryBoard project={project} activeUser={activeUser} />
           </Tabs.Panel>
 
           <Tabs.Panel value="notes">
