@@ -54,6 +54,12 @@ const SSU_EXAMPLE = [
 
 const SSU_OVERVIEW = "Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.";
 
+const PRESENTATION_TEMPLATES = [
+  { value: "industrial", label: "Metal Worx Industrial" },
+  { value: "portfolio", label: "Clean Project Portfolio" },
+  { value: "field", label: "Field Progress Report" },
+];
+
 function safeFileName(value) {
   return String(value || "progress-photo")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -75,7 +81,8 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [stage, setStage] = useState("Concept & Scope");
   const [caption, setCaption] = useState("");
   const [customerVisible, setCustomerVisible] = useState(false);
-  const [view, setView] = useState("Internal Story Board");
+  const [view, setView] = useState("Internal Project Story");
+  const [presentationTemplate, setPresentationTemplate] = useState("industrial");
   const [exporting, setExporting] = useState(null);
 
   async function loadStory() {
@@ -107,11 +114,19 @@ function ProjectStoryBoard({ project, activeUser }) {
   }, [project?.id]);
 
   const visibleFiles = useMemo(
-    () => view === "SSU Connex Story Board" ? SSU_EXAMPLE : view === "Customer Story" ? files.filter((file) => file.customer_visible) : files,
+    () => view === "SSU Connex Project Story" ? SSU_EXAMPLE : view === "Customer Presentation" ? files.filter((file) => file.customer_visible) : files,
     [files, view],
   );
 
-  const isExample = view === "SSU Connex Story Board";
+  const isExample = view === "SSU Connex Project Story";
+  const coverFile = visibleFiles.find((file) => file.is_cover_photo) || visibleFiles[0];
+  const coverUrl = coverFile ? (coverFile.example_url || urls[coverFile.id]) : null;
+  const coverBackground = presentationTemplate === "portfolio"
+    ? "linear-gradient(135deg, rgba(248,248,248,.98), rgba(218,218,218,.92))"
+    : presentationTemplate === "field"
+      ? "linear-gradient(135deg, rgba(27,31,36,.97), rgba(65,70,76,.92))"
+      : "linear-gradient(135deg, rgba(130,0,15,.96), rgba(14,14,15,.97))";
+  const coverTextColor = presentationTemplate === "portfolio" ? "dark" : "white";
 
   const completedStages = useMemo(
     () => new Set(files.map((file) => file.story_stage).filter(Boolean)).size,
@@ -193,6 +208,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         files: exportFiles,
         imageUrls: urls,
         mode,
+        template: presentationTemplate,
         overview: isExample ? SSU_OVERVIEW : project.project_description || project.description || project.scope_of_work || "",
       });
     } catch (error) {
@@ -206,16 +222,25 @@ function ProjectStoryBoard({ project, activeUser }) {
 
   return (
     <Stack gap="lg">
-      <Paper p="xl" radius="lg" withBorder style={{ background: "linear-gradient(135deg, rgba(210,0,32,.20), rgba(20,20,20,.98))" }}>
-        <Group justify="space-between" align="flex-start" wrap="wrap">
-          <div>
-            <Text size="xs" c="red.3" fw={900} tt="uppercase" lts={1.3}>Metal Worx Story Board</Text>
-            <Title order={2}>{project.project_name || "Large Project"}</Title>
-            <Text c="dimmed">{project.project_number} · Custom Metal. Built to Last.</Text>
-          </div>
-          <Badge color="red" variant="filled" size="lg">{displayedStageCount} / {STORY_STAGES.length} stages documented</Badge>
-        </Group>
-        <Progress mt="lg" value={(displayedStageCount / STORY_STAGES.length) * 100} color="red" size="lg" radius="xl" />
+      <Paper p={0} radius="lg" withBorder style={{ overflow: "hidden" }}>
+        <SimpleGrid cols={{ base: 1, md: coverUrl ? 2 : 1 }} spacing={0}>
+          <Stack justify="space-between" p={32} mih={coverUrl ? 340 : 240} style={{ background: coverBackground }}>
+            <div>
+              <Text size="xs" c={presentationTemplate === "portfolio" ? "red.8" : "red.2"} fw={900} tt="uppercase" lts={1.8}>Metal Worx · Project Story</Text>
+              <Title order={1} c={coverTextColor} mt="sm">{isExample ? "SSU Connex Project" : project.project_name || "Large Project"}</Title>
+              <Text c={presentationTemplate === "portfolio" ? "dimmed" : "gray.3"} mt="xs">{isExample ? "Two-Container Interior Steel Conversion" : project.project_number}</Text>
+            </div>
+            <div>
+              <Text c={coverTextColor} size="lg" fw={700}>Custom Metal. Built to Last.</Text>
+              <Text c={presentationTemplate === "portfolio" ? "dimmed" : "gray.4"} size="sm">Veteran Owned · American Made · Built Strong. Finished Right.</Text>
+            </div>
+          </Stack>
+          {coverUrl && <Image src={coverUrl} alt="Project cover" h={340} fit="cover" />}
+        </SimpleGrid>
+        <Stack p="lg" gap="xs">
+          <Group justify="space-between"><Text fw={900}>Project documentation</Text><Badge color="red" variant="filled">{displayedStageCount} / {STORY_STAGES.length} stages</Badge></Group>
+          <Progress value={(displayedStageCount / STORY_STAGES.length) * 100} color="red" size="md" radius="xl" />
+        </Stack>
       </Paper>
 
       <Card withBorder radius="lg" p="lg">
@@ -235,11 +260,12 @@ function ProjectStoryBoard({ project, activeUser }) {
       </Card>
 
       <Group justify="space-between" align="center" wrap="wrap">
-        <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Follow the build from the original scope through installation.</Text></div>
+        <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
-          <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal PDF</Button>
-          <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer PDF</Button>
-          <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Connex Story Board"]} />
+          <Select w={220} aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "industrial")} allowDeselect={false} />
+          <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal Project Record</Button>
+          <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer Presentation</Button>
+          <SegmentedControl value={view} onChange={setView} data={["Internal Project Story", "Customer Presentation", "SSU Connex Project Story"]} />
         </Group>
       </Group>
 
@@ -250,7 +276,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         </Alert>
       )}
 
-      {view === "Customer Story" && !files.some((file) => file.customer_visible) && (
+      {view === "Customer Presentation" && !files.some((file) => file.customer_visible) && (
         <Alert color="blue" icon={<IconEye size={18} />}>No photographs have been approved for the customer story yet.</Alert>
       )}
 
@@ -271,7 +297,7 @@ function ProjectStoryBoard({ project, activeUser }) {
                       <Stack gap={6} mt="sm">
                         <Group justify="space-between" gap="xs" align="flex-start"><Text fw={800} size="sm" style={{ flex: 1 }}>{file.description || file.file_name}</Text>{file.is_cover_photo && <Badge color="yellow" leftSection={<IconStar size={12} />}>Cover</Badge>}</Group>
                         <Text size="xs" c="dimmed">{isExample ? "SSU Two-Container Project · Customer-facing example" : `${new Date(file.photo_taken_at || file.created_at).toLocaleString()} · ${file.uploaded_by || "Metal Worx"}`}</Text>
-                        {view === "Internal Story Board" && <Group grow>
+                        {view === "Internal Project Story" && <Group grow>
                           <Button size="xs" variant="light" color={file.customer_visible ? "green" : "gray"} onClick={() => updatePhoto(file, { customer_visible: !file.customer_visible })}>{file.customer_visible ? "Customer Visible" : "Internal Only"}</Button>
                           <Button size="xs" variant="light" color="yellow" leftSection={<IconFlag size={14} />} onClick={() => updatePhoto(file, { is_cover_photo: true })}>Set Cover</Button>
                         </Group>}

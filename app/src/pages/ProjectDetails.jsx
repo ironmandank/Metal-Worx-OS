@@ -383,7 +383,7 @@ function ProjectDetails({
       { value: "changes", label: "Change Orders" },
     ];
     if (tabGroup === "records") return [
-      { value: "story", label: "Story Board & PDF Exports" },
+      { value: "story", label: "Project Story & Presentations" },
       { value: "communications", label: "Customer Communication" },
       { value: "activity", label: "Activity History" },
       { value: "notes", label: "Project Notes" },
