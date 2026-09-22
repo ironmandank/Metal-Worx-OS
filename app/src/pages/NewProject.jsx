@@ -873,6 +873,23 @@ function NewProject({ setPage }) {
     setSaving(true);
 
     try {
+      const duplicateQuery = supabase
+        .from("projects")
+        .select("id,project_number,project_name,contact_name,job_address,status")
+        .eq("is_active", true)
+        .ilike("project_name", formData.project_name.trim())
+        .limit(5);
+      const { data: possibleDuplicates, error: duplicateError } = await duplicateQuery;
+      if (duplicateError) throw duplicateError;
+      if (possibleDuplicates?.length) {
+        const matches = possibleDuplicates.map((item) => `${item.project_number || "No number"} — ${item.project_name} (${item.status || "Active"})`).join("\n");
+        const continueSaving = window.confirm(`Possible duplicate project found:\n\n${matches}\n\nCreate this project anyway?`);
+        if (!continueSaving) {
+          setSaving(false);
+          return;
+        }
+      }
+
       const projectNumber =
         await generateNumber(
           "Project"

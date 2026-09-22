@@ -39,7 +39,7 @@ import {
   completeProductionStep,
   startProductionStep,
 } from "../lib/productionWorkflow";
-import { uploadOrderImages } from "../components/design/DesignIntakeModal";
+import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { getTodaysHotTodayItems } from "../services/hotTodayService";
 import { getDesignPriority, sortDesignQueue } from "../lib/designPriority";

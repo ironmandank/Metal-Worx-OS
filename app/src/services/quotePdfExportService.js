@@ -309,10 +309,8 @@ export async function buildQuotePdf(model) {
   doc.line(PAGE.left + half + 20, y + 52, PAGE.width - PAGE.right, y + 52);
   doc.text("Printed Name / Title", PAGE.left, y + 63);
   doc.text("Purchase Order No.", PAGE.left + half + 20, y + 63);
-  y += 70;
-
   let logoData = null;
-  try { logoData = model.logoUrl ? await urlToDataUrl(model.logoUrl) : null; } catch { logoData = null; }
+  try { logoData = model.logoUrl ? await urlToDataUrl(model.logoUrl) : null; } catch { /* Continue without a logo. */ }
   const pageCount = doc.getNumberOfPages();
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     doc.setPage(pageNumber);
