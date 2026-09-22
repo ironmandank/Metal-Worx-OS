@@ -27,6 +27,7 @@ import { DateInput, DateTimePicker } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity,
+  IconAdjustments,
   IconArrowRight,
   IconBuilding,
   IconBolt,
@@ -75,6 +76,7 @@ import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
 import ProjectActivityTimeline from "../components/ProjectActivityTimeline";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
 import ProjectStoryBoard from "../components/ProjectStoryBoard";
+import ProjectControlCenter from "../components/ProjectControlCenter";
 import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
 function money(value) {
@@ -2109,7 +2111,7 @@ function ProjectDetails({
                 ["command", "Overview", "overview"],
                 ["work", "Work & Schedule", "workflow"],
                 ["financial", "Money & Materials", "procurement"],
-                ["records", "Story, Updates & Files", "story"],
+                ["records", "Controls, Story & Files", "controls"],
               ].map(([group, label, target]) => (
                 <Button
                   key={group}
@@ -2186,6 +2188,10 @@ function ProjectDetails({
 
             {tabGroup === "records" && <Tabs.Tab value="activity" leftSection={<IconActivity size={16} />}>
               Activity History
+            </Tabs.Tab>}
+
+            {tabGroup === "records" && <Tabs.Tab value="controls" leftSection={<IconAdjustments size={16} />}>
+              Controls & Changes
             </Tabs.Tab>}
 
             {tabGroup === "records" && <Tabs.Tab value="story" leftSection={<IconPhoto size={16} />}>
@@ -3772,6 +3778,10 @@ function ProjectDetails({
               )}
             </MWSection>
             </Box>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="controls">
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} />
           </Tabs.Panel>
 
           <Tabs.Panel value="story">
