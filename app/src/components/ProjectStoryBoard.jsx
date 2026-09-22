@@ -20,9 +20,10 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconCamera, IconEye, IconFlag, IconPhoto, IconStar, IconUpload } from "@tabler/icons-react";
+import { IconCamera, IconDownload, IconEye, IconFlag, IconPhoto, IconStar, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
 
 const STORY_STAGES = [
   "Concept & Scope",
@@ -37,7 +38,10 @@ const STORY_STAGES = [
 ];
 
 const SSU_EXAMPLE = [
+  { id: "ssu-9336", file_name: "IMG_9336.jpeg", story_stage: "Concept & Scope", description: "Connex Arrival - The 40-foot container arrives at Metal Worx in its original exterior condition, ready for the planned interior steel conversion.", example_url: "/storyboard-examples/ssu/IMG_9336.svg", is_cover_photo: true },
+  { id: "ssu-9337", file_name: "IMG_9337.jpeg", story_stage: "Concept & Scope", description: "Original Interior Condition - The empty container is documented before fabrication begins, establishing the starting condition and available working space.", example_url: "/storyboard-examples/ssu/IMG_9337.svg" },
   { id: "ssu-9268", file_name: "IMG_9268.jpeg", story_stage: "Fabrication", description: "Building the Structural Foundation — Our fabrication team welds the interior floor structure, creating a strong foundation for the steel-lined container.", example_url: "/storyboard-examples/ssu/IMG_9268.svg" },
+  { id: "ssu-9338", file_name: "IMG_9338.jpeg", story_stage: "Fabrication", description: "Overhead Steel Installation - The team fits and welds the upper steel structure while maintaining alignment with the wall-support system.", example_url: "/storyboard-examples/ssu/IMG_9338.svg" },
   { id: "ssu-9315", file_name: "IMG_9315.jpeg", story_stage: "Fabrication", description: "Positioning the Steel Floor — Steel floor sections are positioned and aligned throughout the container before final welding.", example_url: "/storyboard-examples/ssu/IMG_9315.svg" },
   { id: "ssu-9316", file_name: "IMG_9316.jpeg", story_stage: "Test Fit", description: "Checking Fit and Alignment — Each section is checked for fit, spacing, and accessibility before the installation is finalized.", example_url: "/storyboard-examples/ssu/IMG_9316.svg" },
   { id: "ssu-9320", file_name: "IMG_9320.jpeg", story_stage: "Fabrication", description: "Reinforcing the Upper Structure — Custom steel framing is installed around the upper opening to strengthen the enclosure and support the interior lining.", example_url: "/storyboard-examples/ssu/IMG_9320.svg" },
@@ -46,8 +50,9 @@ const SSU_EXAMPLE = [
   { id: "ssu-9331", file_name: "IMG_9331.jpeg", story_stage: "Fabrication", description: "Full-Length Wall Reinforcement — The wall-support system is aligned and welded throughout the full length of the container.", example_url: "/storyboard-examples/ssu/IMG_9331.svg" },
   { id: "ssu-9334", file_name: "IMG_9334.jpeg", story_stage: "Installation", description: "Enclosing the End Wall — Custom-cut steel panels are fitted to the end wall and secured around the reinforced structure.", example_url: "/storyboard-examples/ssu/IMG_9334.svg" },
   { id: "ssu-9335", file_name: "IMG_9335.jpeg", story_stage: "Installation", description: "Completing the Interior Steel Lining — Final wall sections and attachment points create a strong and functional interior enclosure.", example_url: "/storyboard-examples/ssu/IMG_9335.svg" },
-  { id: "ssu-9336", file_name: "IMG_9336.jpeg", story_stage: "Completed Project", description: "Metal Fabrication Complete — The custom interior steel fabrication is complete and ready for the customer's next construction and equipment-installation phase.", example_url: "/storyboard-examples/ssu/IMG_9336.svg", is_cover_photo: true },
 ];
+
+const SSU_OVERVIEW = "Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.";
 
 function safeFileName(value) {
   return String(value || "progress-photo")
@@ -71,6 +76,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [caption, setCaption] = useState("");
   const [customerVisible, setCustomerVisible] = useState(false);
   const [view, setView] = useState("Internal Story Board");
+  const [exporting, setExporting] = useState(null);
 
   async function loadStory() {
     if (!project?.id) return;
@@ -170,6 +176,32 @@ function ProjectStoryBoard({ project, activeUser }) {
     await loadStory();
   }
 
+  async function exportPdf(mode) {
+    setExporting(mode);
+    try {
+      const exportFiles = isExample
+        ? SSU_EXAMPLE
+        : mode === "customer"
+          ? files.filter((file) => file.customer_visible)
+          : files;
+      if (!exportFiles.length) {
+        notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
+        return;
+      }
+      await downloadStoryBoardPdf({
+        project: isExample ? { ...project, project_name: "SSU Two-Container Project", contact_name: "SSU" } : project,
+        files: exportFiles,
+        imageUrls: urls,
+        mode,
+        overview: isExample ? SSU_OVERVIEW : project.project_description || project.description || project.scope_of_work || "",
+      });
+    } catch (error) {
+      notifications.show({ title: "PDF Could Not Be Exported", message: error.message, color: "red" });
+    } finally {
+      setExporting(null);
+    }
+  }
+
   if (loading) return <Group justify="center" py="xl"><Loader color="red" /><Text>Loading project story…</Text></Group>;
 
   return (
@@ -204,12 +236,16 @@ function ProjectStoryBoard({ project, activeUser }) {
 
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Follow the build from the original scope through installation.</Text></div>
-        <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Example"]} />
+        <Group gap="xs">
+          <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal PDF</Button>
+          <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer PDF</Button>
+          <SegmentedControl value={view} onChange={setView} data={["Internal Story Board", "Customer Story", "SSU Example"]} />
+        </Group>
       </Group>
 
       {isExample && (
         <Alert color="red" icon={<IconStar size={18} />} title="Example: SSU Two-Container Project">
-          <Text size="sm">Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.</Text>
+          <Text size="sm">{SSU_OVERVIEW}</Text>
           <Text size="sm" fw={900} mt="xs">Custom Metal. Built to Last. · Veteran Owned · American Made · Built Strong. Finished Right.</Text>
         </Alert>
       )}
