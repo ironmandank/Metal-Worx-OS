@@ -1305,6 +1305,75 @@ function QuoteBuilder({
     }
   }
 
+  async function createQuoteRevision() {
+    if (!quote?.id) return;
+    const revisionNotes = window.prompt("What changed in this revision?");
+    if (!revisionNotes?.trim()) return;
+
+    setSaving(true);
+    try {
+      const rootId = quote.revision_of_quote_id || quote.id;
+      const { data: family, error: familyError } = await supabase
+        .from("project_quotes")
+        .select("id,revision_number")
+        .or(`id.eq.${rootId},revision_of_quote_id.eq.${rootId}`);
+      if (familyError) throw familyError;
+      const nextRevision = Math.max(0, ...(family || []).map((item) => Number(item.revision_number || 0))) + 1;
+      const { id, created_at, updated_at, ...quoteCopy } = quote;
+      void id; void created_at; void updated_at;
+      const { data: revisedQuote, error: revisionError } = await supabase
+        .from("project_quotes")
+        .insert({
+          ...quoteCopy,
+          revision_number: nextRevision,
+          revision_of_quote_id: rootId,
+          revision_notes: revisionNotes.trim(),
+          is_current_revision: true,
+          superseded_at: null,
+          is_active: true,
+          status: "Draft",
+          quote_date: new Date().toISOString().slice(0, 10),
+        })
+        .select()
+        .single();
+      if (revisionError) throw revisionError;
+
+      const itemCopies = items.map((item) => {
+        const copy = { ...item };
+        delete copy.id;
+        delete copy.created_at;
+        delete copy.quote_id;
+        return { ...copy, quote_id: revisedQuote.id };
+      });
+      if (itemCopies.length) {
+        const { error } = await supabase.from("project_quote_items").insert(itemCopies);
+        if (error) throw error;
+      }
+      const imageCopies = quoteImages.map((image) => {
+        const copy = { ...image };
+        delete copy.id;
+        delete copy.created_at;
+        delete copy.quote_id;
+        return { ...copy, quote_id: revisedQuote.id };
+      });
+      if (imageCopies.length) {
+        const { error } = await supabase.from("project_quote_images").insert(imageCopies);
+        if (error) throw error;
+      }
+      const { error: supersedeError } = await supabase.from("project_quotes").update({ is_current_revision: false, is_active: false, superseded_at: new Date().toISOString() }).eq("id", quote.id);
+      if (supersedeError) throw supersedeError;
+
+      setQuote(revisedQuote);
+      setSelectedQuote?.(revisedQuote);
+      await Promise.all([loadItems(revisedQuote.id), loadQuoteImages(revisedQuote.id)]);
+      notifications.show({ title: `Revision ${nextRevision} Created`, message: "The prior quote is preserved and this revision is ready to edit.", color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Revision Could Not Be Created", message: error.message, color: "red" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function markQuoteSent() {
     if (!procurementComplete) {
       notifications.show({
@@ -1993,9 +2062,13 @@ function QuoteBuilder({
                 : "Customer Already Approved"
               : "Standalone Formal Quote"}
           </Badge>
+          <Badge color="gray" size="lg" variant="light">Rev {quote.revision_number || 0}</Badge>
         </Group>
 
         <Group>
+          {["Sent", "Approved", "Declined", "Expired"].includes(quote.status) && quote.is_current_revision !== false && (
+            <Button variant="light" color="orange" loading={saving} onClick={createQuoteRevision}>Create Revision</Button>
+          )}
           <Button
             variant="light"
             color="gray"
