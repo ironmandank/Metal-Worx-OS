@@ -344,7 +344,7 @@ function ImageToDxf() {
               value={markingMode}
               onChange={setMarkingMode}
               data={[
-                { label: "Mark Blue — Engrave", value: "engrave" },
+                { label: "Mark Blue — Partial Cut", value: "engrave" },
                 { label: "Mark Black — Cut First", value: "intact" },
                 { label: "Mark Red — Cut Second", value: "cut" },
               ]}
@@ -392,7 +392,7 @@ function ImageToDxf() {
             </Group>
             <Group gap="xs" mb="xs">
               <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
-              <Badge variant="light" color="blue">{inspection.engravePathCount} blue / engrave</Badge>
+              <Badge variant="light" color="blue">{inspection.engravePathCount} blue / partial</Badge>
               <Badge variant="light" color="dark">{inspection.blackPathCount} black / first</Badge>
               <Badge variant="light" color="red">{inspection.redPathCount} red / second</Badge>
               <Badge variant="light" color="blue">{inspection.width.toFixed(3)} × {inspection.height.toFixed(3)} in</Badge>
@@ -400,7 +400,7 @@ function ImageToDxf() {
             {inspection.issues.length ? <Stack gap={3}>{inspection.issues.map((issue) => <Text key={issue} size="sm" c={inspection.status === "unsafe" ? "red" : "yellow"}>• {issue}</Text>)}</Stack> : <Text size="sm" c="green" fw={800}>No automatic problems detected. Complete the visual inspection before cutting.</Text>}
           </Paper>}
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Blue paths engrave without cutting through. Black paths cut first and red paths cut second for the final outside release. New traces start blue for safety. Choose a color and click a path to assign it; turn on Show vector nodes and drag any white node to edit the geometry.
+            Blue paths are partial cuts that stay attached; assign the blue layer a lower-power or faster setting in the laser software so it does not cut through. Black paths cut through first and red paths cut through second for the final outside release. New traces start blue for safety. Choose a color and click a path to assign it; turn on Show vector nodes and drag any white node to edit the geometry.
           </Alert>
         </Paper>
       </div>

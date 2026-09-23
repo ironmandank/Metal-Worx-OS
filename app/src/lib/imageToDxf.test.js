@@ -36,13 +36,13 @@ describe("image to DXF helpers", () => {
     expect(result.dxf).toContain("62\n1");
   });
 
-  it("puts engraving paths on a blue engrave layer", () => {
+  it("puts partial-depth paths on a blue keep-attached layer", () => {
     const result = buildDxf({
       sourceWidth: 10,
       sourceHeight: 10,
       paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
     }, { widthInches: 1, heightInches: 1, pathRoles: ["engrave"] });
-    expect(result.dxf).toContain("LASER_ENGRAVE_BLUE");
+    expect(result.dxf).toContain("LASER_PARTIAL_CUT_BLUE");
     expect(result.dxf).toContain("62\n5");
   });
 
@@ -58,7 +58,7 @@ describe("image to DXF helpers", () => {
     expect(result.svg).toContain('width="2.000000in"');
     expect(result.svg).toContain('id="CUT_FIRST_BLACK"');
     expect(result.svg).toContain('id="CUT_SECOND_RED"');
-    expect(result.svg).toContain('id="ENGRAVE_BLUE"');
+    expect(result.svg).toContain('id="PARTIAL_CUT_BLUE_KEEP_ATTACHED"');
     expect(result.svg).toContain('stroke="#0000ff"');
     expect(result.svg).toContain('stroke="#ff0000"');
   });
