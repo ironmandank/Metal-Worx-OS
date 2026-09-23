@@ -121,6 +121,7 @@ export function buildDxf(trace, options = {}) {
   const scaleX = width / trace.sourceWidth;
   const scaleY = height / trace.sourceHeight;
   const baseLayer = String(options.layerName || "LASER").replace(/[^A-Za-z0-9_-]/g, "_");
+  const partialCutLayer = `${baseLayer}_PARTIAL_CUT_BLUE`;
   const cutLayer = `${baseLayer}_CUT_SECOND_RED`;
   const intactLayer = `${baseLayer}_CUT_FIRST_BLACK`;
   const pathRoles = options.pathRoles || [];
@@ -133,7 +134,8 @@ export function buildDxf(trace, options = {}) {
     "9", "$EXTMAX", "10", width.toFixed(6), "20", height.toFixed(6), "30", "0.000000",
     "0", "ENDSEC",
     "0", "SECTION", "2", "TABLES",
-    "0", "TABLE", "2", "LAYER", "70", "2",
+    "0", "TABLE", "2", "LAYER", "70", "3",
+    "0", "LAYER", "2", partialCutLayer, "70", "0", "62", "5", "6", "CONTINUOUS",
     "0", "LAYER", "2", cutLayer, "70", "0", "62", "1", "6", "CONTINUOUS",
     "0", "LAYER", "2", intactLayer, "70", "0", "62", "7", "6", "CONTINUOUS",
     "0", "ENDTAB", "0", "ENDSEC",
@@ -141,9 +143,9 @@ export function buildDxf(trace, options = {}) {
   ];
 
   trace.paths.forEach((path, pathIndex) => {
-    const isCut = pathRoles[pathIndex] === "cut";
-    const layer = isCut ? cutLayer : intactLayer;
-    const color = isCut ? "1" : "7";
+    const role = pathRoles[pathIndex];
+    const layer = role === "cut" ? cutLayer : role === "engrave" ? partialCutLayer : intactLayer;
+    const color = role === "cut" ? "1" : role === "engrave" ? "5" : "7";
     const points = path.points.map((point) => ({
       x: clamp(point.x * scaleX, 0, width),
       y: clamp(height - point.y * scaleY, 0, height),
@@ -181,10 +183,11 @@ export function buildCorelSvg(trace, options = {}) {
   const scaleY = height / trace.sourceHeight;
   const pathRoles = options.pathRoles || [];
   const title = escapeXml(options.title || "Metal Worx Laser File");
-  const groups = { intact: [], cut: [] };
+  const groups = { engrave: [], intact: [], cut: [] };
 
   trace.paths.forEach((path, pathIndex) => {
-    const role = pathRoles[pathIndex] === "cut" ? "cut" : "intact";
+    const requestedRole = pathRoles[pathIndex];
+    const role = requestedRole === "cut" || requestedRole === "engrave" ? requestedRole : "intact";
     const [first, ...rest] = path.points;
     const commands = [
       `M ${(first.x * scaleX).toFixed(6)} ${(first.y * scaleY).toFixed(6)}`,
@@ -199,6 +202,7 @@ export function buildCorelSvg(trace, options = {}) {
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(6)}in" height="${height.toFixed(6)}in" viewBox="0 0 ${width.toFixed(6)} ${height.toFixed(6)}">`,
       `<title>${title}</title>`,
+      `<g id="PARTIAL_CUT_BLUE_KEEP_ATTACHED" fill="none" stroke="#0000ff" stroke-width="0.001">${groups.engrave.join("")}</g>`,
       `<g id="CUT_FIRST_BLACK" fill="none" stroke="#000000" stroke-width="0.001">${groups.intact.join("")}</g>`,
       `<g id="CUT_SECOND_RED" fill="none" stroke="#ff0000" stroke-width="0.001">${groups.cut.join("")}</g>`,
       `</svg>`,
@@ -264,7 +268,8 @@ export function inspectLaserFile(trace, options = {}) {
     duplicatePaths,
     repeatedNodes,
     smallPieces,
-    blackPathCount: roles.filter((role) => role !== "cut").length,
+    engravePathCount: roles.filter((role) => role === "engrave").length,
+    blackPathCount: roles.filter((role) => role === "intact").length,
     redPathCount: roles.filter((role) => role === "cut").length,
     width,
     height,
