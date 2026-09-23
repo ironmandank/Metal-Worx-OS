@@ -552,8 +552,18 @@ function ProjectDetails({
 
   function openPaymentModal(defaultType = "Final Payment") {
     const remaining = Math.max(Number(project?.balance_due || 0), 0);
+    const requestedDeposit = Number(project?.down_payment_amount || 0);
+    const estimatedDeposit = Number(project?.contract_total || 0) * 0.5;
+    const depositAmount = Math.min(
+      requestedDeposit > 0 ? requestedDeposit : estimatedDeposit,
+      remaining,
+    );
     setPaymentType(defaultType);
-    setPaymentAmount(remaining);
+    setPaymentAmount(
+      ["Deposit", "Down Payment"].includes(defaultType) && depositAmount > 0
+        ? depositAmount
+        : remaining,
+    );
     setPaymentMethod("Card");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentReference("");
@@ -605,7 +615,9 @@ function ProjectDetails({
 
       if (error) throw error;
 
-      if (paymentType === "Deposit") {
+      const isDepositPayment = ["Deposit", "Down Payment"].includes(paymentType);
+
+      if (isDepositPayment) {
         const { error: handoffError } = await supabase
           .from("projects")
           .update({
@@ -621,7 +633,7 @@ function ProjectDetails({
       await Promise.all([loadProject(), loadProjectPayments()]);
       notifications.show({
         title: "Project Payment Recorded",
-        message: paymentType === "Deposit"
+        message: isDepositPayment
           ? `${money(amount)} was recorded and the project moved to Needs Scheduling.`
           : `${money(amount)} was added to this project's payment history.`,
         color: "green",
@@ -2333,6 +2345,21 @@ function ProjectDetails({
                             }
                           />
                         </Group>
+
+                        {project.down_payment_required &&
+                          !["Received", "Paid"].includes(
+                            project.down_payment_status,
+                          ) && (
+                            <Button
+                              fullWidth
+                              color="green"
+                              leftSection={<IconCreditCard size={17} />}
+                              disabled={Number(project.balance_due || 0) <= 0}
+                              onClick={() => openPaymentModal("Deposit")}
+                            >
+                              Record Down Payment Received
+                            </Button>
+                          )}
 
                         <Divider color="rgba(255,255,255,0.07)" />
 
