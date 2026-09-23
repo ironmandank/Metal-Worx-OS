@@ -60,6 +60,19 @@ function downloadText(contents, filename, type) {
   URL.revokeObjectURL(url);
 }
 
+function createDemoArtwork() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520">
+      <rect width="900" height="520" fill="white"/>
+      <rect x="45" y="45" width="810" height="430" rx="32" fill="none" stroke="black" stroke-width="28"/>
+      <circle cx="185" cy="260" r="92" fill="none" stroke="black" stroke-width="25"/>
+      <path d="M125 320 L160 190 L190 270 L220 190 L250 320" fill="none" stroke="black" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="315" y="245" font-family="Arial Black, Arial, sans-serif" font-size="86" font-weight="900" fill="black">METAL</text>
+      <text x="315" y="345" font-family="Arial Black, Arial, sans-serif" font-size="86" font-weight="900" fill="black">WORX</text>
+    </svg>`;
+  return new File([svg], "Metal-Worx-DXF-Demo.svg", { type: "image/svg+xml" });
+}
+
 function ImageToDxf() {
   const canvasRef = useRef(null);
   const [file, setFile] = useState(null);
@@ -216,6 +229,10 @@ function ImageToDxf() {
     downloadText(svgExport.svg, `${safeBaseName(file?.name)}-${svgExport.width.toFixed(2)}in.svg`, "image/svg+xml");
   }
 
+  function loadDemo() {
+    setFile(createDemoArtwork());
+  }
+
   return (
     <div style={{ padding: "22px", maxWidth: 1500, margin: "0 auto" }}>
       <style>{styles}</style>
@@ -237,9 +254,12 @@ function ImageToDxf() {
                 <Text fw={900} mb={4}>1. Upload the artwork</Text>
                 <Text size="sm" c="dimmed">Use a clear JPG or PNG. High contrast produces the cleanest cut file.</Text>
               </div>
-              <FileButton onChange={setFile} accept="image/png,image/jpeg,image/webp,image/bmp">
-                {(props) => <Button {...props} leftSection={<IconUpload size={18} />} color="red" variant={file ? "light" : "filled"}>{file ? "Choose Different Image" : "Choose Image"}</Button>}
-              </FileButton>
+              <Group grow>
+                <FileButton onChange={setFile} accept="image/png,image/jpeg,image/webp,image/bmp">
+                  {(props) => <Button {...props} leftSection={<IconUpload size={18} />} color="red" variant={file ? "light" : "filled"}>{file ? "Choose Different Image" : "Choose Image"}</Button>}
+                </FileButton>
+                <Button variant="outline" color="gray" leftSection={<IconPhoto size={18} />} onClick={loadDemo}>Load Sample Design</Button>
+              </Group>
               {file && <div className="mw-dxf-drop"><IconPhoto size={25} color="#ef233c" /><Text fw={800} size="sm">{file.name}</Text><Text size="xs" c="dimmed">{(file.size / 1024 / 1024).toFixed(2)} MB</Text></div>}
             </Stack>
           </Paper>
