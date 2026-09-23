@@ -1326,7 +1326,7 @@ export async function getDashboardData() {
   ] = await Promise.all([
     supabase
       .from("customer_orders")
-      .select("*"),
+      .select("*, customer_order_items(id,item_name,description,quantity)"),
 
     supabase
       .from("projects")
@@ -1484,11 +1484,20 @@ export async function getDashboardData() {
 
   const artworkOrders = openOrders.map((order) => {
     const receivedDate = order.date_received || order.order_date || order.date_ordered || order.created_at;
+    const orderItems = Array.isArray(order.customer_order_items)
+      ? order.customer_order_items
+      : [];
+    const itemNames = orderItems
+      .map((item) => String(item.item_name || item.description || "").trim())
+      .filter(Boolean);
+    const itemSummary = itemNames.length > 1
+      ? `${itemNames.slice(0, 2).join(" + ")}${itemNames.length > 2 ? ` + ${itemNames.length - 2} more` : ""}`
+      : itemNames[0];
     return {
       id: order.id,
       sourceId: order.id,
       sourceType: "customerOrder",
-      title: [order.order_number, order.order_type || order.title].filter(Boolean).join(" — ") || `Artwork Order #${order.id}`,
+      title: [order.order_number, itemSummary || order.title || order.order_type].filter(Boolean).join(" — ") || `Artwork Order #${order.id}`,
       customer: getCustomerName(order.customer_id),
       owner: order.order_owner || order.assigned_to || "Unassigned",
       department: getCustomerOrderShopStage(order) || "Not released",

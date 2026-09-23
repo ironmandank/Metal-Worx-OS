@@ -131,8 +131,8 @@ const capacityCalendarStyles = `
 
 function getStatusColor(status) {
   if (status === "Completed") return "green";
-  if (status === "In Progress") return "blue";
-  if (status === "On Hold") return "orange";
+  if (["In Progress", "Needs Scheduling"].includes(status)) return "blue";
+  if (["On Hold", "Awaiting Deposit"].includes(status)) return "orange";
   if (status === "Cancelled") return "red";
   return "gray";
 }

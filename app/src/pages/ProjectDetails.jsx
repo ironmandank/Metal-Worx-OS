@@ -142,6 +142,7 @@ function statusColor(status) {
       "Ordered",
       "Partially Received",
       "Sent",
+      "Needs Scheduling",
     ].includes(status)
   ) {
     return "blue";
@@ -154,6 +155,7 @@ function statusColor(status) {
       "Waiting",
       "Waiting Customer Approval",
       "At Powder Coat",
+      "Awaiting Deposit",
     ].includes(status)
   ) {
     return "orange";
@@ -603,11 +605,25 @@ function ProjectDetails({
 
       if (error) throw error;
 
+      if (paymentType === "Deposit") {
+        const { error: handoffError } = await supabase
+          .from("projects")
+          .update({
+            down_payment_status: "Received",
+            status: "Needs Scheduling",
+            next_action: "Schedule the project start",
+          })
+          .eq("id", project.id);
+        if (handoffError) throw handoffError;
+      }
+
       setPaymentModalOpen(false);
       await Promise.all([loadProject(), loadProjectPayments()]);
       notifications.show({
         title: "Project Payment Recorded",
-        message: `${money(amount)} was added to this project's payment history.`,
+        message: paymentType === "Deposit"
+          ? `${money(amount)} was recorded and the project moved to Needs Scheduling.`
+          : `${money(amount)} was added to this project's payment history.`,
         color: "green",
         icon: <IconCheck size={18} />,
       });

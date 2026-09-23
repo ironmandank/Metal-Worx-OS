@@ -1,7 +1,8 @@
 export const OUTSIDE_PHASES = [
   { key: "pre_quote", label: "Pre-Quote", color: "cyan" },
   { key: "quote_approval", label: "Quote & Approval", color: "violet" },
-  { key: "ready", label: "Ready for Production", color: "blue" },
+  { key: "deposit", label: "Awaiting Deposit", color: "yellow" },
+  { key: "scheduling", label: "Needs Scheduling", color: "blue" },
   { key: "production", label: "In Production", color: "orange" },
   { key: "field", label: "Field Work", color: "teal" },
   { key: "closeout", label: "Closeout", color: "green" },
@@ -12,7 +13,7 @@ const complete = (value) => ["Completed", "Approved", "Received", "Paid", "Passe
 
 export function getOutsidePhase(project) {
   if (!project) return OUTSIDE_PHASES[0];
-  if (["On Hold", "Cancelled"].includes(project.status)) return OUTSIDE_PHASES[6];
+  if (["On Hold", "Cancelled"].includes(project.status)) return OUTSIDE_PHASES[7];
 
   const preQuoteOpen =
     (project.site_visit_required && !complete(project.site_visit_status)) ||
@@ -24,24 +25,42 @@ export function getOutsidePhase(project) {
     (project.customer_approval_required !== false && project.approval_status !== "Approved");
   if (approvalOpen) return OUTSIDE_PHASES[1];
 
-  const releaseOpen =
-    (project.down_payment_required && project.down_payment_status !== "Received") ||
-    ["Pricing Needed", "Waiting", "Pending"].includes(project.material_status);
-  if (releaseOpen || ["New", "Ready for Production"].includes(project.status)) return OUTSIDE_PHASES[2];
+  if (project.down_payment_required && !complete(project.down_payment_status)) return OUTSIDE_PHASES[2];
+
+  const needsScheduling =
+    ["New", "Needs Scheduling", "Ready for Production"].includes(project.status);
+  if (needsScheduling) return OUTSIDE_PHASES[3];
 
   const productionOpen =
     (project.design_required && !complete(project.design_status)) ||
     (project.fabrication_required && !complete(project.fabrication_status)) ||
     (project.finish_required && !complete(project.finish_status)) ||
     (project.assembly_required && !complete(project.assembly_status));
-  if (productionOpen) return OUTSIDE_PHASES[3];
+  if (productionOpen) return OUTSIDE_PHASES[4];
 
   const fieldOpen =
     (project.test_fit_required && !complete(project.test_fit_status)) ||
     (project.install_required && !complete(project.install_status));
-  if (fieldOpen) return OUTSIDE_PHASES[4];
+  if (fieldOpen) return OUTSIDE_PHASES[5];
 
-  return OUTSIDE_PHASES[5];
+  return OUTSIDE_PHASES[6];
+}
+
+export function getApprovedProjectHandoff(project) {
+  const depositRequired = project?.down_payment_required === true;
+  const depositReceived = complete(project?.down_payment_status);
+  if (depositRequired && !depositReceived) {
+    return {
+      status: "Awaiting Deposit",
+      next_action: "Collect the required down payment",
+      down_payment_status: project?.down_payment_status || "Pending",
+    };
+  }
+  return {
+    status: "Needs Scheduling",
+    next_action: "Schedule the project start",
+    down_payment_status: depositRequired ? project?.down_payment_status || "Received" : "Not Required",
+  };
 }
 
 export function getSuggestedNextAction(project) {
@@ -53,7 +72,8 @@ export function getSuggestedNextAction(project) {
     [project.measurements_required && !complete(project.measurements_status), "Complete field measurements"],
     [project.quote_required && !["Sent", "Approved"].includes(project.quote_status), "Finish and send the customer quote"],
     [project.customer_approval_required !== false && project.approval_status !== "Approved", "Send or follow up on customer approval"],
-    [project.down_payment_required && project.down_payment_status !== "Received", "Collect the required down payment"],
+    [project.down_payment_required && !complete(project.down_payment_status), "Collect the required down payment"],
+    [project.status === "Needs Scheduling", "Schedule the project start"],
     [project.design_required && !complete(project.design_status), "Complete design and drawings"],
     [project.fabrication_required && !complete(project.fabrication_status), "Continue fabrication"],
     [project.test_fit_required && !complete(project.test_fit_status), "Schedule or complete the test fit"],
