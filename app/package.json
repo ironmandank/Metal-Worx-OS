@@ -21,6 +21,7 @@
     "@tabler/icons-react": "^3.44.0",
     "docx": "^9.7.1",
     "html2canvas": "^1.4.1",
+    "imagetracerjs": "^1.2.6",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
