@@ -163,6 +163,114 @@ export function buildDxf(trace, options = {}) {
   return { dxf: lines.join("\n"), width, height, pathCount: trace.paths.length };
 }
 
+function escapeXml(value) {
+  return String(value).replace(/[<>&"']/g, (character) => ({
+    "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;",
+  })[character]);
+}
+
+export function buildCorelSvg(trace, options = {}) {
+  const requestedWidth = Math.max(0.01, Number(options.widthInches) || 1);
+  const requestedHeight = Math.max(0.01, Number(options.heightInches) || 1);
+  const keepAspect = options.keepAspect !== false;
+  const width = requestedWidth;
+  const height = keepAspect
+    ? requestedWidth / (trace.sourceWidth / trace.sourceHeight)
+    : requestedHeight;
+  const scaleX = width / trace.sourceWidth;
+  const scaleY = height / trace.sourceHeight;
+  const pathRoles = options.pathRoles || [];
+  const title = escapeXml(options.title || "Metal Worx Laser File");
+  const groups = { intact: [], cut: [] };
+
+  trace.paths.forEach((path, pathIndex) => {
+    const role = pathRoles[pathIndex] === "cut" ? "cut" : "intact";
+    const [first, ...rest] = path.points;
+    const commands = [
+      `M ${(first.x * scaleX).toFixed(6)} ${(first.y * scaleY).toFixed(6)}`,
+      ...rest.map((point) => `L ${(point.x * scaleX).toFixed(6)} ${(point.y * scaleY).toFixed(6)}`),
+      "Z",
+    ];
+    groups[role].push(`<path d="${commands.join(" ")}" />`);
+  });
+
+  return {
+    svg: [
+      `<?xml version="1.0" encoding="UTF-8"?>`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(6)}in" height="${height.toFixed(6)}in" viewBox="0 0 ${width.toFixed(6)} ${height.toFixed(6)}">`,
+      `<title>${title}</title>`,
+      `<g id="KEEP_BLACK" fill="none" stroke="#000000" stroke-width="0.001">${groups.intact.join("")}</g>`,
+      `<g id="CUT_RED" fill="none" stroke="#ff0000" stroke-width="0.001">${groups.cut.join("")}</g>`,
+      `</svg>`,
+    ].join("\n"),
+    width,
+    height,
+    pathCount: trace.paths.length,
+  };
+}
+
+export function inspectLaserFile(trace, options = {}) {
+  if (!trace?.paths?.length) {
+    return { status: "unsafe", label: "Unsafe", issues: ["No vector paths found."], nodeCount: 0 };
+  }
+  const width = Math.max(0.01, Number(options.widthInches) || 1);
+  const height = options.keepAspect !== false
+    ? width / (trace.sourceWidth / trace.sourceHeight)
+    : Math.max(0.01, Number(options.heightInches) || 1);
+  const scaleX = width / trace.sourceWidth;
+  const scaleY = height / trace.sourceHeight;
+  const roles = options.pathRoles || [];
+  let nodeCount = 0;
+  let repeatedNodes = 0;
+  let smallPieces = 0;
+  const signatures = new Map();
+
+  trace.paths.forEach((path, pathIndex) => {
+    nodeCount += path.points.length;
+    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
+    path.points.forEach((point, pointIndex) => {
+      minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+      if (pointIndex > 0) {
+        const previous = path.points[pointIndex - 1];
+        if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.01) repeatedNodes += 1;
+      }
+    });
+    const physicalWidth = (maxX - minX) * scaleX;
+    const physicalHeight = (maxY - minY) * scaleY;
+    if (roles[pathIndex] === "cut" && Math.max(physicalWidth, physicalHeight) < 0.08) smallPieces += 1;
+    const normalized = path.points
+      .filter((_, index) => index % Math.max(1, Math.floor(path.points.length / 12)) === 0)
+      .map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      .sort()
+      .join("|");
+    signatures.set(normalized, (signatures.get(normalized) || 0) + 1);
+  });
+
+  const duplicatePaths = [...signatures.values()].reduce((total, count) => total + Math.max(0, count - 1), 0);
+  const issues = [];
+  if (duplicatePaths) issues.push(`${duplicatePaths} possible duplicate path${duplicatePaths === 1 ? "" : "s"} could cut twice.`);
+  if (repeatedNodes) issues.push(`${repeatedNodes} repeated node${repeatedNodes === 1 ? "" : "s"} should be reviewed.`);
+  if (smallPieces) issues.push(`${smallPieces} red cutout${smallPieces === 1 ? " is" : "s are"} smaller than 0.08 inch.`);
+  if (nodeCount > 5000) issues.push(`High node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting.`);
+  if (!roles.includes("cut")) issues.push("No red cutout paths are selected.");
+  const criticalCount = duplicatePaths + smallPieces;
+  const status = criticalCount ? "unsafe" : issues.length ? "review" : "ready";
+  return {
+    status,
+    label: status === "ready" ? "Ready" : status === "review" ? "Needs Review" : "Unsafe",
+    issues,
+    nodeCount,
+    duplicatePaths,
+    repeatedNodes,
+    smallPieces,
+    blackPathCount: roles.filter((role) => role !== "cut").length,
+    redPathCount: roles.filter((role) => role === "cut").length,
+    width,
+    height,
+  };
+}
+
 export function buildPreviewSvg(trace) {
   if (!trace?.paths?.length) return "";
   const pathMarkup = trace.paths.map((path) => {

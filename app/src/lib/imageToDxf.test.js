@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDxf, prepareBinaryImageData } from "./imageToDxf";
+import { buildCorelSvg, buildDxf, inspectLaserFile, prepareBinaryImageData } from "./imageToDxf";
 
 describe("image to DXF helpers", () => {
   it("converts pixels to clean black and white data", () => {
@@ -34,5 +34,29 @@ describe("image to DXF helpers", () => {
     }, { widthInches: 1, heightInches: 1, pathRoles: ["cut"] });
     expect(result.dxf).toContain("LASER_CUT_RED");
     expect(result.dxf).toContain("62\n1");
+  });
+
+  it("creates a full-size CorelDRAW SVG with black and red groups", () => {
+    const result = buildCorelSvg({
+      sourceWidth: 10, sourceHeight: 10,
+      paths: [
+        { points: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }] },
+        { points: [{ x: 6, y: 6 }, { x: 9, y: 6 }, { x: 9, y: 9 }] },
+      ],
+    }, { widthInches: 2, heightInches: 2, pathRoles: ["intact", "cut"] });
+    expect(result.svg).toContain('width="2.000000in"');
+    expect(result.svg).toContain('id="KEEP_BLACK"');
+    expect(result.svg).toContain('id="CUT_RED"');
+    expect(result.svg).toContain('stroke="#ff0000"');
+  });
+
+  it("reports readiness, nodes, and very small red pieces", () => {
+    const report = inspectLaserFile({
+      sourceWidth: 100, sourceHeight: 100,
+      paths: [{ points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }],
+    }, { widthInches: 1, heightInches: 1, pathRoles: ["cut"] });
+    expect(report.status).toBe("unsafe");
+    expect(report.smallPieces).toBe(1);
+    expect(report.nodeCount).toBe(3);
   });
 });
