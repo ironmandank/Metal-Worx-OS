@@ -60,6 +60,7 @@ function ImageToDxf() {
   const [trace, setTrace] = useState(null);
   const [pathRoles, setPathRoles] = useState([]);
   const [showNodes, setShowNodes] = useState(true);
+  const [markingMode, setMarkingMode] = useState("intact");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [threshold, setThreshold] = useState(160);
@@ -130,10 +131,15 @@ function ImageToDxf() {
     }
   }
 
-  function togglePathRole(index) {
+  function markPath(index) {
     setPathRoles((current) => current.map((role, roleIndex) => (
-      roleIndex === index ? (role === "cut" ? "intact" : "cut") : role
+      roleIndex === index ? markingMode : role
     )));
+  }
+
+  function resetPathsToBlack() {
+    setPathRoles((current) => current.map(() => "intact"));
+    setMarkingMode("intact");
   }
 
   function downloadDxf() {
@@ -199,14 +205,29 @@ function ImageToDxf() {
 
         <Paper withBorder p="md" radius="md">
           <Group justify="space-between" mb="sm"><Text fw={900}>Laser Path Preview</Text><Badge variant="outline" color={trace ? "red" : "gray"}>{trace ? "Click a path to change its purpose" : "Waiting for image"}</Badge></Group>
-          {trace && <Group mb="sm" gap="lg"><Group gap={6}><span style={{ width: 24, borderTop: "3px solid #111" }} /><Text size="sm" fw={800}>Black: stays intact</Text></Group><Group gap={6}><span style={{ width: 24, borderTop: "3px solid #ff0000" }} /><Text size="sm" fw={800}>Red: cuts completely out</Text></Group></Group>}
+          {trace && <Stack mb="sm" gap="xs">
+            <SegmentedControl
+              fullWidth
+              value={markingMode}
+              onChange={setMarkingMode}
+              data={[
+                { label: "Mark Black — Stays Intact", value: "intact" },
+                { label: "Mark Red — Cuts Out", value: "cut" },
+              ]}
+              color={markingMode === "cut" ? "red" : "dark"}
+            />
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed">Choose a marking option, then click the paths you want to change.</Text>
+              <Button size="compact-sm" variant="subtle" color="gray" onClick={resetPathsToBlack}>Reset All to Black</Button>
+            </Group>
+          </Stack>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
           <div className="mw-dxf-preview">
             {trace ? <svg viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} style={{ width: "100%", height: "100%", maxHeight: 620 }} aria-label="Interactive DXF path preview">
               {trace.paths.map((path, pathIndex) => {
                 const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
                 const color = pathRoles[pathIndex] === "cut" ? "#ff0000" : "#111111";
-                return <g key={pathIndex} onClick={() => togglePathRole(pathIndex)} style={{ cursor: "pointer" }}>
+                return <g key={pathIndex} onClick={() => markPath(pathIndex)} style={{ cursor: "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
                   <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
                   {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="2.3" fill="#fff" stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
@@ -215,7 +236,7 @@ function ImageToDxf() {
             </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
           </div>
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Black paths stay intact by default. Click only the sections that should fall completely out to turn them red. Then open the DXF in CorelDRAW, confirm the dimensions, and inspect the editable nodes for overlaps.
+            Choose Mark Black or Mark Red, then click paths to assign them. Black stays intact; red cuts completely out. Open the DXF in CorelDRAW, confirm the dimensions, and inspect the editable nodes for overlaps.
           </Alert>
         </Paper>
       </div>
