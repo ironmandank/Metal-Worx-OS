@@ -81,11 +81,12 @@ function ImageToDxf() {
   const [trace, setTrace] = useState(null);
   const [pathRoles, setPathRoles] = useState([]);
   const [showNodes, setShowNodes] = useState(true);
-  const [markingMode, setMarkingMode] = useState("intact");
+  const [markingMode, setMarkingMode] = useState("engrave");
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [showBlackPaths, setShowBlackPaths] = useState(true);
   const [showRedPaths, setShowRedPaths] = useState(true);
+  const [showEngravePaths, setShowEngravePaths] = useState(true);
   const [draggingNode, setDraggingNode] = useState(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -171,7 +172,7 @@ function ImageToDxf() {
         throw new Error("No cut lines were detected. Try moving the Detail Threshold or turning on Reverse Black / White.");
       }
       setTrace(nextTrace);
-      setPathRoles(nextTrace.paths.map(() => "intact"));
+      setPathRoles(nextTrace.paths.map(() => "engrave"));
       setUndoStack([]);
       setRedoStack([]);
       if (lockRatio) setHeight(Number((width * nextTrace.sourceHeight / nextTrace.sourceWidth).toFixed(3)));
@@ -195,9 +196,9 @@ function ImageToDxf() {
     )));
   }
 
-  function resetPathsToBlack() {
-    applyRoles(pathRoles.map(() => "intact"));
-    setMarkingMode("intact");
+  function resetPathsToEngrave() {
+    applyRoles(pathRoles.map(() => "engrave"));
+    setMarkingMode("engrave");
   }
 
   function markAll(role) {
@@ -329,7 +330,7 @@ function ImageToDxf() {
               <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
-              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Black/Red SVG</Button>
+              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Blue/Black/Red SVG</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
           </Paper>
@@ -343,23 +344,26 @@ function ImageToDxf() {
               value={markingMode}
               onChange={setMarkingMode}
               data={[
+                { label: "Mark Blue — Engrave", value: "engrave" },
                 { label: "Mark Black — Cut First", value: "intact" },
                 { label: "Mark Red — Cut Second", value: "cut" },
               ]}
-              color={markingMode === "cut" ? "red" : "dark"}
+              color={markingMode === "cut" ? "red" : markingMode === "engrave" ? "blue" : "dark"}
             />
             <Group justify="space-between">
               <Group gap="xs">
                 <Button size="compact-sm" variant="default" leftSection={<IconArrowBackUp size={15} />} disabled={!undoStack.length} onClick={undoRoles}>Undo</Button>
                 <Button size="compact-sm" variant="default" leftSection={<IconArrowForwardUp size={15} />} disabled={!redoStack.length} onClick={redoRoles}>Redo</Button>
-                <Button size="compact-sm" variant="subtle" color="gray" leftSection={<IconRestore size={15} />} onClick={resetPathsToBlack}>Reset Black</Button>
+                <Button size="compact-sm" variant="subtle" color="blue" leftSection={<IconRestore size={15} />} onClick={resetPathsToEngrave}>Reset Blue</Button>
               </Group>
               <Group gap="xs">
+                <Button size="compact-sm" variant="light" color="blue" onClick={() => markAll("engrave")}>All Blue</Button>
                 <Button size="compact-sm" variant="light" color="dark" onClick={() => markAll("intact")}>All Black</Button>
                 <Button size="compact-sm" variant="light" color="red" onClick={() => markAll("cut")}>All Red</Button>
               </Group>
             </Group>
             <Group gap="xs">
+              <Button size="compact-sm" variant={showEngravePaths ? "filled" : "outline"} color="blue" leftSection={showEngravePaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowEngravePaths((value) => !value)}>Blue Layer</Button>
               <Button size="compact-sm" variant={showBlackPaths ? "filled" : "outline"} color="dark" leftSection={showBlackPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowBlackPaths((value) => !value)}>Black Layer</Button>
               <Button size="compact-sm" variant={showRedPaths ? "filled" : "outline"} color="red" leftSection={showRedPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowRedPaths((value) => !value)}>Red Layer</Button>
             </Group>
@@ -369,8 +373,9 @@ function ImageToDxf() {
             {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: "100%", height: "100%", maxHeight: 620, touchAction: "none" }} aria-label="Interactive DXF path and node editor">
               {trace.paths.map((path, pathIndex) => {
                 const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
-                const color = pathRoles[pathIndex] === "cut" ? "#ff0000" : "#111111";
-                const visible = pathRoles[pathIndex] === "cut" ? showRedPaths : showBlackPaths;
+                const role = pathRoles[pathIndex];
+                const color = role === "cut" ? "#ff0000" : role === "engrave" ? "#0000ff" : "#111111";
+                const visible = role === "cut" ? showRedPaths : role === "engrave" ? showEngravePaths : showBlackPaths;
                 if (!visible) return null;
                 return <g key={pathIndex} onClick={() => markPath(pathIndex)} style={{ cursor: "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
@@ -387,6 +392,7 @@ function ImageToDxf() {
             </Group>
             <Group gap="xs" mb="xs">
               <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
+              <Badge variant="light" color="blue">{inspection.engravePathCount} blue / engrave</Badge>
               <Badge variant="light" color="dark">{inspection.blackPathCount} black / first</Badge>
               <Badge variant="light" color="red">{inspection.redPathCount} red / second</Badge>
               <Badge variant="light" color="blue">{inspection.width.toFixed(3)} × {inspection.height.toFixed(3)} in</Badge>
@@ -394,7 +400,7 @@ function ImageToDxf() {
             {inspection.issues.length ? <Stack gap={3}>{inspection.issues.map((issue) => <Text key={issue} size="sm" c={inspection.status === "unsafe" ? "red" : "yellow"}>• {issue}</Text>)}</Stack> : <Text size="sm" c="green" fw={800}>No automatic problems detected. Complete the visual inspection before cutting.</Text>}
           </Paper>}
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Black paths cut first and red paths cut second. Choose a color and click a path to set its cutting order. To edit the geometry, turn on Show vector nodes and drag any white node directly in the preview.
+            Blue paths engrave without cutting through. Black paths cut first and red paths cut second for the final outside release. New traces start blue for safety. Choose a color and click a path to assign it; turn on Show vector nodes and drag any white node to edit the geometry.
           </Alert>
         </Paper>
       </div>

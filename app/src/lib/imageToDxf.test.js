@@ -36,17 +36,30 @@ describe("image to DXF helpers", () => {
     expect(result.dxf).toContain("62\n1");
   });
 
-  it("creates a full-size CorelDRAW SVG with black and red groups", () => {
+  it("puts engraving paths on a blue engrave layer", () => {
+    const result = buildDxf({
+      sourceWidth: 10,
+      sourceHeight: 10,
+      paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
+    }, { widthInches: 1, heightInches: 1, pathRoles: ["engrave"] });
+    expect(result.dxf).toContain("LASER_ENGRAVE_BLUE");
+    expect(result.dxf).toContain("62\n5");
+  });
+
+  it("creates a full-size CorelDRAW SVG with blue, black, and red groups", () => {
     const result = buildCorelSvg({
       sourceWidth: 10, sourceHeight: 10,
       paths: [
         { points: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }] },
         { points: [{ x: 6, y: 6 }, { x: 9, y: 6 }, { x: 9, y: 9 }] },
+        { points: [{ x: 2, y: 6 }, { x: 4, y: 6 }, { x: 4, y: 9 }] },
       ],
-    }, { widthInches: 2, heightInches: 2, pathRoles: ["intact", "cut"] });
+    }, { widthInches: 2, heightInches: 2, pathRoles: ["intact", "cut", "engrave"] });
     expect(result.svg).toContain('width="2.000000in"');
     expect(result.svg).toContain('id="CUT_FIRST_BLACK"');
     expect(result.svg).toContain('id="CUT_SECOND_RED"');
+    expect(result.svg).toContain('id="ENGRAVE_BLUE"');
+    expect(result.svg).toContain('stroke="#0000ff"');
     expect(result.svg).toContain('stroke="#ff0000"');
   });
 
