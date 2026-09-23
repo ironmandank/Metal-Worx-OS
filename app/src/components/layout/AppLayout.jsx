@@ -17,6 +17,7 @@ import {
   IconFileSpreadsheet,
   IconFlame,
   IconHistory,
+  IconFileVector,
   IconLayoutDashboard,
   IconLogout,
   IconMapPin,
@@ -317,6 +318,11 @@ const NAV_GROUPS = [
         page: "designQueue",
         label: "Design Intake & Queue",
         icon: IconPalette,
+      },
+      {
+        page: "imageToDxf",
+        label: "Image to Laser DXF",
+        icon: IconFileVector,
       },
       {
         department: "Laser",

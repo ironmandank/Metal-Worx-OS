@@ -51,6 +51,7 @@ const OrderBuilder = page("OrderBuilder");
 const CustomerDetails = page("CustomerDetails");
 const CustomerOrderDetails = page("CustomerOrderDetails");
 const DesignQueue = page("DesignQueue");
+const ImageToDxf = page("ImageToDxf");
 const AccessDenied = page("AccessDenied");
 const Projects = page("Projects");
 const NewProject = page("NewProject");
@@ -779,6 +780,10 @@ function App() {
           accessLevel={authenticatedProfile?.access_level}
         />
       );
+    }
+
+    if (page === "imageToDxf") {
+      return <ImageToDxf setPage={setPage} />;
     }
 
     if (page === "customerOrderDetails") {
