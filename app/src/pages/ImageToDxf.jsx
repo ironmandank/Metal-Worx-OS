@@ -23,7 +23,6 @@ import {
   IconEyeOff,
   IconPhoto,
   IconRefresh,
-  IconRestore,
   IconScissors,
   IconArrowBackUp,
   IconArrowForwardUp,
@@ -33,7 +32,11 @@ import {
 import {
   buildCorelSvg,
   buildDxf,
+  assignAutomaticCutOrder,
+  cleanTracePaths,
   inspectLaserFile,
+  nearestPositionOnClosedPath,
+  pointOnClosedPath,
   prepareBinaryImageData,
   traceImageData,
 } from "../lib/imageToDxf";
@@ -44,7 +47,11 @@ const styles = `
   .mw-dxf-preview img { width:100%; height:100%; max-height:620px; object-fit:contain; }
   .mw-dxf-empty { color:#68727a; text-align:center; max-width:360px; }
   .mw-dxf-drop { border:1px dashed #5a646d; border-radius:10px; padding:18px; text-align:center; background:#11171b; }
+  .mw-laser-legend { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+  .mw-laser-key { border:1px solid #3c4349; border-radius:9px; padding:9px; background:#171b1f; }
+  .mw-laser-swatch { width:13px; height:13px; border-radius:50%; display:inline-block; flex:0 0 auto; }
   @media (max-width:900px) { .mw-dxf-grid { grid-template-columns:1fr; } .mw-dxf-preview { min-height:390px; } }
+  @media (max-width:650px) { .mw-laser-legend { grid-template-columns:1fr 1fr; } }
 `;
 
 function safeBaseName(name = "metal-worx-cut-file") {
@@ -80,6 +87,9 @@ function ImageToDxf() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [trace, setTrace] = useState(null);
   const [pathRoles, setPathRoles] = useState([]);
+  const [bridges, setBridges] = useState([]);
+  const [bridgeWidth, setBridgeWidth] = useState(0.04);
+  const [editMode, setEditMode] = useState("role");
   const [showNodes, setShowNodes] = useState(true);
   const [markingMode, setMarkingMode] = useState("engrave");
   const [undoStack, setUndoStack] = useState([]);
@@ -105,6 +115,7 @@ function ImageToDxf() {
     setSourceUrl(url);
     setTrace(null);
     setPathRoles([]);
+    setBridges([]);
     setUndoStack([]);
     setRedoStack([]);
     setError("");
@@ -119,8 +130,10 @@ function ImageToDxf() {
       keepAspect: lockRatio,
       layerName,
       pathRoles,
+      bridges,
+      bridgeWidthInches: bridgeWidth,
     });
-  }, [trace, width, height, lockRatio, layerName, pathRoles]);
+  }, [trace, width, height, lockRatio, layerName, pathRoles, bridges, bridgeWidth]);
 
   const svgExport = useMemo(() => {
     if (!trace) return null;
@@ -129,9 +142,11 @@ function ImageToDxf() {
       heightInches: height,
       keepAspect: lockRatio,
       pathRoles,
+      bridges,
+      bridgeWidthInches: bridgeWidth,
       title: file?.name,
     });
-  }, [trace, width, height, lockRatio, pathRoles, file]);
+  }, [trace, width, height, lockRatio, pathRoles, bridges, bridgeWidth, file]);
 
   const inspection = useMemo(() => {
     if (!trace) return null;
@@ -140,8 +155,9 @@ function ImageToDxf() {
       heightInches: height,
       keepAspect: lockRatio,
       pathRoles,
+      bridges,
     });
-  }, [trace, width, height, lockRatio, pathRoles]);
+  }, [trace, width, height, lockRatio, pathRoles, bridges]);
 
   async function convertImage() {
     if (!file || !sourceUrl) return;
@@ -171,8 +187,10 @@ function ImageToDxf() {
       if (!nextTrace.paths.length) {
         throw new Error("No cut lines were detected. Try moving the Detail Threshold or turning on Reverse Black / White.");
       }
-      setTrace(nextTrace);
-      setPathRoles(nextTrace.paths.map(() => "engrave"));
+      const cleanedTrace = cleanTracePaths(nextTrace, { widthInches: width, heightInches: height, keepAspect: lockRatio, toleranceInches: 0.01 });
+      setTrace(cleanedTrace);
+      setPathRoles(assignAutomaticCutOrder(cleanedTrace));
+      setBridges([]);
       setUndoStack([]);
       setRedoStack([]);
       if (lockRatio) setHeight(Number((width * nextTrace.sourceHeight / nextTrace.sourceWidth).toFixed(3)));
@@ -194,16 +212,48 @@ function ImageToDxf() {
     applyRoles(pathRoles.map((role, roleIndex) => (
       roleIndex === index ? markingMode : role
     )));
+    if (markingMode === "engrave") setBridges((current) => current.filter((bridge) => bridge.pathIndex !== index));
   }
 
-  function resetPathsToEngrave() {
-    applyRoles(pathRoles.map(() => "engrave"));
-    setMarkingMode("engrave");
+  function svgLocation(event) {
+    if (!svgRef.current) return null;
+    const point = svgRef.current.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svgRef.current.getScreenCTM();
+    return matrix ? point.matrixTransform(matrix.inverse()) : null;
+  }
+
+  function handlePathClick(event, pathIndex) {
+    event.stopPropagation();
+    if (editMode === "role") {
+      markPath(pathIndex);
+      return;
+    }
+    const location = svgLocation(event);
+    if (!location || pathRoles[pathIndex] === "engrave") return;
+    const position = nearestPositionOnClosedPath(trace.paths[pathIndex].points, location);
+    if (bridges.some((bridge) => bridge.pathIndex === pathIndex && Math.abs(bridge.position - position) < 0.01)) return;
+    setBridges((current) => [...current, { pathIndex, position }]);
+  }
+
+  function removeBridge(bridgeIndex) {
+    setBridges((current) => current.filter((_, index) => index !== bridgeIndex));
+  }
+
+  function cleanAllPaths() {
+    setTrace((current) => cleanTracePaths(current, { widthInches: width, heightInches: height, keepAspect: lockRatio, toleranceInches: 0.01 }));
+  }
+
+  function applyAutomaticOrder() {
+    applyRoles(assignAutomaticCutOrder(trace));
+    setEditMode("role");
   }
 
   function markAll(role) {
     applyRoles(pathRoles.map(() => role));
     setMarkingMode(role);
+    if (role === "engrave") setBridges([]);
   }
 
   function undoRoles() {
@@ -286,8 +336,18 @@ function ImageToDxf() {
           <Title order={1}>Image to Laser DXF</Title>
           <Text c="dimmed">Turn customer artwork into full-scale cut paths for CorelDRAW.</Text>
         </div>
-        {physicalSize && <Badge size="lg" color="green">{physicalSize.pathCount} closed cut paths</Badge>}
+        {physicalSize && <Badge size="lg" color="green">{physicalSize.pathCount} vector paths</Badge>}
       </Group>
+
+      <Paper withBorder p="sm" radius="md" mb="md">
+        <Text fw={900} mb="xs">Laser Workflow — What Each Color Means</Text>
+        <div className="mw-laser-legend">
+          <div className="mw-laser-key"><Group gap="xs" wrap="nowrap"><span className="mw-laser-swatch" style={{ background: "#0000ff" }} /><div><Text fw={800} size="sm">Blue</Text><Text size="xs" c="dimmed">Score or mark only</Text></div></Group></div>
+          <div className="mw-laser-key"><Group gap="xs" wrap="nowrap"><span className="mw-laser-swatch" style={{ background: "#111111", border: "1px solid #777" }} /><div><Text fw={800} size="sm">Black</Text><Text size="xs" c="dimmed">Interior cut first</Text></div></Group></div>
+          <div className="mw-laser-key"><Group gap="xs" wrap="nowrap"><span className="mw-laser-swatch" style={{ background: "#ff0000" }} /><div><Text fw={800} size="sm">Red</Text><Text size="xs" c="dimmed">Outside cut last</Text></div></Group></div>
+          <div className="mw-laser-key"><Group gap="xs" wrap="nowrap"><span className="mw-laser-swatch" style={{ background: "#ffd43b", border: "2px solid #8a6500" }} /><div><Text fw={800} size="sm">Yellow</Text><Text size="xs" c="dimmed">Uncut bridge; stays attached</Text></div></Group></div>
+        </div>
+      </Paper>
 
       <div className="mw-dxf-grid">
         <Stack gap="md">
@@ -328,6 +388,7 @@ function ImageToDxf() {
               </Group>
               <Checkbox checked={lockRatio} onChange={(event) => setLockRatio(event.currentTarget.checked)} label="Keep the image proportions" />
               <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
+              <NumberInput label="Bridge width (in)" description="Actual uncut connection left in the metal" value={bridgeWidth} onChange={(value) => setBridgeWidth(Math.max(0.005, Number(value) || 0.04))} min={0.005} max={0.5} step={0.005} decimalScale={3} />
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
               <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Blue/Black/Red SVG</Button>
@@ -341,10 +402,20 @@ function ImageToDxf() {
           {trace && <Stack mb="sm" gap="xs">
             <SegmentedControl
               fullWidth
+              value={editMode}
+              onChange={setEditMode}
+              data={[
+                { label: "Assign Path Color", value: "role" },
+                { label: "Add Yellow Bridge", value: "bridge" },
+              ]}
+              color={editMode === "bridge" ? "yellow" : "red"}
+            />
+            <SegmentedControl
+              fullWidth
               value={markingMode}
               onChange={setMarkingMode}
               data={[
-                { label: "Mark Blue — Partial Cut", value: "engrave" },
+                { label: "Mark Blue — Score/Mark", value: "engrave" },
                 { label: "Mark Black — Cut First", value: "intact" },
                 { label: "Mark Red — Cut Second", value: "cut" },
               ]}
@@ -354,7 +425,9 @@ function ImageToDxf() {
               <Group gap="xs">
                 <Button size="compact-sm" variant="default" leftSection={<IconArrowBackUp size={15} />} disabled={!undoStack.length} onClick={undoRoles}>Undo</Button>
                 <Button size="compact-sm" variant="default" leftSection={<IconArrowForwardUp size={15} />} disabled={!redoStack.length} onClick={redoRoles}>Redo</Button>
-                <Button size="compact-sm" variant="subtle" color="blue" leftSection={<IconRestore size={15} />} onClick={resetPathsToEngrave}>Reset Blue</Button>
+                <Button size="compact-sm" variant="light" color="gray" onClick={cleanAllPaths}>Clean / Straighten Nodes</Button>
+                <Button size="compact-sm" variant="light" color="red" onClick={applyAutomaticOrder}>Auto Cut Order</Button>
+                <Button size="compact-sm" variant="light" color="yellow" disabled={!bridges.length} onClick={() => setBridges([])}>Clear Bridges</Button>
               </Group>
               <Group gap="xs">
                 <Button size="compact-sm" variant="light" color="blue" onClick={() => markAll("engrave")}>All Blue</Button>
@@ -377,10 +450,17 @@ function ImageToDxf() {
                 const color = role === "cut" ? "#ff0000" : role === "engrave" ? "#0000ff" : "#111111";
                 const visible = role === "cut" ? showRedPaths : role === "engrave" ? showEngravePaths : showBlackPaths;
                 if (!visible) return null;
-                return <g key={pathIndex} onClick={() => markPath(pathIndex)} style={{ cursor: "pointer" }}>
+                return <g key={pathIndex} onClick={(event) => handlePathClick(event, pathIndex)} style={{ cursor: editMode === "bridge" ? "crosshair" : "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
-                  <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  <polygon points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
                   {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="3.2" fill="#fff" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />)}
+                </g>;
+              })}
+              {bridges.map((bridge, bridgeIndex) => {
+                const point = pointOnClosedPath(trace.paths[bridge.pathIndex].points, bridge.position);
+                return <g key={`bridge-${bridgeIndex}`} onClick={(event) => { event.stopPropagation(); removeBridge(bridgeIndex); }} style={{ cursor: "pointer" }}>
+                  <circle cx={point.x} cy={point.y} r="8" fill="#ffd43b" stroke="#5f4500" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  <line x1={point.x - 4} y1={point.y} x2={point.x + 4} y2={point.y} stroke="#5f4500" strokeWidth="2" vectorEffect="non-scaling-stroke" />
                 </g>;
               })}
             </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
@@ -392,15 +472,16 @@ function ImageToDxf() {
             </Group>
             <Group gap="xs" mb="xs">
               <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
-              <Badge variant="light" color="blue">{inspection.engravePathCount} blue / partial</Badge>
+              <Badge variant="light" color="blue">{inspection.engravePathCount} blue / score</Badge>
               <Badge variant="light" color="dark">{inspection.blackPathCount} black / first</Badge>
               <Badge variant="light" color="red">{inspection.redPathCount} red / second</Badge>
+              <Badge variant="light" color="yellow">{inspection.bridgeCount} yellow bridge{inspection.bridgeCount === 1 ? "" : "s"}</Badge>
               <Badge variant="light" color="blue">{inspection.width.toFixed(3)} × {inspection.height.toFixed(3)} in</Badge>
             </Group>
             {inspection.issues.length ? <Stack gap={3}>{inspection.issues.map((issue) => <Text key={issue} size="sm" c={inspection.status === "unsafe" ? "red" : "yellow"}>• {issue}</Text>)}</Stack> : <Text size="sm" c="green" fw={800}>No automatic problems detected. Complete the visual inspection before cutting.</Text>}
           </Paper>}
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Blue paths are partial cuts that stay attached; assign the blue layer a lower-power or faster setting in the laser software so it does not cut through. Black paths cut through first and red paths cut through second for the final outside release. New traces start blue for safety. Choose a color and click a path to assign it; turn on Show vector nodes and drag any white node to edit the geometry.
+            Blue scores or marks without cutting through. Black cuts interior openings first. Red cuts the outside perimeter last. Yellow markers create real uncut gaps so a piece stays connected; click a yellow marker to remove it. Always confirm the bridge width for the material before cutting.
           </Alert>
         </Paper>
       </div>

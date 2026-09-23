@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildCorelSvg, buildDxf, inspectLaserFile, prepareBinaryImageData } from "./imageToDxf";
+import {
+  assignAutomaticCutOrder,
+  buildCorelSvg,
+  buildDxf,
+  cleanTracePaths,
+  inspectLaserFile,
+  prepareBinaryImageData,
+} from "./imageToDxf";
 
 describe("image to DXF helpers", () => {
   it("converts pixels to clean black and white data", () => {
@@ -36,13 +43,13 @@ describe("image to DXF helpers", () => {
     expect(result.dxf).toContain("62\n1");
   });
 
-  it("puts partial-depth paths on a blue keep-attached layer", () => {
+  it("puts scoring paths on a blue score layer", () => {
     const result = buildDxf({
       sourceWidth: 10,
       sourceHeight: 10,
       paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
     }, { widthInches: 1, heightInches: 1, pathRoles: ["engrave"] });
-    expect(result.dxf).toContain("LASER_PARTIAL_CUT_BLUE");
+    expect(result.dxf).toContain("LASER_SCORE_MARK_BLUE");
     expect(result.dxf).toContain("62\n5");
   });
 
@@ -58,9 +65,45 @@ describe("image to DXF helpers", () => {
     expect(result.svg).toContain('width="2.000000in"');
     expect(result.svg).toContain('id="CUT_FIRST_BLACK"');
     expect(result.svg).toContain('id="CUT_SECOND_RED"');
-    expect(result.svg).toContain('id="PARTIAL_CUT_BLUE_KEEP_ATTACHED"');
+    expect(result.svg).toContain('id="SCORE_MARK_BLUE"');
     expect(result.svg).toContain('stroke="#0000ff"');
     expect(result.svg).toContain('stroke="#ff0000"');
+  });
+
+  it("exports a bridged contour as open DXF pieces with a real gap", () => {
+    const result = buildDxf({
+      sourceWidth: 10,
+      sourceHeight: 10,
+      paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] }],
+    }, {
+      widthInches: 1,
+      heightInches: 1,
+      pathRoles: ["intact"],
+      bridges: [{ pathIndex: 0, position: 0.125 }],
+      bridgeWidthInches: 0.05,
+    });
+    expect(result.dxf).toContain("POLYLINE\n8\nLASER_CUT_FIRST_BLACK\n62\n7\n66\n1\n70\n0");
+    expect(result.dxf).not.toContain("POLYLINE\n8\nLASER_CUT_FIRST_BLACK\n62\n7\n66\n1\n70\n1");
+  });
+
+  it("assigns top-level contours red and contained contours black", () => {
+    const roles = assignAutomaticCutOrder({
+      paths: [
+        { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] },
+        { points: [{ x: 2, y: 2 }, { x: 4, y: 2 }, { x: 4, y: 4 }, { x: 2, y: 4 }] },
+      ],
+    });
+    expect(roles).toEqual(["cut", "intact"]);
+  });
+
+  it("removes unnecessary nodes while preserving a closed shape", () => {
+    const cleaned = cleanTracePaths({
+      sourceWidth: 10,
+      sourceHeight: 10,
+      paths: [{ points: [{ x: 0, y: 0 }, { x: 5, y: 0.01 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] }],
+    }, { widthInches: 10, toleranceInches: 0.05 });
+    expect(cleaned.paths[0].points.length).toBeLessThan(5);
+    expect(cleaned.paths[0].points.length).toBeGreaterThanOrEqual(3);
   });
 
   it("reports readiness, nodes, and very small red pieces", () => {
