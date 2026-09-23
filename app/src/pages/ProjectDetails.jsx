@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Badge,
@@ -361,6 +361,7 @@ function ProjectDetails({
   accessLevel,
 }) {
   const [project, setProject] = useState(selectedProject || null);
+  const workspaceRef = useRef(null);
 
   const [materialRequests, setMaterialRequests] = useState([]);
 
@@ -1274,18 +1275,28 @@ function ProjectDetails({
 
   function openNextActionWorkspace() {
     if (["quote_approval", "ready", "production"].includes(phaseForNavigation.key)) {
-      setActiveTab("workflow");
+      openWorkspace("workflow");
       return;
     }
     if (["field", "closeout"].includes(phaseForNavigation.key)) {
-      setActiveTab("schedule");
+      openWorkspace("schedule");
       return;
     }
     if (phaseForNavigation.key === "hold") {
-      setActiveTab("tracking");
+      openWorkspace("tracking");
       return;
     }
-    setActiveTab("overview");
+    openWorkspace("overview");
+  }
+
+  function openWorkspace(tab) {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => {
+      workspaceRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
   }
 
   const materialProfit =
@@ -1838,7 +1849,7 @@ function ProjectDetails({
       color: "blue",
       variant: "light",
       icon: <IconCalendar size={18} />,
-      onClick: () => setActiveTab("schedule"),
+      onClick: () => openWorkspace("schedule"),
     },
     {
       key: "production",
@@ -2183,11 +2194,12 @@ function ProjectDetails({
           </Stack>
         </MWSection>
 
-        <Tabs
-          value={activeTab}
-          onChange={(value) => setActiveTab(value || "overview")}
-          keepMounted={false}
-        >
+        <Box ref={workspaceRef} style={{ scrollMarginTop: 24 }}>
+          <Tabs
+            value={activeTab}
+            onChange={(value) => setActiveTab(value || "overview")}
+            keepMounted={false}
+          >
           <Paper p="md" withBorder radius="lg" mb="lg">
             <Select
               label="Workspace View"
@@ -3039,7 +3051,7 @@ function ProjectDetails({
                               variant="light"
                               color="blue"
                               leftSection={<IconCalendarEvent size={16} />}
-                              onClick={() => setActiveTab("schedule")}
+                              onClick={() => openWorkspace("schedule")}
                             >
                               Schedule Installation
                             </Button>
@@ -3856,7 +3868,8 @@ function ProjectDetails({
           <Tabs.Panel value="package">
             <ProjectPackageWorkspace project={project} activeUser={activeUser} />
           </Tabs.Panel>
-        </Tabs>
+          </Tabs>
+        </Box>
       </Stack>
 
       <Modal
