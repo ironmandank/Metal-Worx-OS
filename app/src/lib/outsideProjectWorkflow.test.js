@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getOutsidePhase, getSuggestedNextAction } from "./outsideProjectWorkflow";
+import { getApprovedProjectHandoff, getOutsidePhase, getSuggestedNextAction } from "./outsideProjectWorkflow";
 
 describe("outside project workflow", () => {
   it("places a project needing a site visit in pre-quote", () => {
@@ -14,8 +14,20 @@ describe("outside project workflow", () => {
   });
 
   it("places approved fabrication work in production", () => {
-    const project = { quote_required: true, quote_status: "Approved", customer_approval_required: true, approval_status: "Approved", status: "In Progress", fabrication_required: true, fabrication_status: "In Progress", balance_status: "Pending" };
+    const project = { quote_required: true, quote_status: "Approved", customer_approval_required: true, approval_status: "Approved", status: "In Progress", planned_start_date: "2026-09-24", fabrication_required: true, fabrication_status: "In Progress", balance_status: "Pending" };
     expect(getOutsidePhase(project).key).toBe("production");
+  });
+
+  it("routes approved work awaiting a required deposit before scheduling", () => {
+    const project = { down_payment_required: true, down_payment_status: "Pending" };
+    expect(getApprovedProjectHandoff(project)).toMatchObject({ status: "Awaiting Deposit" });
+    expect(getOutsidePhase({ ...project, approval_status: "Approved" }).key).toBe("deposit");
+  });
+
+  it("routes approved paid work to needs scheduling", () => {
+    const project = { down_payment_required: true, down_payment_status: "Received" };
+    expect(getApprovedProjectHandoff(project)).toMatchObject({ status: "Needs Scheduling" });
+    expect(getSuggestedNextAction({ ...project, status: "Needs Scheduling", approval_status: "Approved" })).toMatch(/schedule the project start/i);
   });
 
   it("places finished work with a balance in closeout", () => {

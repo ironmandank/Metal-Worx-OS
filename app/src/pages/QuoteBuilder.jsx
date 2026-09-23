@@ -29,6 +29,7 @@ import { notifications } from "@mantine/notifications";
 import { supabase } from "../lib/supabase";
 import { generateNumber } from "../lib/generateNumber";
 import { organizeQuoteText } from "../lib/quoteOrganizer";
+import { getApprovedProjectHandoff } from "../lib/outsideProjectWorkflow";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -744,9 +745,7 @@ function QuoteBuilder({
     }
 
     if (status === "Approved") {
-      return selectedProject.down_payment_required
-        ? "Collect the required down payment"
-        : "Order approved materials";
+      return getApprovedProjectHandoff(selectedProject).next_action;
     }
 
     if (status === "Declined") {
@@ -1271,11 +1270,12 @@ function QuoteBuilder({
         };
 
         if (quote.status === "Approved") {
+          const handoff = getApprovedProjectHandoff(selectedProject);
           projectUpdates.quote_status = "Approved";
           projectUpdates.approval_status = "Approved";
-          projectUpdates.next_action = selectedProject.down_payment_required
-            ? "Collect the required down payment"
-            : "Order approved materials";
+          projectUpdates.status = handoff.status;
+          projectUpdates.next_action = handoff.next_action;
+          projectUpdates.down_payment_status = handoff.down_payment_status;
         }
 
         const { error: projectError } = await supabase
@@ -1453,16 +1453,16 @@ function QuoteBuilder({
       }
 
       if (selectedProject?.id) {
-        const nextAction = selectedProject.down_payment_required
-          ? "Collect the required down payment"
-          : "Order approved materials";
+        const handoff = getApprovedProjectHandoff(selectedProject);
 
         const { error: projectError } = await supabase
           .from("projects")
           .update({
             quote_status: "Approved",
             approval_status: "Approved",
-            next_action: nextAction,
+            status: handoff.status,
+            next_action: handoff.next_action,
+            down_payment_status: handoff.down_payment_status,
           })
           .eq("id", selectedProject.id);
         if (projectError) throw projectError;
@@ -1489,8 +1489,8 @@ function QuoteBuilder({
 
         message: selectedProject?.id
           ? selectedProject.down_payment_required
-            ? "The quote was approved. Collect the down payment before ordering."
-            : "The quote was approved and materials are ready to order."
+            ? "The quote was approved. The project is awaiting its required deposit before scheduling."
+            : "The quote was approved and moved to Needs Scheduling."
           : "The standalone quote was approved and can now be converted into an outside project.",
 
         color: "green",
@@ -1534,6 +1534,7 @@ function QuoteBuilder({
         throw quoteError;
       }
 
+      const handoff = getApprovedProjectHandoff(selectedProject);
       const { error: projectError } = await supabase
         .from("projects")
         .update({
@@ -1541,7 +1542,11 @@ function QuoteBuilder({
 
           approval_status: "Approved",
 
-          next_action: "Order approved materials",
+          status: handoff.status,
+
+          next_action: handoff.next_action,
+
+          down_payment_status: handoff.down_payment_status,
         })
         .eq("id", selectedProject.id);
 
@@ -1550,9 +1555,9 @@ function QuoteBuilder({
       }
 
       notifications.show({
-        title: "Approved for Ordering",
+        title: "Approved - Needs Scheduling",
 
-        message: "The project may proceed to material ordering and production.",
+        message: "The approved project has moved to Needs Scheduling.",
 
         color: "green",
       });

@@ -20,7 +20,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconCamera, IconDownload, IconEye, IconFlag, IconPhoto, IconStar, IconUpload } from "@tabler/icons-react";
+import { IconArrowRight, IconCamera, IconDownload, IconEye, IconFlag, IconPhoto, IconStar, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
@@ -55,10 +55,22 @@ const SSU_EXAMPLE = [
 const SSU_OVERVIEW = "Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.";
 
 const PRESENTATION_TEMPLATES = [
-  { value: "industrial", label: "Metal Worx Industrial" },
-  { value: "portfolio", label: "Clean Project Portfolio" },
-  { value: "field", label: "Field Progress Report" },
+  { value: "industrial", label: "Industrial Story - Dark" },
+  { value: "portfolio", label: "Executive Portfolio - Light" },
+  { value: "field", label: "Field Progress - Technical" },
+  { value: "blueprint", label: "Blueprint Build Record" },
+  { value: "collage", label: "Fabrication Photo Collage" },
+  { value: "photojournal", label: "Full-Photo Project Journal" },
 ];
+
+const TEMPLATE_DESCRIPTIONS = {
+  industrial: "Black and red feature pages with bold fabrication photography.",
+  portfolio: "Clean white executive pages for leadership and customer review.",
+  field: "Structured progress pages for milestones, notes, and field records.",
+  blueprint: "Technical drawing-inspired pages for measurements and build details.",
+  collage: "Mixed large-and-small photo arrangements for busy fabrication phases.",
+  photojournal: "Full-width photography with concise milestone storytelling.",
+};
 
 function safeFileName(value) {
   return String(value || "progress-photo")
@@ -135,6 +147,13 @@ function ProjectStoryBoard({ project, activeUser }) {
   const displayedStageCount = isExample
     ? new Set(SSU_EXAMPLE.map((file) => file.story_stage)).size
     : completedStages;
+  const storyOverview = isExample
+    ? SSU_OVERVIEW
+    : project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.";
+  const documentedStages = STORY_STAGES.filter((storyStage) => visibleFiles.some((file) => file.story_stage === storyStage));
+  const currentStage = documentedStages.at(-1) || "Planning";
+  const nextStage = STORY_STAGES[STORY_STAGES.indexOf(currentStage) + 1] || "Final review and closeout";
+  const storyCompletion = Math.min(100, Math.round((displayedStageCount / STORY_STAGES.length) * 100));
 
   async function uploadPhotos() {
     if (!selectedFiles.length) {
@@ -209,7 +228,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         imageUrls: urls,
         mode,
         template: presentationTemplate,
-        overview: isExample ? SSU_OVERVIEW : project.project_description || project.description || project.scope_of_work || "",
+        overview: storyOverview,
       });
     } catch (error) {
       notifications.show({ title: "PDF Could Not Be Exported", message: error.message, color: "red" });
@@ -243,6 +262,54 @@ function ProjectStoryBoard({ project, activeUser }) {
         </Stack>
       </Paper>
 
+      <Paper withBorder radius="lg" p="xl" style={{ borderTop: "5px solid var(--mantine-color-red-8)" }}>
+        <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+          <div>
+            <Text size="xs" c="red.7" fw={900} tt="uppercase" lts={1.6}>Executive Summary</Text>
+            <Title order={2} mt={4}>{isExample ? "SSU Connex Project" : project.project_name || "Project Overview"}</Title>
+          </div>
+          <Badge size="lg" color="red" variant="light">{storyCompletion}% documented</Badge>
+        </Group>
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
+          <Stack gap="sm">
+            <Text size="sm" lh={1.65}>{storyOverview}</Text>
+            <Group gap="xs" wrap="wrap">
+              <Badge color="dark" variant="filled">{displayedStageCount} documented phases</Badge>
+              <Badge color="gray" variant="light">{visibleFiles.length} progress photos</Badge>
+            </Group>
+          </Stack>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+            <Paper p="md" radius="md" bg="dark.8">
+              <Text size="xs" c="red.3" fw={900} tt="uppercase">Current phase</Text>
+              <Text c="white" fw={900} mt={5}>{currentStage}</Text>
+            </Paper>
+            <Paper p="md" radius="md" bg="dark.8">
+              <Text size="xs" c="red.3" fw={900} tt="uppercase">Next milestone</Text>
+              <Text c="white" fw={900} mt={5}>{nextStage}</Text>
+            </Paper>
+          </SimpleGrid>
+        </SimpleGrid>
+      </Paper>
+
+      {documentedStages.length > 1 && (
+        <Card withBorder radius="lg" p="lg">
+          <Group justify="space-between" mb="lg">
+            <div><Text fw={900} size="lg">How It Came Together</Text><Text size="sm" c="dimmed">The PDF presents these milestones from left to right.</Text></div>
+            <Badge color="red" variant="filled">Build progression</Badge>
+          </Group>
+          <Group gap="xs" wrap="nowrap" style={{ overflowX: "auto", paddingBottom: 8 }}>
+            {documentedStages.map((storyStage, index) => (
+              <Group key={storyStage} gap="xs" wrap="nowrap" style={{ flex: "0 0 auto" }}>
+                <Paper px="md" py="sm" radius="xl" bg="red.9" c="white">
+                  <Text size="sm" fw={900}>{String(index + 1).padStart(2, "0")} · {storyStage}</Text>
+                </Paper>
+                {index < documentedStages.length - 1 && <IconArrowRight size={18} color="var(--mantine-color-red-7)" />}
+              </Group>
+            ))}
+          </Group>
+        </Card>
+      )}
+
       <Card withBorder radius="lg" p="lg">
         <Group justify="space-between" align="flex-start" wrap="wrap" mb="md">
           <div><Text fw={900} size="lg">Add Progress Photos</Text><Text size="sm" c="dimmed">Photographs remain internal unless you deliberately mark them customer-visible.</Text></div>
@@ -255,19 +322,44 @@ function ProjectStoryBoard({ project, activeUser }) {
           </SimpleGrid>
           <Textarea label="Photo caption / progress note" value={caption} onChange={(event) => setCaption(event.currentTarget.value)} minRows={2} placeholder="Example: Divider wall frames welded and ready for test fit." />
           <Switch checked={customerVisible} onChange={(event) => setCustomerVisible(event.currentTarget.checked)} label="Customer-visible update" description="Only enable this for photos and notes suitable for the customer-facing story." />
-          <Button color="red" loading={uploading} onClick={uploadPhotos} leftSection={<IconUpload size={17} />}>Add to Story Board</Button>
+          <Button color="red" loading={uploading} onClick={uploadPhotos} leftSection={<IconUpload size={17} />}>Add to Project Story</Button>
         </Stack>
       </Card>
 
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
-          <Select w={220} aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "industrial")} allowDeselect={false} />
+          <Select w={245} label="PDF presentation style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "industrial")} allowDeselect={false} />
           <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal Project Record</Button>
           <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer Presentation</Button>
           <SegmentedControl value={view} onChange={setView} data={["Internal Project Story", "Customer Presentation", "SSU Connex Project Story"]} />
         </Group>
       </Group>
+
+      <Card withBorder radius="lg" p="lg">
+        <Group justify="space-between" mb="md" align="flex-start">
+          <div><Text fw={900} size="lg">Project Story Template Library</Text><Text size="sm" c="dimmed">Choose a design family for the export. Photo layouts expand automatically as the project grows.</Text></div>
+          <Badge color="red" variant="light">6 design families</Badge>
+        </Group>
+        <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }}>
+          {PRESENTATION_TEMPLATES.map((item) => (
+            <Paper
+              key={item.value}
+              withBorder
+              radius="md"
+              p="md"
+              role="button"
+              tabIndex={0}
+              onClick={() => setPresentationTemplate(item.value)}
+              onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) setPresentationTemplate(item.value); }}
+              style={{ cursor: "pointer", borderColor: presentationTemplate === item.value ? "var(--mantine-color-red-7)" : undefined, borderWidth: presentationTemplate === item.value ? 2 : 1 }}
+            >
+              <Group justify="space-between" gap="xs"><Text fw={900} size="sm">{item.label}</Text>{presentationTemplate === item.value && <Badge size="xs" color="red">Selected</Badge>}</Group>
+              <Text size="xs" c="dimmed" mt={6}>{TEMPLATE_DESCRIPTIONS[item.value]}</Text>
+            </Paper>
+          ))}
+        </SimpleGrid>
+      </Card>
 
       {isExample && (
         <Alert color="red" icon={<IconStar size={18} />} title="SSU Connex Story Board - Two-Container Project">

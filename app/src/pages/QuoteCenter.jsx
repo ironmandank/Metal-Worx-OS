@@ -23,6 +23,7 @@ import { supabase } from "../lib/supabase";
 import { releaseProject } from "../lib/productionWorkflow";
 import { generateNumber } from "../lib/generateNumber";
 import { emptyOrganizedQuote, organizeQuoteText } from "../lib/quoteOrganizer";
+import { getApprovedProjectHandoff } from "../lib/outsideProjectWorkflow";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -109,6 +110,7 @@ function addDays(value, days) {
 function statusColor(status) {
   if (status === "Approved") return "green";
   if (status === "Sent" || status === "Ready for Review") return "blue";
+  if (status === "No Response" || status === "Archived") return "gray";
   if (status === "Declined" || status === "Cancelled" || status === "Expired")
     return "red";
   return "gray";
@@ -144,8 +146,10 @@ function QuoteCenter({
   const [organizerImages, setOrganizerImages] = useState([]);
   const [organizerCreating, setOrganizerCreating] = useState(false);
   const [deletingQuoteId, setDeletingQuoteId] = useState(null);
+  const [archivingQuoteId, setArchivingQuoteId] = useState(null);
   const [approvingQuoteId, setApprovingQuoteId] = useState(null);
-  const [showSiteEstimate, setShowSiteEstimate] = useState(true);
+  const [showSiteEstimate, setShowSiteEstimate] = useState(false);
+  const [requestPath, setRequestPath] = useState(null);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Open");
@@ -380,7 +384,11 @@ function QuoteCenter({
 
   async function markCustomerApproved(quote) {
     const label = quote.quote_number || `Quote ${quote.id}`;
-    if (!window.confirm(`Mark ${label} approved based on the customer's email and create the active project?`)) return;
+    const linkedProjectId = quote.converted_project_id || quote.project_id;
+    const confirmation = linkedProjectId
+      ? `Mark ${label} approved based on the customer's email and move its existing project to the next step?`
+      : `Mark ${label} approved based on the customer's email and create the outside project?`;
+    if (!window.confirm(confirmation)) return;
     setApprovingQuoteId(quote.id);
     try {
       const { error } = await supabase
@@ -390,16 +398,78 @@ function QuoteCenter({
       if (error) throw error;
       const approvedQuote = { ...quote, status: "Approved" };
       setQuotes((current) => current.map((item) => item.id === quote.id ? approvedQuote : item));
+
+      if (linkedProjectId) {
+        const { data: linkedProject, error: projectLoadError } = await supabase
+          .from("projects")
+          .select("*")
+          .eq("id", linkedProjectId)
+          .single();
+        if (projectLoadError) throw projectLoadError;
+
+        const handoff = getApprovedProjectHandoff({
+          ...linkedProject,
+          approval_status: "Approved",
+          quote_status: "Approved",
+        });
+        const { error: projectUpdateError } = await supabase
+          .from("projects")
+          .update({
+            approval_status: "Approved",
+            quote_status: "Approved",
+            status: handoff.status,
+            next_action: handoff.next_action,
+            down_payment_status: handoff.down_payment_status,
+          })
+          .eq("id", linkedProjectId);
+        if (projectUpdateError) throw projectUpdateError;
+
+        notifications.show({
+          title: "Customer Approval Recorded",
+          message: `${label} is approved. The project is now ${handoff.status}.`,
+          color: "green",
+        });
+        return;
+      }
+
       beginConversion(approvedQuote);
       notifications.show({
         title: "Customer Approval Recorded",
-        message: `${label} is approved. Confirm the project workflow below to create the active outside project.`,
+        message: `${label} is approved. Confirm the project workflow below to create the outside project.`,
         color: "green",
       });
     } catch (error) {
       notifications.show({ title: "Approval Could Not Be Recorded", message: error.message, color: "red" });
     } finally {
       setApprovingQuoteId(null);
+    }
+  }
+
+  function beginRequest(path) {
+    setRequestPath(path);
+    setShowSiteEstimate(path === "site");
+    setShowPasteOrganizer(path === "paste");
+    setShowCreate(path === "direct");
+  }
+
+  async function updateQuoteStatus(quote, status) {
+    setArchivingQuoteId(quote.id);
+    try {
+      const { error } = await supabase
+        .from("project_quotes")
+        .update({ status })
+        .eq("id", quote.id);
+      if (error) throw error;
+      setQuotes((current) => current.map((item) => item.id === quote.id ? { ...item, status } : item));
+      notifications.show({
+        title: status === "Archived" ? "Quote Archived" : "Follow-Up Status Updated",
+        message: `${quote.quote_number || `Quote ${quote.id}`} is now ${status}.`,
+        color: status === "Archived" ? "gray" : "orange",
+      });
+    } catch (error) {
+      notifications.show({ title: "Quote Could Not Update", message: error.message, color: "red" });
+    } finally {
+      setArchivingQuoteId(null);
     }
   }
 
@@ -424,7 +494,7 @@ function QuoteCenter({
 
   const filteredQuotes = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const closed = ["Declined", "Cancelled", "Expired"];
+    const closed = ["Declined", "Cancelled", "Expired", "No Response", "Archived"];
 
     return quotes.filter((quote) => {
       if (
@@ -462,7 +532,7 @@ function QuoteCenter({
   const stats = useMemo(
     () => ({
       open: quotes.filter(
-        (quote) => !["Declined", "Cancelled", "Expired"].includes(quote.status),
+        (quote) => !["Declined", "Cancelled", "Expired", "No Response", "Archived"].includes(quote.status),
       ).length,
       draft: quotes.filter((quote) => quote.status === "Draft").length,
       sent: quotes.filter((quote) => quote.status === "Sent").length,
@@ -936,6 +1006,7 @@ function QuoteCenter({
       }
 
       let depositWarning = "";
+      let depositRecorded = false;
       if (conversionForm.deposit_received && Number(conversionForm.deposit_amount || 0) > 0) {
         const { error: paymentError } = await supabase.rpc("mw_record_project_payment", {
           p_project_id: Number(project.id),
@@ -948,7 +1019,27 @@ function QuoteCenter({
           p_recorded_by: actor,
         });
         if (paymentError) depositWarning = ` The project was created, but the deposit still needs to be recorded: ${paymentError.message}`;
+        else depositRecorded = true;
       }
+
+      const handoff = getApprovedProjectHandoff({
+        ...project,
+        down_payment_required: conversionForm.down_payment_required,
+        down_payment_status: conversionForm.down_payment_required
+          ? depositRecorded ? "Received" : "Pending"
+          : "Not Required",
+      });
+      const { error: handoffError } = await supabase
+        .from("projects")
+        .update({
+          quote_status: "Approved",
+          approval_status: "Approved",
+          status: handoff.status,
+          next_action: handoff.next_action,
+          down_payment_status: handoff.down_payment_status,
+        })
+        .eq("id", project.id);
+      if (handoffError) throw handoffError;
 
       const updatedQuote = {
         ...conversionQuote,
@@ -967,16 +1058,20 @@ function QuoteCenter({
       setConversionQuote(null);
 
       let productionJob = null;
-      let readinessMessage = "Open the project to complete its production-readiness requirements.";
-      try {
-        productionJob = await releaseProject(project.id, actor);
-        readinessMessage = `${productionJob.production_job_number} is ready in ${productionJob.current_department}.`;
-      } catch (releaseError) {
-        readinessMessage = releaseError.message;
+      let readinessMessage = handoff.status === "Needs Scheduling"
+        ? "The approved project is ready to schedule."
+        : "Record the required deposit before scheduling.";
+      if (handoff.status === "Needs Scheduling" && project.planned_start_date) {
+        try {
+          productionJob = await releaseProject(project.id, actor);
+          readinessMessage = `${productionJob.production_job_number} is ready in ${productionJob.current_department}.`;
+        } catch (releaseError) {
+          readinessMessage = releaseError.message;
+        }
       }
 
       notifications.show({
-        title: productionJob ? "Project Created and Released" : "Project Created — Readiness Check Required",
+        title: productionJob ? "Project Created and Released" : handoff.status === "Needs Scheduling" ? "Project Created - Needs Scheduling" : "Project Created - Awaiting Deposit",
         message: `${project.project_number} was created from ${conversionQuote.quote_number}. ${readinessMessage}${depositWarning}`,
         color: productionJob && !depositWarning ? "green" : "orange",
       });
@@ -1236,32 +1331,44 @@ function QuoteCenter({
 
       <OutsideWorkspaceNav current="quoteCenter" setPage={setPage} />
 
-      <Group justify="space-between" mb="lg" wrap="wrap">
-        <Button
-          variant={showSiteEstimate ? "filled" : "light"}
-          color="blue"
-          onClick={() => setShowSiteEstimate((current) => !current)}
-        >
-          {showSiteEstimate
-            ? "Close Site Visit & Mileage"
-            : "Plan Site Visit & Mileage"}
-        </Button>
-        <Group gap="sm">
-          <Button
-            variant={showPasteOrganizer ? "filled" : "light"}
-            color="green"
-            onClick={() => setShowPasteOrganizer((current) => !current)}
-          >
-            {showPasteOrganizer ? "Close Paste & Organize" : "Paste & Organize Quote"}
-          </Button>
-          <Button
-            color="red"
-            onClick={() => setShowCreate((current) => !current)}
-          >
-            {showCreate ? "Close New Quote" : "New Standalone Quote"}
-          </Button>
-        </Group>
-      </Group>
+      <MWSection
+        title="New Customer Request"
+        subtitle="Every estimate starts here and follows the same path from first contact to scheduling."
+      >
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 2, md: 4, xl: 7 }} spacing="xs">
+            {[
+              ["1", "Request"], ["2", "Site Visit"], ["3", "Build Quote"],
+              ["4", "Quote Sent"], ["5", "Approval"], ["6", "Deposit"], ["7", "Schedule"],
+            ].map(([number, label]) => (
+              <Card key={number} withBorder radius="md" p="sm">
+                <Badge color={number === "1" ? "red" : "gray"}>{number}</Badge>
+                <Text fw={800} size="sm" mt={6}>{label}</Text>
+              </Card>
+            ))}
+          </SimpleGrid>
+
+          <Alert color="blue" title="Step 1 — How should this request begin?">
+            Choose whether Chad or another estimator needs to visit the site. If not, build the estimate here in the shop. Paste &amp; Organize and mileage remain optional tools inside this workflow.
+          </Alert>
+
+          <SimpleGrid cols={{ base: 1, md: 2 }}>
+            <Card withBorder radius="lg" p="lg">
+              <Text fw={900} size="lg">Site visit required</Text>
+              <Text size="sm" c="dimmed" mb="md">Schedule the visit, open Google Maps, record mileage, measurements, photos, and notes, then move it to Quote Needed.</Text>
+              <Button fullWidth color="blue" variant={requestPath === "site" ? "filled" : "light"} onClick={() => beginRequest("site")}>Start Site Visit Estimate</Button>
+            </Card>
+            <Card withBorder radius="lg" p="lg">
+              <Text fw={900} size="lg">Quote can be built now</Text>
+              <Text size="sm" c="dimmed" mb="md">For shop work or projects with enough information, create the quote directly or organize a write-up you already have.</Text>
+              <Group grow>
+                <Button color="red" variant={requestPath === "direct" ? "filled" : "light"} onClick={() => beginRequest("direct")}>Build Quote</Button>
+                <Button color="green" variant={requestPath === "paste" ? "filled" : "light"} onClick={() => beginRequest("paste")}>Paste &amp; Organize</Button>
+              </Group>
+            </Card>
+          </SimpleGrid>
+        </Stack>
+      </MWSection>
 
       {showPasteOrganizer && (
         <MWSection
@@ -1615,7 +1722,7 @@ function QuoteCenter({
         </MWSection>
       )}
 
-      <MWSection title="All Formal Quotes">
+      <MWSection title="Quote Pipeline & History" subtitle="Previous quotes stay searchable here, including no-response and archived estimates.">
         <SimpleGrid cols={{ base: 1, md: 3 }} mb="md">
           <TextInput
             label="Search Quotes"
@@ -1632,6 +1739,8 @@ function QuoteCenter({
               "Ready for Review",
               "Sent",
               "Approved",
+              "No Response",
+              "Archived",
               "Declined",
               "Expired",
               "Cancelled",
@@ -1734,16 +1843,41 @@ function QuoteCenter({
                   >
                     Preview
                   </Button>
-                  <Button
-                    size="xs"
-                    color="green"
-                    variant={quote.status === "Approved" ? "light" : "filled"}
-                    loading={approvingQuoteId === quote.id}
-                    disabled={Boolean(quote.project_id || quote.converted_project_id)}
-                    onClick={() => quote.status === "Approved" ? beginConversion(quote) : markCustomerApproved(quote)}
-                  >
-                    {quote.status === "Approved" ? "Create Active Project" : "Mark Customer Approved"}
-                  </Button>
+                  {quote.status === "Sent" && (
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="orange"
+                      loading={archivingQuoteId === quote.id}
+                      onClick={() => updateQuoteStatus(quote, "No Response")}
+                    >
+                      Mark No Response
+                    </Button>
+                  )}
+                  {!["Archived", "Approved"].includes(quote.status) && (
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      color="gray"
+                      loading={archivingQuoteId === quote.id}
+                      onClick={() => {
+                        if (window.confirm(`Archive ${quote.quote_number || `Quote ${quote.id}`}? It will remain in quote history.`)) updateQuoteStatus(quote, "Archived");
+                      }}
+                    >
+                      Archive
+                    </Button>
+                  )}
+                  {!(quote.status === "Approved" && (quote.project_id || quote.converted_project_id)) && (
+                    <Button
+                      size="xs"
+                      color="green"
+                      variant={quote.status === "Approved" ? "light" : "filled"}
+                      loading={approvingQuoteId === quote.id}
+                      onClick={() => quote.status === "Approved" ? beginConversion(quote) : markCustomerApproved(quote)}
+                    >
+                      {quote.status === "Approved" ? "Create Project" : "Mark Customer Approved"}
+                    </Button>
+                  )}
                   {(quote.converted_project_id || quote.project_id) && (
                     <Button
                       size="xs"

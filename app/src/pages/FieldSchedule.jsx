@@ -48,7 +48,7 @@ const FIELD_CALENDAR_STYLES = `
   .mw-field-day-head { display:flex; justify-content:space-between; gap:5px; margin-bottom:5px; font-weight:900; }
   .mw-field-day-head small { color:#7f8c95; font-size:9px; text-transform:uppercase; }
   .mw-field-event { margin-top:5px; padding:5px 6px; border-left:4px solid #228be6; border-radius:4px; background:#20282e; color:#fff; font-size:9px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .mw-field-event.project { border-left-color:#7950f2; } .mw-field-event.visit { border-left-color:#228be6; } .mw-field-event.install { border-left-color:#40c057; } .mw-field-event.test { border-left-color:#fd7e14; }
+  .mw-field-event.project { border-left-color:#7950f2; } .mw-field-event.tentative { border-left-color:#fab005; border-style:dashed; } .mw-field-event.visit { border-left-color:#228be6; } .mw-field-event.install { border-left-color:#40c057; } .mw-field-event.test { border-left-color:#fd7e14; }
 `;
 
 const SCHEDULE_TYPES = {
@@ -82,6 +82,11 @@ function getStatusColor(status) {
   if (status === "Adjustments Needed") return "red";
   if (status === "Ready to Schedule") return "yellow";
   return "gray";
+}
+
+function isFinanciallyCleared(project) {
+  return ["Approved", "Bypassed"].includes(project.approval_status) &&
+    (!project.down_payment_required || ["Received", "Paid", "Not Required"].includes(project.down_payment_status));
 }
 
 function getCustomerName(customer) {
@@ -375,11 +380,12 @@ function FieldSchedule({ setPage, setSelectedProject }) {
     }));
     projects.forEach((project) => {
       if (!project.planned_start_date) return;
+      const cleared = isFinanciallyCleared(project);
       const duration = Math.max(Number(project.planned_duration_days || 1), 1);
       for (let index = 0; index < duration; index += 1) {
         add(addDays(project.planned_start_date, index), {
           id: `planned-${project.id}-${index}`, type: "Planned Project", label: project.project_name || project.project_number,
-          owner: getOwner(project), location: getLocation(project), project, kind: "project",
+          owner: getOwner(project), location: getLocation(project), project, kind: cleared ? "project" : "tentative",
         });
       }
     });
@@ -394,12 +400,69 @@ function FieldSchedule({ setPage, setSelectedProject }) {
         location: visit.job_site_address || "Address not entered", owner: visit.assigned_estimator || "Unassigned", kind: "visit",
       })),
     ...projects
-      .filter((project) => !project.planned_start_date && !project.site_visit_start && !project.test_fit_start && !project.install_start)
+      .filter((project) =>
+        !project.planned_start_date &&
+        !project.site_visit_start &&
+        !project.test_fit_start &&
+        !project.install_start &&
+        isFinanciallyCleared(project)
+      )
       .map((project) => ({
         id: `unscheduled-project-${project.id}`, type: "Outside Project", label: project.project_name || project.project_number,
         location: getLocation(project), owner: getOwner(project), kind: "project", project,
       })),
   ], [prequoteVisits, projects]);
+
+  const schedulingQueues = useMemo(() => {
+    const toItem = (project, stage, color) => ({
+      id: `${stage}-${project.id}`,
+      label: project.project_name || project.project_number || "Untitled Project",
+      location: getLocation(project),
+      owner: getOwner(project),
+      project,
+      stage,
+      color,
+    });
+
+    return [
+      {
+        label: "Potential Work",
+        description: "Quote sent; customer decision is still pending.",
+        color: "blue",
+        items: projects.filter((project) => project.quote_status === "Sent" && !project.planned_start_date).map((project) => toItem(project, "Potential", "blue")),
+      },
+      {
+        label: "Awaiting Deposit",
+        description: "Approved, but the required deposit has not been received.",
+        color: "orange",
+        items: projects.filter((project) => project.down_payment_required && !["Received", "Paid"].includes(project.down_payment_status) && ["Approved", "Bypassed"].includes(project.approval_status)).map((project) => toItem(project, "Deposit", "orange")),
+      },
+      {
+        label: "Needs Scheduling",
+        description: "Approved and financially cleared; ready for a confirmed date.",
+        color: "red",
+        items: unscheduledWork.filter((item) => item.project).map((item) => ({ ...item, stage: "Ready", color: "red" })),
+      },
+      {
+        label: "Tentative Holds",
+        description: "Capacity is being held, but approval or deposit is not complete.",
+        color: "yellow",
+        items: projects.filter((project) => project.planned_start_date && !isFinanciallyCleared(project)).map((project) => toItem(project, "Tentative", "yellow")),
+      },
+      {
+        label: "Scheduled",
+        description: "Confirmed work with a planned start date.",
+        color: "violet",
+        items: projects.filter((project) => project.planned_start_date && isFinanciallyCleared(project) && project.status !== "In Progress").map((project) => toItem(project, "Scheduled", "violet")),
+      },
+      {
+        label: "Active",
+        description: "Work currently in progress.",
+        color: "green",
+        items: projects.filter((project) => project.status === "In Progress").map((project) => toItem(project, "Active", "green")),
+      },
+    ];
+  }, [projects, unscheduledWork]);
 
   const ownerOptions = useMemo(
     () => [
@@ -695,7 +758,7 @@ function FieldSchedule({ setPage, setSelectedProject }) {
             <Button size="xs" variant="default" aria-label="Next month" onClick={() => setCalendarMonth((value) => moveMonth(value, 1))}><IconChevronRight size={16} /></Button>
           </Group>
           <Title order={3}>{calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</Title>
-          <Group gap="sm"><Badge color="blue">Estimate Visit</Badge><Badge color="orange">Test Fit</Badge><Badge color="green">Install</Badge><Badge color="violet">Planned Project</Badge></Group>
+          <Group gap="sm"><Badge color="blue">Estimate Visit</Badge><Badge color="orange">Test Fit</Badge><Badge color="green">Install</Badge><Badge color="yellow">Tentative Hold</Badge><Badge color="violet">Confirmed Project</Badge></Group>
         </Group>
         <ScrollArea type="auto">
           <div className="mw-field-calendar">
@@ -712,24 +775,51 @@ function FieldSchedule({ setPage, setSelectedProject }) {
           </div>
         </ScrollArea>
         <Paper withBorder radius="md" p="md" mt="md">
-          <Group justify="space-between" mb="sm"><div><Text fw={900}>Needs Scheduling</Text><Text size="xs" c="dimmed">Open estimate visits and active projects stay here until a date is assigned.</Text></div><Badge color={unscheduledWork.length ? "orange" : "green"}>{unscheduledWork.length}</Badge></Group>
-          {unscheduledWork.length ? (
-            <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
-              {unscheduledWork.map((item) => <Card key={item.id} withBorder radius="md" p="sm">
-                <Stack justify="space-between" h="100%" gap="sm">
-                  <div style={{ minWidth: 0 }}>
-                    <Text fw={900} size="sm" lh={1.25} style={{ overflowWrap: "anywhere" }}>{item.label}</Text>
-                    <Badge mt={6} size="xs" color={item.kind === "project" ? "violet" : "blue"}>{item.type}</Badge>
-                    <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
-                    <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
-                  </div>
-                  {item.project
-                    ? <Button fullWidth size="xs" variant="light" onClick={() => openProject(item.project)}>Schedule Project</Button>
-                    : <Button fullWidth size="xs" variant="light" onClick={() => setPage("quoteCenter")}>Open Estimate Visit</Button>}
-                </Stack>
-              </Card>)}
-            </SimpleGrid>
-          ) : <Alert color="green">Every active outside item has a scheduled date.</Alert>}
+          <Group justify="space-between" mb="md" wrap="wrap">
+            <div>
+              <Text fw={900}>Scheduling Queue</Text>
+              <Text size="xs" c="dimmed">See possible work, deposits, open capacity, tentative holds, confirmed dates, and active projects in one place.</Text>
+            </div>
+            <Button size="xs" variant="light" onClick={() => setPage("quoteCenter")}>New Customer Request</Button>
+          </Group>
+
+          <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }} mb="md">
+            {schedulingQueues.map((queue) => (
+              <Card key={queue.label} withBorder radius="md" p="sm">
+                <Text size="xs" c="dimmed" fw={800} tt="uppercase">{queue.label}</Text>
+                <Title order={3} c={queue.color}>{queue.items.length}</Title>
+              </Card>
+            ))}
+          </SimpleGrid>
+
+          <Stack gap="sm">
+            {schedulingQueues.filter((queue) => queue.items.length).map((queue) => (
+              <Card key={queue.label} withBorder radius="md" p="md">
+                <Group justify="space-between" mb="sm">
+                  <div><Text fw={900}>{queue.label}</Text><Text size="xs" c="dimmed">{queue.description}</Text></div>
+                  <Badge color={queue.color}>{queue.items.length}</Badge>
+                </Group>
+                <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
+                  {queue.items.map((item) => (
+                    <Paper key={item.id} withBorder radius="md" p="sm">
+                      <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
+                      <Badge mt={6} size="xs" color={item.color || queue.color}>{item.stage || item.type}</Badge>
+                      <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
+                      <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
+                      <Button fullWidth size="xs" variant="light" mt="sm" onClick={() => openProject(item.project)}>Open Project</Button>
+                    </Paper>
+                  ))}
+                </SimpleGrid>
+              </Card>
+            ))}
+            {!schedulingQueues.some((queue) => queue.items.length) && <Alert color="green">There is no outside work waiting in the scheduling pipeline.</Alert>}
+            {unscheduledWork.some((item) => !item.project) && (
+              <Card withBorder radius="md" p="md">
+                <Group justify="space-between"><div><Text fw={900}>Estimate Visits to Schedule</Text><Text size="xs" c="dimmed">These are still in the estimate stage and are not confirmed projects.</Text></div><Badge color="blue">{unscheduledWork.filter((item) => !item.project).length}</Badge></Group>
+                <Button size="xs" variant="light" mt="sm" onClick={() => setPage("quoteCenter")}>Open Customer Requests</Button>
+              </Card>
+            )}
+          </Stack>
         </Paper>
       </MWPanel>
 
@@ -738,7 +828,7 @@ function FieldSchedule({ setPage, setSelectedProject }) {
           {selectedDay && (calendarEntriesByDay[dateKey(selectedDay)] || []).length ? (calendarEntriesByDay[dateKey(selectedDay)] || []).map((entry) => (
             <Paper key={entry.id} withBorder radius="md" p="md">
               <Group justify="space-between" align="flex-start">
-                <div><Group gap="xs"><Text fw={900}>{entry.label}</Text><Badge color={entry.kind === "install" ? "green" : entry.kind === "test" ? "orange" : entry.kind === "project" ? "violet" : "blue"}>{entry.type}</Badge></Group><Text size="sm">{entry.location}</Text><Text size="xs" c="dimmed">Assigned to: {entry.owner}</Text></div>
+                <div><Group gap="xs"><Text fw={900}>{entry.label}</Text><Badge color={entry.kind === "install" ? "green" : entry.kind === "test" ? "orange" : entry.kind === "project" ? "violet" : entry.kind === "tentative" ? "yellow" : "blue"}>{entry.kind === "tentative" ? "Tentative Hold" : entry.type}</Badge></Group><Text size="sm">{entry.location}</Text><Text size="xs" c="dimmed">Assigned to: {entry.owner}</Text></div>
                 {entry.project && <Button size="xs" variant="light" onClick={() => openProject(entry.project)}>Open Project</Button>}
               </Group>
             </Paper>
