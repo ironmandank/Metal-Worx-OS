@@ -20,8 +20,19 @@ describe("image to DXF helpers", () => {
     expect(result.width).toBe(20);
     expect(result.height).toBe(10);
     expect(result.dxf).toContain("$INSUNITS\n70\n1");
-    expect(result.dxf).toContain("LWPOLYLINE");
+    expect(result.dxf).toContain("POLYLINE");
+    expect(result.dxf).toContain("VERTEX");
+    expect(result.dxf).toContain("LASER_KEEP_BLACK");
     expect(result.dxf).toContain("10\n20.000000");
   });
-});
 
+  it("puts selected removal paths on a red cut layer", () => {
+    const result = buildDxf({
+      sourceWidth: 10,
+      sourceHeight: 10,
+      paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
+    }, { widthInches: 1, heightInches: 1, pathRoles: ["cut"] });
+    expect(result.dxf).toContain("LASER_CUT_RED");
+    expect(result.dxf).toContain("62\n1");
+  });
+});

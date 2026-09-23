@@ -120,37 +120,43 @@ export function buildDxf(trace, options = {}) {
   const height = keepAspect ? requestedWidth / sourceAspect : requestedHeight;
   const scaleX = width / trace.sourceWidth;
   const scaleY = height / trace.sourceHeight;
-  const layer = String(options.layerName || "CUT").replace(/[^A-Za-z0-9_-]/g, "_");
+  const baseLayer = String(options.layerName || "LASER").replace(/[^A-Za-z0-9_-]/g, "_");
+  const cutLayer = `${baseLayer}_CUT_RED`;
+  const intactLayer = `${baseLayer}_KEEP_BLACK`;
+  const pathRoles = options.pathRoles || [];
   const lines = [
     "0", "SECTION", "2", "HEADER",
-    "9", "$ACADVER", "1", "AC1015",
+    "9", "$ACADVER", "1", "AC1009",
     "9", "$INSUNITS", "70", "1",
     "9", "$MEASUREMENT", "70", "0",
+    "9", "$EXTMIN", "10", "0.000000", "20", "0.000000", "30", "0.000000",
+    "9", "$EXTMAX", "10", width.toFixed(6), "20", height.toFixed(6), "30", "0.000000",
     "0", "ENDSEC",
     "0", "SECTION", "2", "TABLES",
-    "0", "TABLE", "2", "LAYER", "70", "1",
-    "0", "LAYER", "2", layer, "70", "0", "62", "1", "6", "CONTINUOUS",
+    "0", "TABLE", "2", "LAYER", "70", "2",
+    "0", "LAYER", "2", cutLayer, "70", "0", "62", "1", "6", "CONTINUOUS",
+    "0", "LAYER", "2", intactLayer, "70", "0", "62", "7", "6", "CONTINUOUS",
     "0", "ENDTAB", "0", "ENDSEC",
     "0", "SECTION", "2", "ENTITIES",
   ];
 
-  trace.paths.forEach((path) => {
+  trace.paths.forEach((path, pathIndex) => {
+    const isCut = pathRoles[pathIndex] === "cut";
+    const layer = isCut ? cutLayer : intactLayer;
+    const color = isCut ? "1" : "7";
     const points = path.points.map((point) => ({
       x: clamp(point.x * scaleX, 0, width),
       y: clamp(height - point.y * scaleY, 0, height),
     }));
-    lines.push(
-      "0", "LWPOLYLINE",
-      "100", "AcDbEntity",
-      "8", layer,
-      "62", "1",
-      "100", "AcDbPolyline",
-      "90", String(points.length),
-      "70", "1",
-    );
+    lines.push("0", "POLYLINE", "8", layer, "62", color, "66", "1", "70", "1");
     points.forEach((point) => {
-      lines.push("10", point.x.toFixed(6), "20", point.y.toFixed(6));
+      lines.push(
+        "0", "VERTEX", "8", layer, "62", color,
+        "10", point.x.toFixed(6), "20", point.y.toFixed(6), "30", "0.000000",
+        "70", "0",
+      );
     });
+    lines.push("0", "SEQEND", "8", layer);
   });
 
   lines.push("0", "ENDSEC", "0", "EOF");
@@ -168,4 +174,3 @@ export function buildPreviewSvg(trace) {
   }).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${trace.sourceWidth} ${trace.sourceHeight}">${pathMarkup}</svg>`;
 }
-

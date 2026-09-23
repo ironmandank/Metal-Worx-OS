@@ -27,7 +27,6 @@ import {
 
 import {
   buildDxf,
-  buildPreviewSvg,
   prepareBinaryImageData,
   traceImageData,
 } from "../lib/imageToDxf";
@@ -59,7 +58,8 @@ function ImageToDxf() {
   const [file, setFile] = useState(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [trace, setTrace] = useState(null);
-  const [previewSvg, setPreviewSvg] = useState("");
+  const [pathRoles, setPathRoles] = useState([]);
+  const [showNodes, setShowNodes] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [threshold, setThreshold] = useState(160);
@@ -76,7 +76,7 @@ function ImageToDxf() {
     const url = URL.createObjectURL(file);
     setSourceUrl(url);
     setTrace(null);
-    setPreviewSvg("");
+    setPathRoles([]);
     setError("");
     return () => URL.revokeObjectURL(url);
   }, [file]);
@@ -88,8 +88,9 @@ function ImageToDxf() {
       heightInches: height,
       keepAspect: lockRatio,
       layerName,
+      pathRoles,
     });
-  }, [trace, width, height, lockRatio, layerName]);
+  }, [trace, width, height, lockRatio, layerName, pathRoles]);
 
   async function convertImage() {
     if (!file || !sourceUrl) return;
@@ -120,13 +121,19 @@ function ImageToDxf() {
         throw new Error("No cut lines were detected. Try moving the Detail Threshold or turning on Reverse Black / White.");
       }
       setTrace(nextTrace);
-      setPreviewSvg(buildPreviewSvg(nextTrace));
+      setPathRoles(nextTrace.paths.map(() => "intact"));
       if (lockRatio) setHeight(Number((width * nextTrace.sourceHeight / nextTrace.sourceWidth).toFixed(3)));
     } catch (conversionError) {
       setError(conversionError.message || "The image could not be converted.");
     } finally {
       setWorking(false);
     }
+  }
+
+  function togglePathRole(index) {
+    setPathRoles((current) => current.map((role, roleIndex) => (
+      roleIndex === index ? (role === "cut" ? "intact" : "cut") : role
+    )));
   }
 
   function downloadDxf() {
@@ -182,7 +189,8 @@ function ImageToDxf() {
                 <NumberInput label="Height (in)" value={height} onChange={(value) => setHeight(Number(value) || 0)} min={0.01} decimalScale={3} disabled={lockRatio} />
               </Group>
               <Checkbox checked={lockRatio} onChange={(event) => setLockRatio(event.currentTarget.checked)} label="Keep the image proportions" />
-              <TextInput label="CorelDRAW layer name" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
+              <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
+              <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
@@ -190,13 +198,24 @@ function ImageToDxf() {
         </Stack>
 
         <Paper withBorder p="md" radius="md">
-          <Group justify="space-between" mb="sm"><Text fw={900}>Laser Cut-Line Preview</Text><Badge variant="outline" color={trace ? "red" : "gray"}>{trace ? "Red lines will export" : "Waiting for image"}</Badge></Group>
+          <Group justify="space-between" mb="sm"><Text fw={900}>Laser Path Preview</Text><Badge variant="outline" color={trace ? "red" : "gray"}>{trace ? "Click a path to change its purpose" : "Waiting for image"}</Badge></Group>
+          {trace && <Group mb="sm" gap="lg"><Group gap={6}><span style={{ width: 24, borderTop: "3px solid #111" }} /><Text size="sm" fw={800}>Black: stays intact</Text></Group><Group gap={6}><span style={{ width: 24, borderTop: "3px solid #ff0000" }} /><Text size="sm" fw={800}>Red: cuts completely out</Text></Group></Group>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
           <div className="mw-dxf-preview">
-            {previewSvg ? <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(previewSvg)}`} alt="DXF cut-line preview" /> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
+            {trace ? <svg viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} style={{ width: "100%", height: "100%", maxHeight: 620 }} aria-label="Interactive DXF path preview">
+              {trace.paths.map((path, pathIndex) => {
+                const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
+                const color = pathRoles[pathIndex] === "cut" ? "#ff0000" : "#111111";
+                return <g key={pathIndex} onClick={() => togglePathRole(pathIndex)} style={{ cursor: "pointer" }}>
+                  <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
+                  <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="2.3" fill="#fff" stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+                </g>;
+              })}
+            </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
           </div>
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Open the DXF in CorelDRAW, confirm the finished dimensions, check for loose center pieces, and verify there are no unwanted overlapping lines.
+            Black paths stay intact by default. Click only the sections that should fall completely out to turn them red. Then open the DXF in CorelDRAW, confirm the dimensions, and inspect the editable nodes for overlaps.
           </Alert>
         </Paper>
       </div>
@@ -205,4 +224,3 @@ function ImageToDxf() {
 }
 
 export default ImageToDxf;
-
