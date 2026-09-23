@@ -22,7 +22,7 @@ describe("image to DXF helpers", () => {
     expect(result.dxf).toContain("$INSUNITS\n70\n1");
     expect(result.dxf).toContain("POLYLINE");
     expect(result.dxf).toContain("VERTEX");
-    expect(result.dxf).toContain("LASER_KEEP_BLACK");
+    expect(result.dxf).toContain("LASER_CUT_FIRST_BLACK");
     expect(result.dxf).toContain("10\n20.000000");
   });
 
@@ -32,7 +32,7 @@ describe("image to DXF helpers", () => {
       sourceHeight: 10,
       paths: [{ points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
     }, { widthInches: 1, heightInches: 1, pathRoles: ["cut"] });
-    expect(result.dxf).toContain("LASER_CUT_RED");
+    expect(result.dxf).toContain("LASER_CUT_SECOND_RED");
     expect(result.dxf).toContain("62\n1");
   });
 
@@ -45,8 +45,8 @@ describe("image to DXF helpers", () => {
       ],
     }, { widthInches: 2, heightInches: 2, pathRoles: ["intact", "cut"] });
     expect(result.svg).toContain('width="2.000000in"');
-    expect(result.svg).toContain('id="KEEP_BLACK"');
-    expect(result.svg).toContain('id="CUT_RED"');
+    expect(result.svg).toContain('id="CUT_FIRST_BLACK"');
+    expect(result.svg).toContain('id="CUT_SECOND_RED"');
     expect(result.svg).toContain('stroke="#ff0000"');
   });
 

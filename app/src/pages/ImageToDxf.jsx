@@ -75,6 +75,7 @@ function createDemoArtwork() {
 
 function ImageToDxf() {
   const canvasRef = useRef(null);
+  const svgRef = useRef(null);
   const [file, setFile] = useState(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [trace, setTrace] = useState(null);
@@ -85,6 +86,7 @@ function ImageToDxf() {
   const [redoStack, setRedoStack] = useState([]);
   const [showBlackPaths, setShowBlackPaths] = useState(true);
   const [showRedPaths, setShowRedPaths] = useState(true);
+  const [draggingNode, setDraggingNode] = useState(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [threshold, setThreshold] = useState(160);
@@ -233,6 +235,46 @@ function ImageToDxf() {
     setFile(createDemoArtwork());
   }
 
+  function beginNodeDrag(event, pathIndex, nodeIndex) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDraggingNode({ pathIndex, nodeIndex });
+  }
+
+  function moveNode(event) {
+    if (!draggingNode || !svgRef.current) return;
+    event.preventDefault();
+    const point = svgRef.current.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const matrix = svgRef.current.getScreenCTM();
+    if (!matrix) return;
+    const location = point.matrixTransform(matrix.inverse());
+    setTrace((current) => ({
+      ...current,
+      paths: current.paths.map((path, pathIndex) => (
+        pathIndex !== draggingNode.pathIndex
+          ? path
+          : {
+            ...path,
+            points: path.points.map((node, nodeIndex) => (
+              nodeIndex === draggingNode.nodeIndex
+                ? {
+                  x: Math.max(0, Math.min(current.sourceWidth, location.x)),
+                  y: Math.max(0, Math.min(current.sourceHeight, location.y)),
+                }
+                : node
+            )),
+          }
+      )),
+    }));
+  }
+
+  function endNodeDrag() {
+    setDraggingNode(null);
+  }
+
   return (
     <div style={{ padding: "22px", maxWidth: 1500, margin: "0 auto" }}>
       <style>{styles}</style>
@@ -301,8 +343,8 @@ function ImageToDxf() {
               value={markingMode}
               onChange={setMarkingMode}
               data={[
-                { label: "Mark Black — Stays Intact", value: "intact" },
-                { label: "Mark Red — Cuts Out", value: "cut" },
+                { label: "Mark Black — Cut First", value: "intact" },
+                { label: "Mark Red — Cut Second", value: "cut" },
               ]}
               color={markingMode === "cut" ? "red" : "dark"}
             />
@@ -324,7 +366,7 @@ function ImageToDxf() {
           </Stack>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
           <div className="mw-dxf-preview">
-            {trace ? <svg viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} style={{ width: "100%", height: "100%", maxHeight: 620 }} aria-label="Interactive DXF path preview">
+            {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: "100%", height: "100%", maxHeight: 620, touchAction: "none" }} aria-label="Interactive DXF path and node editor">
               {trace.paths.map((path, pathIndex) => {
                 const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
                 const color = pathRoles[pathIndex] === "cut" ? "#ff0000" : "#111111";
@@ -333,7 +375,7 @@ function ImageToDxf() {
                 return <g key={pathIndex} onClick={() => markPath(pathIndex)} style={{ cursor: "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
                   <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                  {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="2.3" fill="#fff" stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
+                  {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="3.2" fill="#fff" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />)}
                 </g>;
               })}
             </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
@@ -345,14 +387,14 @@ function ImageToDxf() {
             </Group>
             <Group gap="xs" mb="xs">
               <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
-              <Badge variant="light" color="dark">{inspection.blackPathCount} black</Badge>
-              <Badge variant="light" color="red">{inspection.redPathCount} red</Badge>
+              <Badge variant="light" color="dark">{inspection.blackPathCount} black / first</Badge>
+              <Badge variant="light" color="red">{inspection.redPathCount} red / second</Badge>
               <Badge variant="light" color="blue">{inspection.width.toFixed(3)} × {inspection.height.toFixed(3)} in</Badge>
             </Group>
             {inspection.issues.length ? <Stack gap={3}>{inspection.issues.map((issue) => <Text key={issue} size="sm" c={inspection.status === "unsafe" ? "red" : "yellow"}>• {issue}</Text>)}</Stack> : <Text size="sm" c="green" fw={800}>No automatic problems detected. Complete the visual inspection before cutting.</Text>}
           </Paper>}
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
-            Choose Mark Black or Mark Red, then click paths to assign them. Black stays intact; red cuts completely out. Open the DXF in CorelDRAW, confirm the dimensions, and inspect the editable nodes for overlaps.
+            Black paths cut first and red paths cut second. Choose a color and click a path to set its cutting order. To edit the geometry, turn on Show vector nodes and drag any white node directly in the preview.
           </Alert>
         </Paper>
       </div>

@@ -121,8 +121,8 @@ export function buildDxf(trace, options = {}) {
   const scaleX = width / trace.sourceWidth;
   const scaleY = height / trace.sourceHeight;
   const baseLayer = String(options.layerName || "LASER").replace(/[^A-Za-z0-9_-]/g, "_");
-  const cutLayer = `${baseLayer}_CUT_RED`;
-  const intactLayer = `${baseLayer}_KEEP_BLACK`;
+  const cutLayer = `${baseLayer}_CUT_SECOND_RED`;
+  const intactLayer = `${baseLayer}_CUT_FIRST_BLACK`;
   const pathRoles = options.pathRoles || [];
   const lines = [
     "0", "SECTION", "2", "HEADER",
@@ -199,8 +199,8 @@ export function buildCorelSvg(trace, options = {}) {
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(6)}in" height="${height.toFixed(6)}in" viewBox="0 0 ${width.toFixed(6)} ${height.toFixed(6)}">`,
       `<title>${title}</title>`,
-      `<g id="KEEP_BLACK" fill="none" stroke="#000000" stroke-width="0.001">${groups.intact.join("")}</g>`,
-      `<g id="CUT_RED" fill="none" stroke="#ff0000" stroke-width="0.001">${groups.cut.join("")}</g>`,
+      `<g id="CUT_FIRST_BLACK" fill="none" stroke="#000000" stroke-width="0.001">${groups.intact.join("")}</g>`,
+      `<g id="CUT_SECOND_RED" fill="none" stroke="#ff0000" stroke-width="0.001">${groups.cut.join("")}</g>`,
       `</svg>`,
     ].join("\n"),
     width,
@@ -251,9 +251,9 @@ export function inspectLaserFile(trace, options = {}) {
   const issues = [];
   if (duplicatePaths) issues.push(`${duplicatePaths} possible duplicate path${duplicatePaths === 1 ? "" : "s"} could cut twice.`);
   if (repeatedNodes) issues.push(`${repeatedNodes} repeated node${repeatedNodes === 1 ? "" : "s"} should be reviewed.`);
-  if (smallPieces) issues.push(`${smallPieces} red cutout${smallPieces === 1 ? " is" : "s are"} smaller than 0.08 inch.`);
+  if (smallPieces) issues.push(`${smallPieces} red second-pass path${smallPieces === 1 ? " is" : "s are"} smaller than 0.08 inch.`);
   if (nodeCount > 5000) issues.push(`High node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting.`);
-  if (!roles.includes("cut")) issues.push("No red cutout paths are selected.");
+  if (!roles.includes("cut")) issues.push("No red second-pass paths are selected.");
   const criticalCount = duplicatePaths + smallPieces;
   const status = criticalCount ? "unsafe" : issues.length ? "review" : "ready";
   return {
