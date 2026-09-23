@@ -495,6 +495,106 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     [filteredSiteVisits, quotesById]
   );
 
+  const commandQueues = useMemo(() => {
+    const financiallyCleared = (project) =>
+      ["Approved", "Bypassed"].includes(project.approval_status) &&
+      (!project.down_payment_required || ["Received", "Paid", "Not Required"].includes(project.down_payment_status));
+    const hasSchedule = (project) => Boolean(
+      project.planned_start_date || project.site_visit_start || project.test_fit_start || project.install_start || project.install_date
+    );
+    const activeStatus = (project) => ["In Progress", "Active"].includes(project.status);
+    const queueProject = (project, stage, color) => ({
+      id: `project-${project.id}`,
+      kind: "project",
+      label: getProjectIdentity(project, customers[project.customer_id]),
+      location: [project.city, project.state].filter(Boolean).join(", ") || project.job_address || "Location not entered",
+      owner: project.assigned_to || project.intake_owner || "Unassigned",
+      stage,
+      color,
+      project,
+    });
+
+    const projectQueue = filteredProjects.filter((project) => !activeStatus(project));
+    return [
+      {
+        key: "requests",
+        label: "Requests & Estimates",
+        description: "New customer requests and site visits that still need a formal quote.",
+        color: "cyan",
+        items: activeSiteVisits.map((visit) => ({
+          id: `visit-${visit.id}`,
+          kind: "visit",
+          label: visit.customer_name || "Potential Customer",
+          location: visit.job_site_address || "Address not entered",
+          owner: visit.assigned_estimator || "Unassigned",
+          stage: visit.status === "Completed" ? "Ready for Quote" : visit.requested_visit_date ? "Visit Scheduled" : "New Request",
+          color: visit.status === "Completed" ? "green" : "cyan",
+          visit,
+        })),
+      },
+      {
+        key: "quotes",
+        label: "Quotes & Approval",
+        description: "Pricing is being prepared or the customer decision is still pending.",
+        color: "violet",
+        items: [
+          ...linkedQuoteVisits.map((visit) => {
+            const quote = quotesById[visit.quote_id];
+            return {
+              id: `quote-${visit.quote_id}`,
+              kind: "quote",
+              label: visit.customer_name || quote?.customer_name || quote?.project_name || "Customer Quote",
+              location: visit.job_site_address || quote?.job_site_address || "Address not entered",
+              owner: quote?.prepared_by || visit.assigned_estimator || "Unassigned",
+              stage: quote?.status === "Sent" ? "Awaiting Approval" : "Quote Draft",
+              color: "violet",
+              visit,
+            };
+          }),
+          ...projectQueue
+            .filter((project) => !["Approved", "Bypassed"].includes(project.approval_status) && getOutsidePhase(project).key === "quote_approval")
+            .map((project) => queueProject(project, project.quote_status === "Sent" ? "Awaiting Approval" : "Quote & Approval", "violet")),
+        ],
+      },
+      {
+        key: "deposit",
+        label: "Awaiting Deposit",
+        description: "Approved, but the required deposit has not been received.",
+        color: "orange",
+        items: projectQueue
+          .filter((project) => ["Approved", "Bypassed"].includes(project.approval_status) && project.down_payment_required && !["Received", "Paid"].includes(project.down_payment_status))
+          .map((project) => queueProject(project, "Deposit", "orange")),
+      },
+      {
+        key: "scheduling",
+        label: "Needs Scheduling",
+        description: "Approved and financially cleared; ready for a confirmed date.",
+        color: "red",
+        items: projectQueue
+          .filter((project) => financiallyCleared(project) && !hasSchedule(project))
+          .map((project) => queueProject(project, "Ready", "red")),
+      },
+      {
+        key: "scheduled",
+        label: "Scheduled",
+        description: "Confirmed work with a planned start or field-work date.",
+        color: "blue",
+        items: projectQueue
+          .filter((project) => financiallyCleared(project) && hasSchedule(project))
+          .map((project) => queueProject(project, "Scheduled", "blue")),
+      },
+      {
+        key: "active",
+        label: "Active Work",
+        description: "Projects currently being fabricated, prepared, test-fitted, or installed.",
+        color: "green",
+        items: filteredProjects
+          .filter(activeStatus)
+          .map((project) => queueProject(project, "Active", "green")),
+      },
+    ];
+  }, [activeSiteVisits, customers, filteredProjects, linkedQuoteVisits, quotesById]);
+
   const leadershipSummary = useMemo(() => {
     const now = new Date();
     const nextWeek = new Date(now.getTime() + 7 * 86400000);
@@ -1212,7 +1312,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
       <MWPanel
         title="Outside Operations Workspace"
-        subtitle="Move between the stage board, detailed project list, capacity calendar, and completed records."
+        subtitle="Use the workflow queue for daily operations, then open the calendar when work has been scheduled."
         icon={IconTool}
       >
         <SegmentedControl
@@ -1223,7 +1323,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             setViewMode(value === "completed" ? "completed" : value === "archived" ? "archived" : "active");
           }}
           data={[
-            { label: "Operations Board", value: "board" },
+            { label: "Workflow Queue", value: "board" },
             { label: "Project List", value: "list" },
             { label: "Calendar", value: "calendar" },
             { label: `Completed (${completedProjects.length})`, value: "completed" },
@@ -1394,6 +1494,77 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       </>}
 
       {workspaceView === "board" && (
+        <MWPanel
+          title="Outside Project Command Center"
+          subtitle="Take in new work, finish quotes, collect deposits, schedule approved projects, and follow active work in one place."
+          icon={IconClipboardCheck}
+          rightSection={<Group gap="xs"><Button size="xs" color="red" onClick={() => setPage("quoteCenter")}>New Customer Request</Button><Button size="xs" variant="light" color="blue" leftSection={<IconCalendarEvent size={15} />} onClick={() => setWorkspaceView("calendar")}>Open Calendar</Button></Group>}
+        >
+          <Group mb="md" wrap="wrap">
+            <TextInput
+              style={{ flex: 1, minWidth: 280 }}
+              placeholder="Search customers, projects, owners, or locations..."
+              leftSection={<IconSearch size={17} />}
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+            <Button variant="light" color="gray" leftSection={refreshing ? <Loader size={16} /> : <IconRefresh size={17} />} disabled={refreshing} onClick={() => loadProjects(false)}>Refresh</Button>
+          </Group>
+
+          <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }} spacing="sm" mb="lg">
+            {commandQueues.map((queue) => (
+              <Card key={queue.key} withBorder radius="md" p="sm">
+                <Text size="xs" c="dimmed" fw={800} tt="uppercase" lh={1.2}>{queue.label}</Text>
+                <Title order={3} c={queue.color}>{queue.items.length}</Title>
+              </Card>
+            ))}
+          </SimpleGrid>
+
+          <Stack gap="sm">
+            {commandQueues.map((queue) => (
+              <Card key={queue.key} withBorder radius="md" p="md">
+                <Group justify="space-between" mb="sm" align="flex-start">
+                  <div>
+                    <Text fw={900}>{queue.label}</Text>
+                    <Text size="xs" c="dimmed">{queue.description}</Text>
+                  </div>
+                  <Badge color={queue.color}>{queue.items.length}</Badge>
+                </Group>
+                {queue.items.length ? (
+                  <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
+                    {queue.items.map((item) => (
+                      <Paper key={item.id} withBorder radius="md" p="sm">
+                        <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
+                        <Badge mt={6} size="xs" color={item.color || queue.color}>{item.stage}</Badge>
+                        <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
+                        <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
+                        <Button
+                          fullWidth
+                          size="xs"
+                          color={queue.color}
+                          variant="light"
+                          mt="sm"
+                          onClick={() => {
+                            if (item.kind === "visit") openVisitEditor(item.visit);
+                            else if (item.kind === "quote") openLinkedQuote(item.visit);
+                            else openProject(item.project);
+                          }}
+                        >
+                          {item.kind === "visit" ? "Open Request" : item.kind === "quote" ? "Open Quote" : "Open Project"}
+                        </Button>
+                      </Paper>
+                    ))}
+                  </SimpleGrid>
+                ) : (
+                  <Text size="sm" c="dimmed">No work is currently in this section.</Text>
+                )}
+              </Card>
+            ))}
+          </Stack>
+        </MWPanel>
+      )}
+
+      {workspaceView === "legacy-board" && (
         <MWPanel
           title="Outside Operations Board"
           subtitle="Choose one part of the workflow to see the work that needs attention without scrolling through every stage."
