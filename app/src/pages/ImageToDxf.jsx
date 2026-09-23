@@ -19,14 +19,21 @@ import {
 import {
   IconAlertTriangle,
   IconDownload,
+  IconEye,
+  IconEyeOff,
   IconPhoto,
   IconRefresh,
+  IconRestore,
   IconScissors,
+  IconArrowBackUp,
+  IconArrowForwardUp,
   IconUpload,
 } from "@tabler/icons-react";
 
 import {
+  buildCorelSvg,
   buildDxf,
+  inspectLaserFile,
   prepareBinaryImageData,
   traceImageData,
 } from "../lib/imageToDxf";
@@ -61,6 +68,10 @@ function ImageToDxf() {
   const [pathRoles, setPathRoles] = useState([]);
   const [showNodes, setShowNodes] = useState(true);
   const [markingMode, setMarkingMode] = useState("intact");
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [showBlackPaths, setShowBlackPaths] = useState(true);
+  const [showRedPaths, setShowRedPaths] = useState(true);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [threshold, setThreshold] = useState(160);
@@ -78,6 +89,8 @@ function ImageToDxf() {
     setSourceUrl(url);
     setTrace(null);
     setPathRoles([]);
+    setUndoStack([]);
+    setRedoStack([]);
     setError("");
     return () => URL.revokeObjectURL(url);
   }, [file]);
@@ -92,6 +105,27 @@ function ImageToDxf() {
       pathRoles,
     });
   }, [trace, width, height, lockRatio, layerName, pathRoles]);
+
+  const svgExport = useMemo(() => {
+    if (!trace) return null;
+    return buildCorelSvg(trace, {
+      widthInches: width,
+      heightInches: height,
+      keepAspect: lockRatio,
+      pathRoles,
+      title: file?.name,
+    });
+  }, [trace, width, height, lockRatio, pathRoles, file]);
+
+  const inspection = useMemo(() => {
+    if (!trace) return null;
+    return inspectLaserFile(trace, {
+      widthInches: width,
+      heightInches: height,
+      keepAspect: lockRatio,
+      pathRoles,
+    });
+  }, [trace, width, height, lockRatio, pathRoles]);
 
   async function convertImage() {
     if (!file || !sourceUrl) return;
@@ -123,6 +157,8 @@ function ImageToDxf() {
       }
       setTrace(nextTrace);
       setPathRoles(nextTrace.paths.map(() => "intact"));
+      setUndoStack([]);
+      setRedoStack([]);
       if (lockRatio) setHeight(Number((width * nextTrace.sourceHeight / nextTrace.sourceWidth).toFixed(3)));
     } catch (conversionError) {
       setError(conversionError.message || "The image could not be converted.");
@@ -131,20 +167,53 @@ function ImageToDxf() {
     }
   }
 
+  function applyRoles(nextRoles) {
+    if (nextRoles.every((role, index) => role === pathRoles[index])) return;
+    setUndoStack((current) => [...current.slice(-29), pathRoles]);
+    setRedoStack([]);
+    setPathRoles(nextRoles);
+  }
+
   function markPath(index) {
-    setPathRoles((current) => current.map((role, roleIndex) => (
+    applyRoles(pathRoles.map((role, roleIndex) => (
       roleIndex === index ? markingMode : role
     )));
   }
 
   function resetPathsToBlack() {
-    setPathRoles((current) => current.map(() => "intact"));
+    applyRoles(pathRoles.map(() => "intact"));
     setMarkingMode("intact");
+  }
+
+  function markAll(role) {
+    applyRoles(pathRoles.map(() => role));
+    setMarkingMode(role);
+  }
+
+  function undoRoles() {
+    if (!undoStack.length) return;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((current) => [...current, pathRoles]);
+    setUndoStack((current) => current.slice(0, -1));
+    setPathRoles(previous);
+  }
+
+  function redoRoles() {
+    if (!redoStack.length) return;
+    const next = redoStack[redoStack.length - 1];
+    setUndoStack((current) => [...current, pathRoles]);
+    setRedoStack((current) => current.slice(0, -1));
+    setPathRoles(next);
   }
 
   function downloadDxf() {
     if (!physicalSize) return;
     downloadText(physicalSize.dxf, `${safeBaseName(file?.name)}-${physicalSize.width.toFixed(2)}in.dxf`, "application/dxf");
+  }
+
+  function downloadSvg() {
+    if (!svgExport) return;
+    downloadText(svgExport.svg, `${safeBaseName(file?.name)}-${svgExport.width.toFixed(2)}in.svg`, "image/svg+xml");
   }
 
   return (
@@ -198,6 +267,7 @@ function ImageToDxf() {
               <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
+              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Black/Red SVG</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
           </Paper>
@@ -217,8 +287,19 @@ function ImageToDxf() {
               color={markingMode === "cut" ? "red" : "dark"}
             />
             <Group justify="space-between">
-              <Text size="sm" c="dimmed">Choose a marking option, then click the paths you want to change.</Text>
-              <Button size="compact-sm" variant="subtle" color="gray" onClick={resetPathsToBlack}>Reset All to Black</Button>
+              <Group gap="xs">
+                <Button size="compact-sm" variant="default" leftSection={<IconArrowBackUp size={15} />} disabled={!undoStack.length} onClick={undoRoles}>Undo</Button>
+                <Button size="compact-sm" variant="default" leftSection={<IconArrowForwardUp size={15} />} disabled={!redoStack.length} onClick={redoRoles}>Redo</Button>
+                <Button size="compact-sm" variant="subtle" color="gray" leftSection={<IconRestore size={15} />} onClick={resetPathsToBlack}>Reset Black</Button>
+              </Group>
+              <Group gap="xs">
+                <Button size="compact-sm" variant="light" color="dark" onClick={() => markAll("intact")}>All Black</Button>
+                <Button size="compact-sm" variant="light" color="red" onClick={() => markAll("cut")}>All Red</Button>
+              </Group>
+            </Group>
+            <Group gap="xs">
+              <Button size="compact-sm" variant={showBlackPaths ? "filled" : "outline"} color="dark" leftSection={showBlackPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowBlackPaths((value) => !value)}>Black Layer</Button>
+              <Button size="compact-sm" variant={showRedPaths ? "filled" : "outline"} color="red" leftSection={showRedPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowRedPaths((value) => !value)}>Red Layer</Button>
             </Group>
           </Stack>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
@@ -227,6 +308,8 @@ function ImageToDxf() {
               {trace.paths.map((path, pathIndex) => {
                 const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
                 const color = pathRoles[pathIndex] === "cut" ? "#ff0000" : "#111111";
+                const visible = pathRoles[pathIndex] === "cut" ? showRedPaths : showBlackPaths;
+                if (!visible) return null;
                 return <g key={pathIndex} onClick={() => markPath(pathIndex)} style={{ cursor: "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
                   <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
@@ -235,6 +318,19 @@ function ImageToDxf() {
               })}
             </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
           </div>
+          {inspection && <Paper mt="md" p="md" withBorder radius="md">
+            <Group justify="space-between" mb="xs">
+              <Text fw={900}>Pre-Cut File Inspection</Text>
+              <Badge color={inspection.status === "ready" ? "green" : inspection.status === "review" ? "yellow" : "red"} size="lg">{inspection.label}</Badge>
+            </Group>
+            <Group gap="xs" mb="xs">
+              <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
+              <Badge variant="light" color="dark">{inspection.blackPathCount} black</Badge>
+              <Badge variant="light" color="red">{inspection.redPathCount} red</Badge>
+              <Badge variant="light" color="blue">{inspection.width.toFixed(3)} × {inspection.height.toFixed(3)} in</Badge>
+            </Group>
+            {inspection.issues.length ? <Stack gap={3}>{inspection.issues.map((issue) => <Text key={issue} size="sm" c={inspection.status === "unsafe" ? "red" : "yellow"}>• {issue}</Text>)}</Stack> : <Text size="sm" c="green" fw={800}>No automatic problems detected. Complete the visual inspection before cutting.</Text>}
+          </Paper>}
           <Alert mt="md" color="yellow" variant="light" icon={<IconAlertTriangle size={18} />} title="Always inspect before cutting">
             Choose Mark Black or Mark Red, then click paths to assign them. Black stays intact; red cuts completely out. Open the DXF in CorelDRAW, confirm the dimensions, and inspect the editable nodes for overlaps.
           </Alert>
