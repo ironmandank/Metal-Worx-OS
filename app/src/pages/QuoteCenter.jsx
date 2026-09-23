@@ -51,6 +51,20 @@ const SHOP_ADDRESS = "1122 Gillespie Street, Fayetteville, NC 28306";
 // Versioned key intentionally retires worksheets left behind by the former
 // copy-only workflow. New worksheets clear after a successful tracked copy.
 const PREQUOTE_STORAGE_KEY = "metal-worx-prequote-site-estimate-v2";
+const QUOTE_ACTION_BUTTON_PROPS = {
+  fullWidth: true,
+  h: "auto",
+  py: 8,
+  styles: {
+    label: {
+      whiteSpace: "normal",
+      overflow: "visible",
+      textOverflow: "clip",
+      textAlign: "center",
+      lineHeight: 1.2,
+    },
+  },
+};
 
 function googleMapsDirectionsUrl(destination) {
   return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
@@ -1827,8 +1841,9 @@ function QuoteCenter({
                   </Text>
                 </div>
 
-                <Group gap="xs" justify="flex-end" align="center" wrap="wrap">
+                <Stack gap="xs" style={{ width: "100%", minWidth: 0 }}>
                   <Button
+                    {...QUOTE_ACTION_BUTTON_PROPS}
                     size="xs"
                     variant="light"
                     color="gray"
@@ -1837,6 +1852,7 @@ function QuoteCenter({
                     Open Quote &amp; Mileage
                   </Button>
                   <Button
+                    {...QUOTE_ACTION_BUTTON_PROPS}
                     size="xs"
                     color="red"
                     onClick={() => openQuote(quote, "quotePreview")}
@@ -1845,6 +1861,7 @@ function QuoteCenter({
                   </Button>
                   {quote.status === "Sent" && (
                     <Button
+                      {...QUOTE_ACTION_BUTTON_PROPS}
                       size="xs"
                       variant="light"
                       color="orange"
@@ -1856,6 +1873,7 @@ function QuoteCenter({
                   )}
                   {!["Archived", "Approved"].includes(quote.status) && (
                     <Button
+                      {...QUOTE_ACTION_BUTTON_PROPS}
                       size="xs"
                       variant="subtle"
                       color="gray"
@@ -1869,6 +1887,7 @@ function QuoteCenter({
                   )}
                   {!(quote.status === "Approved" && (quote.project_id || quote.converted_project_id)) && (
                     <Button
+                      {...QUOTE_ACTION_BUTTON_PROPS}
                       size="xs"
                       color="green"
                       variant={quote.status === "Approved" ? "light" : "filled"}
@@ -1880,6 +1899,7 @@ function QuoteCenter({
                   )}
                   {(quote.converted_project_id || quote.project_id) && (
                     <Button
+                      {...QUOTE_ACTION_BUTTON_PROPS}
                       size="xs"
                       color="blue"
                       onClick={() => openProject(quote)}
@@ -1891,6 +1911,7 @@ function QuoteCenter({
                     !quote.converted_project_id &&
                     quote.status === "Approved" && (
                       <Button
+                        {...QUOTE_ACTION_BUTTON_PROPS}
                         size="xs"
                         color="green"
                         onClick={() => beginConversion(quote)}
@@ -1899,6 +1920,7 @@ function QuoteCenter({
                       </Button>
                     )}
                   <Button
+                    {...QUOTE_ACTION_BUTTON_PROPS}
                     size="xs"
                     variant="subtle"
                     color="red"
@@ -1907,7 +1929,7 @@ function QuoteCenter({
                   >
                     Delete Quote
                   </Button>
-                </Group>
+                </Stack>
               </SimpleGrid>
             </Card>
           ))}
