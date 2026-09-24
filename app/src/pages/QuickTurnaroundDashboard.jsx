@@ -4,7 +4,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
-  IconAlertTriangle, IconArchive, IconBolt, IconCheck, IconClock, IconPackage,
+  IconAlertTriangle, IconArchive, IconBolt, IconCheck, IconClock, IconEdit, IconPackage,
   IconPhoto, IconPlayerPlay, IconPlus, IconRefresh,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -56,6 +56,9 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
   const [viewMode, setViewMode] = useState("hot");
   const [savingHuddleOrder, setSavingHuddleOrder] = useState("");
   const [formAttempted, setFormAttempted] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editingStatus, setEditingStatus] = useState("Open");
+  const [editingSource, setEditingSource] = useState({ type: "Manual", id: null, number: null });
   const [pendingImages, setPendingImages] = useState([]);
   const [commitmentImages, setCommitmentImages] = useState([]);
   const [commitmentContacts, setCommitmentContacts] = useState([]);
@@ -126,6 +129,44 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     return commitmentContacts.find((contact) => contact.commitment_id === commitmentId) || {};
   }
 
+  function openNewArtwork() {
+    setEditingId(null);
+    setEditingStatus("Open");
+    setEditingSource({ type: "Manual", id: null, number: null });
+    setForm(EMPTY_FORM);
+    setPendingImages([]);
+    setFormAttempted(false);
+    setModalOpen(true);
+  }
+
+  function openArtworkEditor(item) {
+    const contact = contactFor(item.id);
+    const due = item.required_by ? new Date(item.required_by) : null;
+    setEditingId(item.id);
+    setEditingStatus(item.status || "Open");
+    setEditingSource({ type: item.source_type || "Manual", id: item.source_id || null, number: item.source_number || null });
+    setPendingImages([]);
+    setFormAttempted(false);
+    setForm({
+      title: item.title || "",
+      customerName: item.customer_name || "",
+      customerPhone: contact.customer_phone || "",
+      customerEmail: contact.customer_email || "",
+      description: item.description || "",
+      priority: item.priority || "Urgent",
+      requiredBy: due ? `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-${String(due.getDate()).padStart(2, "0")}` : "",
+      requiredTime: due ? `${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}` : "17:00",
+      dateReceived: item.date_received || new Date().toISOString().slice(0, 10),
+      assignedTo: item.assigned_to || "",
+      department: item.department || "",
+      materialsStatus: item.materials_status || "Not Required",
+      reasonCategory: item.hot_reason_category || "Deadline",
+      reason: item.reason || "",
+      notes: item.notes || "",
+    });
+    setModalOpen(true);
+  }
+
   async function uploadImages(commitmentId, files) {
     const selectedFiles = Array.from(files || []).slice(0, 10);
     if (!selectedFiles.length) return;
@@ -178,10 +219,10 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     try {
       const materialsRequired = form.materialsStatus !== "Not Required";
       const { data, error } = await supabase.rpc("mw_save_quick_turnaround_commitment", {
-        p_id: null, p_source_type: "Manual", p_source_id: null, p_source_number: null,
+        p_id: editingId, p_source_type: editingSource.type, p_source_id: editingSource.id, p_source_number: editingSource.number,
         p_title: form.title.trim(), p_customer_name: form.customerName.trim() || null,
         p_description: form.description.trim() || null, p_priority: form.priority,
-        p_status: "Open", p_required_by: form.requiredBy ? new Date(`${form.requiredBy}T${form.requiredTime || "17:00"}:00`).toISOString() : null,
+        p_status: editingStatus, p_required_by: form.requiredBy ? new Date(`${form.requiredBy}T${form.requiredTime || "17:00"}:00`).toISOString() : null,
         p_assigned_to: form.assignedTo || null, p_department: form.department || null,
         p_materials_required: materialsRequired, p_materials_status: form.materialsStatus,
         p_reason: form.reason.trim() || null, p_notes: form.notes.trim() || null,
@@ -189,7 +230,7 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
         p_hot_reason_category: form.reasonCategory,
       });
       if (error) throw error;
-      if (form.customerPhone.trim() || form.customerEmail.trim()) {
+      if (editingId || form.customerPhone.trim() || form.customerEmail.trim()) {
         const { error: contactError } = await supabase.from("quick_turnaround_contacts").upsert({
           commitment_id: data.id,
           customer_phone: form.customerPhone.trim() || null,
@@ -199,8 +240,9 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
         if (contactError) throw contactError;
       }
       if (pendingImages.length) await uploadImages(data.id, pendingImages);
-      setModalOpen(false); setForm(EMPTY_FORM); setPendingImages([]); setFormAttempted(false); await loadData();
-      notifications.show({ title: "Hot Artwork Added", message: "The artwork is now visible on the TV Huddle.", color: "green", icon: <IconCheck size={18}/> });
+      const wasEditing = Boolean(editingId);
+      setModalOpen(false); setEditingId(null); setEditingStatus("Open"); setEditingSource({ type: "Manual", id: null, number: null }); setForm(EMPTY_FORM); setPendingImages([]); setFormAttempted(false); await loadData();
+      notifications.show({ title: wasEditing ? "Artwork Updated" : "Hot Artwork Added", message: wasEditing ? "The artwork changes were saved." : "The artwork is now visible on the TV Huddle.", color: "green", icon: <IconCheck size={18}/> });
     } catch (error) {
       notifications.show({ title: "Commitment Save Failed", message: error.message, color: "red" });
     } finally { setSaving(false); }
@@ -241,7 +283,7 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     <MWPanel title="Hot Artwork Controls" subtitle="Filter the list or add artwork that needs weekly visibility" icon={IconBolt}>
       <Group justify="space-between">
         <Group><Button color="red" variant={viewMode === "hot" ? "filled" : "light"} onClick={() => setViewMode("hot")}>Hot Items ({active.length + promotedArtwork.length})</Button><Button color="blue" variant={viewMode === "orders" ? "filled" : "light"} onClick={() => setViewMode("orders")}>Artwork Orders ({unlinkedArtwork.length})</Button><Button color="gray" variant={viewMode === "archive" ? "filled" : "light"} leftSection={<IconArchive size={17}/>} onClick={() => setViewMode("archive")}>Archive ({archived.length})</Button><Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadData}>Refresh</Button></Group>
-        {!readOnly && <Button color="red" leftSection={<IconPlus size={18}/>} onClick={() => { setFormAttempted(false); setModalOpen(true); }}>Add Hot Artwork</Button>}
+        {!readOnly && <Button color="red" leftSection={<IconPlus size={18}/>} onClick={openNewArtwork}>Add Hot Artwork</Button>}
       </Group>
     </MWPanel>
 
@@ -258,22 +300,22 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
         {(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}
         {imagesFor(item.id).length > 0 && <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={110} fit="cover" radius="md"/>)}</SimpleGrid>}
         {item.description && <Text size="sm">{item.description}</Text>}
-        {!readOnly && <Group grow><FileButton onChange={(files) => uploadImages(item.id, files)} accept="image/jpeg,image/png,image/webp" multiple>{(props) => <Button {...props} variant="light" color="gray" loading={uploadingImages === String(item.id)} leftSection={<IconPhoto size={17}/>}>Add Images</Button>}</FileButton>{item.status === "Open" && <Button color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button color="green" leftSection={<IconArchive size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete & Archive</Button>}</Group>}
+        {!readOnly && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm"><Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Artwork</Button><FileButton onChange={(files) => uploadImages(item.id, files)} accept="image/jpeg,image/png,image/webp" multiple>{(props) => <Button {...props} fullWidth variant="light" color="gray" loading={uploadingImages === String(item.id)} leftSection={<IconPhoto size={17}/>}>Add Images</Button>}</FileButton>{item.status === "Open" && <Button fullWidth color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button fullWidth color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button fullWidth color="green" leftSection={<IconArchive size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete & Archive</Button>}</SimpleGrid>}
       </Stack></Paper>)}</SimpleGrid>}
     </MWPanel>
     </> : viewMode === "orders" ? <MWPanel title="Artwork Orders" subtitle="Choose undated orders for Hot Items; dated and 12-business-day orders appear automatically" icon={IconPackage}>
       {!unlinkedArtwork.length ? <Alert color="gray" icon={<IconPackage size={19}/>}>No artwork orders are waiting.</Alert> : <SimpleGrid cols={{ base:1, md:2, xl:3 }} spacing="md">{unlinkedArtwork.sort((left,right)=>Number(right.businessDaysInShop||0)-Number(left.businessDaysInShop||0)).map((item) => { const age=Number(item.businessDaysInShop||0); const automatic=Boolean(item.dueDate)||age>=12; return <Paper key={item.id} p="md" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.dueDate?"red":age>=12?"orange":item.showOnHuddle?"blue":age>=10?"orange":"gray"}>{item.dueDate?"DATED":age>=12?"AGING":item.showOnHuddle?"ON HUDDLE":age>=10?"AGING SOON":"REGULAR"}</Badge><Text fw={900} c={age>=10?"orange.4":"gray.1"}>{age} business day{age===1?"":"s"}</Text></Group><Title order={4}>{item.title}</Title><Text size="sm" c="dimmed">{item.customer}</Text><Switch checked={automatic||Boolean(item.showOnHuddle)} disabled={automatic||savingHuddleOrder===String(item.id)} label={automatic?item.dueDate?"Automatically shown because it has a date":"Automatically shown at 12 business days":"Show on Hot Items This Week"} onChange={(event)=>toggleHuddleOrder(item,event.currentTarget.checked)}/><SimpleGrid cols={2}><div><Text size="xs" c="dimmed" fw={800}>STATION</Text><Text size="sm" fw={750}>{item.department}</Text></div><div><Text size="xs" c="dimmed" fw={800}>LEAD</Text><Text size="sm" fw={750}>{item.owner}</Text></div></SimpleGrid><Text size="sm">{item.dueDate ? `Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}` : "No requested date"}</Text><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
     </MWPanel> : <MWPanel title="Artwork Archive" subtitle="Completed and cancelled artwork retained with its contact details, notes, and images" icon={IconArchive}>
-      {!archived.length ? <Alert color="gray" icon={<IconArchive size={19}/>}>No completed artwork has been archived yet.</Alert> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{archived.map((item) => <Paper key={item.id} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.status === "Completed" ? "green" : "gray"}>{item.status}</Badge><Text size="xs" c="dimmed">{item.completed_at ? new Date(item.completed_at).toLocaleDateString() : "Archived"}</Text></Group><Title order={4}>{item.title}</Title><Text fw={750}>{item.customer_name}</Text>{(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}{imagesFor(item.id).length > 0 && <SimpleGrid cols={2} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={120} fit="cover" radius="md"/>)}</SimpleGrid>}{item.description && <Text size="sm">{item.description}</Text>}{item.notes && <Text size="sm" c="dimmed">{item.notes}</Text>}</Stack></Paper>)}</SimpleGrid>}
+      {!archived.length ? <Alert color="gray" icon={<IconArchive size={19}/>}>No completed artwork has been archived yet.</Alert> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{archived.map((item) => <Paper key={item.id} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.status === "Completed" ? "green" : "gray"}>{item.status}</Badge><Text size="xs" c="dimmed">{item.completed_at ? new Date(item.completed_at).toLocaleDateString() : "Archived"}</Text></Group><Title order={4}>{item.title}</Title><Text fw={750}>{item.customer_name}</Text>{(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}{imagesFor(item.id).length > 0 && <SimpleGrid cols={2} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={120} fit="cover" radius="md"/>)}</SimpleGrid>}{item.description && <Text size="sm">{item.description}</Text>}{item.notes && <Text size="sm" c="dimmed">{item.notes}</Text>}{!readOnly && <Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Archived Artwork</Button>}</Stack></Paper>)}</SimpleGrid>}
     </MWPanel>}
 
-    <Modal opened={modalOpen} onClose={() => { setModalOpen(false); setPendingImages([]); setFormAttempted(false); }} title="Add Hot Artwork" centered size="lg"><Stack>
+    <Modal opened={modalOpen} onClose={() => { setModalOpen(false); setEditingId(null); setPendingImages([]); setFormAttempted(false); }} title={editingId ? "Edit Hot Artwork" : "Add Hot Artwork"} centered size="lg"><Stack>
       <Alert color="blue" variant="light">Only the artwork name and customer are required. Dates, assignment, station, and notes can be added later.</Alert>
       <TextInput label="Artwork / Order Name" placeholder="Example: 24-inch ASOS Double Logo Flag" required error={formAttempted && !form.title.trim() ? "Enter the artwork or order name" : null} value={form.title} onChange={(event) => updateForm("title", event.currentTarget.value)}/>
       <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label="Customer / Requestor" required error={formAttempted && !form.customerName.trim() ? "Enter who the artwork is for" : null} value={form.customerName} onChange={(event) => updateForm("customerName", event.currentTarget.value)}/><Select label="Why Is It Hot?" data={["Deadline", "Aging", "Customer Escalation", "Other"]} value={form.reasonCategory} onChange={(value) => updateForm("reasonCategory", value || "Deadline")}/><TextInput label="Customer Phone" type="tel" placeholder="Optional" value={form.customerPhone} onChange={(event) => updateForm("customerPhone", event.currentTarget.value)}/><TextInput label="Customer Email" type="email" placeholder="Optional" value={form.customerEmail} onChange={(event) => updateForm("customerEmail", event.currentTarget.value)}/><TextInput label="Date Received" type="date" value={form.dateReceived} max={new Date().toISOString().slice(0, 10)} onChange={(event) => updateForm("dateReceived", event.currentTarget.value)}/><Select label="Priority" data={["Critical", "Urgent", "High"]} value={form.priority} onChange={(value) => updateForm("priority", value || "Urgent")}/><TextInput label="Required Completion Date" type="date" value={form.requiredBy} min={new Date().toISOString().slice(0, 10)} onChange={(event) => updateForm("requiredBy", event.currentTarget.value)}/><TextInput label="Required Time" type="time" value={form.requiredTime} disabled={!form.requiredBy} onChange={(event) => updateForm("requiredTime", event.currentTarget.value)}/><Select label="Assigned To" searchable clearable data={profiles.map((profile) => profile.display_name)} value={form.assignedTo} onChange={(value) => updateForm("assignedTo", value || "")}/><Select label="Current Station" clearable data={["Design", "Customer Approval", "Laser", "Prep", "Welding", "Paint", "Powder", "Assembly", "Final QC", "Showroom", "Office"]} value={form.department} onChange={(value) => updateForm("department", value || "")}/><Select label="Material Readiness" data={["Not Required", "Needs Pricing", "Needs Ordering", "Ordered", "Partially Received", "Ready", "Blocked"]} value={form.materialsStatus} onChange={(value) => updateForm("materialsStatus", value || "Not Required")}/></SimpleGrid>
       <Textarea label="Description" minRows={2} value={form.description} onChange={(event) => updateForm("description", event.currentTarget.value)}/><TextInput label="Reason / Concern" placeholder="Deadline details, customer concern, or why it has been here too long" value={form.reason} onChange={(event) => updateForm("reason", event.currentTarget.value)}/><Textarea label="Operations Notes" minRows={2} value={form.notes} onChange={(event) => updateForm("notes", event.currentTarget.value)}/>
       <Paper p="md" withBorder><Stack gap="xs"><Group justify="space-between"><div><Text fw={800}>Artwork Images</Text><Text size="sm" c="dimmed">Add up to 10 JPG, PNG, or WebP images now, or add them later from the artwork card.</Text></div><FileButton onChange={(files) => setPendingImages(Array.from(files || []).slice(0, 10))} accept="image/jpeg,image/png,image/webp" multiple>{(props) => <Button {...props} variant="light" color="gray" leftSection={<IconPhoto size={17}/>}>Choose Images</Button>}</FileButton></Group>{pendingImages.length > 0 && <Text size="sm">{pendingImages.length} selected: {pendingImages.map((file) => file.name).join(", ")}</Text>}</Stack></Paper>
-      <Button h={52} color="red" fullWidth disabled={saving} leftSection={saving ? <Loader size={18} color="white"/> : <IconBolt size={19}/>} onClick={saveCommitment}>Add to Hot Artwork</Button>
+      <Button h={52} color="red" fullWidth disabled={saving} leftSection={saving ? <Loader size={18} color="white"/> : editingId ? <IconEdit size={19}/> : <IconBolt size={19}/>} onClick={saveCommitment}>{editingId ? "Save Artwork Changes" : "Add to Hot Artwork"}</Button>
     </Stack></Modal>
   </Stack>;
 }
