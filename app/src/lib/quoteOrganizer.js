@@ -83,7 +83,11 @@ function sectionLines(lines, headingNames) {
     "schedule",
     "specifications",
     "included services",
+    "this quote includes",
+    "quote includes",
+    "included",
     "exclusions",
+    "not included",
     "customer responsibilities",
     "assumptions",
     "notes",
@@ -99,9 +103,60 @@ function sectionLines(lines, headingNames) {
       continue;
     }
     if (collecting && allKnownHeadings.has(normalized)) break;
+    if (collecting && /^(?:labor(?:\s+and\s+fabrication)?|fabrication|service|price|tax(?:es)?|subtotal|(?:estimated\s+)?total(?:\s+before\s+tax)?)\s*:/i.test(line)) break;
     if (collecting && line) found.push(line);
   }
   return found;
+}
+
+function inferCustomerFromHeading(lines) {
+  const heading = lines.map(cleanLine).find(Boolean) || "";
+  const match = heading.match(/^(.+?)\s+quote(?:\s+\d+)?\b/i);
+  if (!match) return "";
+  return match[1]
+    .replace(/^quote\s+(?:for|to)\s+/i, "")
+    .replace(/\s*[-–—].*$/, "")
+    .trim();
+}
+
+function inferScopeFromPreamble(lines) {
+  const knownHeading = /^(?:this\s+quote\s+includes|quote\s+includes|included(?:\s+services)?|not\s+included|exclusions|specifications|process|project\s+process|schedule|terms)\s*:?[\s]*$/i;
+  const pricingLine = /^(?:labor(?:\s+and\s+fabrication)?|fabrication|service|price|subtotal|(?:estimated\s+)?total)\s*:/i;
+  const projectIndex = lines.findIndex((source) => /^project\s*:/i.test(cleanLine(source)));
+  const startIndex = projectIndex >= 0 ? projectIndex + 1 : 1;
+  const found = [];
+
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = cleanLine(lines[index]);
+    if (!line) continue;
+    if (knownHeading.test(line) || pricingLine.test(line)) break;
+    found.push(line);
+  }
+
+  return found.join("\n");
+}
+
+function parseNaturalPriceItems(lines) {
+  const items = [];
+  lines.forEach((source) => {
+    const line = cleanLine(source);
+    const separator = line.indexOf(":");
+    if (separator < 0) return;
+    const label = line.slice(0, separator).trim();
+    if (!/^(?:labor(?:\s+and\s+fabrication)?|fabrication(?:\s+labor)?|service|project\s+price|quoted\s+work)$/i.test(label)) return;
+    const detail = line.slice(separator + 1).trim();
+    const price = moneyValue(detail);
+    if (!price) return;
+    items.push({
+      item_type: "Service",
+      title: label,
+      description: detail.replace(/\$\s*[\d,]+(?:\.\d{1,2})?/, "").replace(/^\s*[-–—:]?\s*/, ""),
+      quantity: 1,
+      unit: "Each",
+      unit_price: price,
+    });
+  });
+  return items;
 }
 
 function inferPrimaryItem(itemText, rateText) {
@@ -154,6 +209,7 @@ export function organizeQuoteText(sourceText) {
   result.contact_email = fieldValue(lines, ["Email", "Contact Email"]);
   result.address = fieldValue(lines, ["Address", "Project Address", "Job-Site Address", "Job Site Address"]);
   result.quote_title = fieldValue(lines, ["Quote Title", "Project Name", "Project"]);
+  if (!result.customer_name) result.customer_name = inferCustomerFromHeading(lines);
 
   const itemText = fieldValue(lines, ["Item", "Primary Item"]);
   const rateText = fieldValue(lines, ["Rate", "Price Per Foot", "Unit Rate"]);
@@ -163,6 +219,8 @@ export function organizeQuoteText(sourceText) {
 
   const hourlyItem = parseHourlyItem(lines);
   if (hourlyItem) result.items.push(hourlyItem);
+
+  result.items.push(...parseNaturalPriceItems(lines));
 
   lines.forEach((source) => {
     const line = cleanLine(source);
@@ -186,7 +244,8 @@ export function organizeQuoteText(sourceText) {
 
   const scope = sectionLines(lines, ["Project Scope", "Scope of Work"]);
   const summaryScope = fieldValue(lines, ["Scope of Work"]);
-  result.scope_of_work = [summaryScope, ...scope]
+  const preambleScope = !summaryScope && !scope.length ? inferScopeFromPreamble(lines) : "";
+  result.scope_of_work = [summaryScope, ...scope, preambleScope]
     .filter(Boolean)
     .filter((value, index, values) => values.indexOf(value) === index)
     .join("\n");
@@ -197,15 +256,15 @@ export function organizeQuoteText(sourceText) {
   const specifications = sectionLines(lines, ["Specifications"]);
   result.specifications = specifications.join("\n");
 
-  const included = sectionLines(lines, ["Included Services"]);
+  const included = sectionLines(lines, ["Included Services", "This Quote Includes", "Quote Includes", "Included"]);
   const rateIncluded = rateText.match(/\(([^)]+)\)/)?.[1] || "";
   result.included_services = included.join("\n") || rateIncluded;
 
-  result.exclusions = sectionLines(lines, ["Exclusions"]).join("\n");
+  result.exclusions = sectionLines(lines, ["Exclusions", "Not Included"]).join("\n");
   result.down_payment_terms = fieldValue(lines, ["Down Payment", "Deposit", "Deposit Required"]);
   result.payment_terms = fieldValue(lines, ["Payment Terms"]);
 
-  const totalLine = lines.map(cleanLine).find((line) => /^(?:estimated\s+)?total\s*:/i.test(line));
+  const totalLine = lines.map(cleanLine).find((line) => /^(?:estimated\s+)?total(?:\s+before\s+tax)?\s*:/i.test(line));
   result.price_notes = totalLine || "";
   result.valid_until = parseValidityDate(sourceText);
   if (/tax[- ]?exempt|no\s+sales\s+tax/i.test(sourceText)) {

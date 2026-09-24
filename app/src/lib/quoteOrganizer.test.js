@@ -64,4 +64,44 @@ Due to fluctuations in metal prices this quote is valid for five (5) working day
     expect(result.valid_until).toBe("2026-09-25");
     expect(result.tax_treatment).toBe("plus");
   });
+
+  it("organizes a natural-language SSU container quote into the form fields", () => {
+    const result = organizeQuoteText(`
+SSU Quote 1 – Two 20-Foot Containers
+
+Project: Fabrication Preparation for Two 20-Foot Shipping Containers
+
+Metal Worx Inc. will cut the adjoining side walls from two 20-foot shipping containers and prepare the containers to be welded together at an off-site location.
+
+This quote includes:
+
+Cutting the required side walls from both containers
+Bracing the containers for structural support during transportation
+Preparing the containers for shipment and off-site assembly
+
+Not Included:
+
+TYVEK® sheeting or installation
+Transportation or delivery
+On-site assembly, welding, or installation
+
+SSU will be responsible for delivering the containers to Metal Worx Inc. and picking them up when the fabrication work is complete.
+
+Labor and Fabrication: $7,325.00
+Taxes: Plus applicable taxes
+Total Before Tax: $7,325.00
+`);
+
+    expect(result.customer_name).toBe("SSU");
+    expect(result.quote_title).toBe("Fabrication Preparation for Two 20-Foot Shipping Containers");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ title: "Labor and Fabrication", quantity: 1, unit_price: 7325 });
+    expect(result.scope_of_work).toContain("cut the adjoining side walls");
+    expect(result.included_services).toContain("Bracing the containers");
+    expect(result.exclusions).toContain("TYVEK");
+    expect(result.exclusions).toContain("On-site assembly");
+    expect(result.exclusions).not.toContain("Labor and Fabrication");
+    expect(result.price_notes).toContain("Total Before Tax");
+    expect(result.tax_treatment).toBe("plus");
+  });
 });
