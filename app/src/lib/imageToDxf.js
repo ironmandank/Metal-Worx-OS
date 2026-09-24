@@ -101,6 +101,55 @@ export function assignAutomaticCutOrder(trace) {
   });
 }
 
+export function buildCutSequence(trace, pathRoles = []) {
+  const rank = { engrave: 0, intact: 1, cut: 2 };
+  return trace.paths
+    .map((path, pathIndex) => ({
+      pathIndex,
+      role: pathRoles[pathIndex] || "intact",
+      area: Math.abs(polygonArea(normalizedClosedPoints(path.points))),
+    }))
+    .sort((a, b) => {
+      const roleDifference = (rank[a.role] ?? 1) - (rank[b.role] ?? 1);
+      if (roleDifference) return roleDifference;
+      return a.area - b.area;
+    })
+    .map((entry, sequenceIndex) => ({ ...entry, sequence: sequenceIndex + 1 }));
+}
+
+export function buildAutomaticBridges(trace, options = {}) {
+  const pathRoles = options.pathRoles || [];
+  const existingBridges = options.bridges || [];
+  const bridgesPerPath = Math.max(1, Math.min(4, Number(options.bridgesPerPath) || 2));
+  const bridgedPaths = new Set(existingBridges.map((bridge) => bridge.pathIndex));
+  const additions = [];
+
+  trace.paths.forEach((_, pathIndex) => {
+    if (pathRoles[pathIndex] !== "intact" || bridgedPaths.has(pathIndex)) return;
+    for (let bridgeIndex = 0; bridgeIndex < bridgesPerPath; bridgeIndex += 1) {
+      additions.push({
+        pathIndex,
+        position: (bridgeIndex + 0.5) / bridgesPerPath,
+        automatic: true,
+      });
+    }
+  });
+
+  return [...existingBridges, ...additions];
+}
+
+export function findUnbridgedInteriorPaths(trace, options = {}) {
+  const pathRoles = options.pathRoles || [];
+  const bridgedPaths = new Set((options.bridges || []).map((bridge) => bridge.pathIndex));
+  return trace.paths
+    .map((_, pathIndex) => pathIndex)
+    .filter((pathIndex) => pathRoles[pathIndex] === "intact" && !bridgedPaths.has(pathIndex));
+}
+
+export function pathLabelPoint(path) {
+  return polygonCenter(normalizedClosedPoints(path.points));
+}
+
 function pathMetric(points) {
   const clean = normalizedClosedPoints(points);
   const edges = clean.map((point, index) => ({ start: point, end: clean[(index + 1) % clean.length] }));
@@ -463,6 +512,10 @@ export function inspectLaserFile(trace, options = {}) {
   if (nodeCount > 5000) issues.push(`High node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting.`);
   if (!roles.includes("cut")) issues.push("No red second-pass paths are selected.");
   const bridgedPathCount = new Set(bridges.map((bridge) => bridge.pathIndex)).size;
+  const unbridgedInteriorPaths = findUnbridgedInteriorPaths(trace, { pathRoles: roles, bridges });
+  if (unbridgedInteriorPaths.length) {
+    issues.push(`${unbridgedInteriorPaths.length} black interior path${unbridgedInteriorPaths.length === 1 ? " has" : "s have"} no bridge. Confirm each one is intended scrap or add yellow bridges.`);
+  }
   if (!bridges.length && roles.some((role) => role !== "engrave")) issues.push("No yellow bridges are placed; every black and red contour will cut completely free.");
   const criticalCount = duplicatePaths + smallPieces;
   const status = criticalCount ? "unsafe" : issues.length ? "review" : "ready";
@@ -476,6 +529,7 @@ export function inspectLaserFile(trace, options = {}) {
     smallPieces,
     bridgeCount: bridges.length,
     bridgedPathCount,
+    unbridgedInteriorPaths,
     engravePathCount: roles.filter((role) => role === "engrave").length,
     blackPathCount: roles.filter((role) => role === "intact").length,
     redPathCount: roles.filter((role) => role === "cut").length,
