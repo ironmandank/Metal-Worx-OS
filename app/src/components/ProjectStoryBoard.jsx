@@ -22,10 +22,11 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconEye, IconFlag, IconPhoto, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconEye, IconFlag, IconPhoto, IconPresentation, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
+import { downloadStoryBoardPowerPoint } from "../services/storyBoardPowerPointExportService";
 
 const STORY_STAGES = [
   "Concept & Scope",
@@ -57,6 +58,7 @@ const SSU_EXAMPLE = [
 const SSU_OVERVIEW = "Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.";
 
 const PRESENTATION_TEMPLATES = [
+  { value: "canva", label: "Canva Industrial Case Study" },
   { value: "industrial", label: "Industrial Story - Dark" },
   { value: "portfolio", label: "Executive Portfolio - Light" },
   { value: "field", label: "Field Progress - Technical" },
@@ -66,6 +68,7 @@ const PRESENTATION_TEMPLATES = [
 ];
 
 const TEMPLATE_DESCRIPTIONS = {
+  canva: "Premium black, red, and white case-study layouts based on the approved Canva storyboard.",
   industrial: "Black and red feature pages with bold fabrication photography.",
   portfolio: "Clean white executive pages for leadership and customer review.",
   field: "Structured progress pages for milestones, notes, and field records.",
@@ -96,7 +99,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [caption, setCaption] = useState("");
   const [customerVisible, setCustomerVisible] = useState(false);
   const [view, setView] = useState("Internal Project Story");
-  const [presentationTemplate, setPresentationTemplate] = useState("industrial");
+  const [presentationTemplate, setPresentationTemplate] = useState("canva");
   const [exporting, setExporting] = useState(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [photoDraft, setPhotoDraft] = useState({ description: "", story_stage: STORY_STAGES[0], photo_taken_at: "", customer_visible: false });
@@ -298,6 +301,32 @@ function ProjectStoryBoard({ project, activeUser }) {
     }
   }
 
+  async function exportPowerPoint(mode) {
+    setExporting(`${mode}-pptx`);
+    try {
+      const exportFiles = isExample
+        ? SSU_EXAMPLE
+        : mode === "customer"
+          ? files.filter((file) => file.customer_visible)
+          : files;
+      if (!exportFiles.length) {
+        notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
+        return;
+      }
+      await downloadStoryBoardPowerPoint({
+        project: isExample ? { ...project, project_name: "SSU Connex Project", contact_name: "SSU" } : project,
+        files: exportFiles,
+        imageUrls: urls,
+        mode,
+        overview: storyOverview,
+      });
+    } catch (error) {
+      notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });
+    } finally {
+      setExporting(null);
+    }
+  }
+
   if (loading) return <Group justify="center" py="xl"><Loader color="red" /><Text>Loading project story…</Text></Group>;
 
   return (
@@ -390,9 +419,11 @@ function ProjectStoryBoard({ project, activeUser }) {
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
-          <Select w={245} label="PDF presentation style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "industrial")} allowDeselect={false} />
+          <Select w={245} label="PDF presentation style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "canva")} allowDeselect={false} />
           <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal Project Record</Button>
           <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer Presentation</Button>
+          <Button variant="light" color="blue" leftSection={<IconPresentation size={16} />} loading={exporting === "internal-pptx"} onClick={() => exportPowerPoint("internal")}>Internal PowerPoint</Button>
+          <Button variant="light" color="cyan" leftSection={<IconPresentation size={16} />} loading={exporting === "customer-pptx"} onClick={() => exportPowerPoint("customer")}>Customer PowerPoint</Button>
           <SegmentedControl value={view} onChange={setView} data={["Internal Project Story", "Customer Presentation", "SSU Connex Project Story"]} />
         </Group>
       </Group>

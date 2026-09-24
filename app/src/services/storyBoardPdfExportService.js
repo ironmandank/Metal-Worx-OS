@@ -63,6 +63,21 @@ function addContainedImage(doc, data, x, y, width, height, border = RED) {
   doc.roundedRect(x, y, width, height, 7, 7, "S");
 }
 
+function addIndustrialImage(doc, data, x, y, width, height, accent = false) {
+  doc.setFillColor(...BLACK);
+  doc.rect(x, y, width, height, "F");
+  if (data) {
+    const properties = doc.getImageProperties(data);
+    const ratio = Math.min(width / properties.width, height / properties.height);
+    const renderedWidth = properties.width * ratio;
+    const renderedHeight = properties.height * ratio;
+    doc.addImage(data, imageFormat(data), x + (width - renderedWidth) / 2, y + (height - renderedHeight) / 2, renderedWidth, renderedHeight, undefined, "FAST");
+  }
+  doc.setDrawColor(...(accent ? RED : [62, 65, 69]));
+  doc.setLineWidth(accent ? 2 : 0.8);
+  doc.rect(x, y, width, height, "S");
+}
+
 function addSectionHeader(doc, title, eyebrow, theme, light = false) {
   doc.setFillColor(...(light ? LIGHT : theme.dark));
   doc.rect(0, 0, PAGE.width, 90, "F");
@@ -218,7 +233,7 @@ function addTimeline(doc, stages, theme) {
 
 function addStagePage(doc, { stage, files, pageIndex, pageCount, internal, theme, template }) {
   doc.addPage();
-  const dark = ["industrial", "collage", "photojournal"].includes(template);
+  const dark = ["canva", "industrial", "collage", "photojournal"].includes(template);
   doc.setFillColor(...(dark ? BLACK : LIGHT));
   doc.rect(0, 0, PAGE.width, PAGE.height, "F");
   if (template === "blueprint") {
@@ -228,6 +243,25 @@ function addStagePage(doc, { stage, files, pageIndex, pageCount, internal, theme
     for (let y = 0; y <= PAGE.height; y += 24) doc.line(0, y, PAGE.width, y);
   }
   addSectionHeader(doc, stage, `Build phase ${pageIndex + 1} of ${pageCount}`, theme, template === "portfolio");
+  if (template === "canva") {
+    if (files.length === 1) {
+      addIndustrialImage(doc, files[0].image, 32, 112, 518, 424, true);
+      doc.setFillColor(...theme.accent);
+      doc.rect(580, 135, 52, 4, "F");
+      drawCaption(doc, files[0], 580, 170, 166, internal, true);
+    } else if (files.length === 2) {
+      addIndustrialImage(doc, files[0].image, 32, 112, 454, 424, true);
+      addIndustrialImage(doc, files[1].image, 508, 112, 248, 220);
+      drawCaption(doc, files[0], 508, 370, 248, internal, true);
+    } else {
+      addIndustrialImage(doc, files[0].image, 32, 112, 450, 424, true);
+      addIndustrialImage(doc, files[1].image, 504, 112, 252, 190);
+      addIndustrialImage(doc, files[2].image, 504, 324, 118, 212);
+      if (files[3]) addIndustrialImage(doc, files[3].image, 638, 324, 118, 212);
+      else drawCaption(doc, files[0], 638, 348, 118, internal, true);
+    }
+    return;
+  }
   if (template === "photojournal") {
     const feature = files[0];
     addContainedImage(doc, feature.image, 34, 112, 724, 380, theme.accent);
@@ -265,7 +299,9 @@ function addStagePage(doc, { stage, files, pageIndex, pageCount, internal, theme
 
 export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = "internal", overview = "", template = "industrial" }) {
   const internal = mode === "internal";
-  const theme = template === "portfolio"
+  const theme = template === "canva"
+    ? { accent: [194, 14, 36], dark: [12, 13, 15] }
+    : template === "portfolio"
     ? { accent: [156, 0, 15], dark: [31, 33, 35] }
     : template === "field"
       ? { accent: [190, 25, 39], dark: [49, 54, 59] }
