@@ -22,8 +22,10 @@ import {
   IconEye,
   IconEyeOff,
   IconPhoto,
+  IconPlus,
   IconRefresh,
   IconScissors,
+  IconTrash,
   IconArrowBackUp,
   IconArrowForwardUp,
   IconUpload,
@@ -32,10 +34,14 @@ import {
 import {
   buildCorelSvg,
   buildDxf,
+  buildAutomaticBridges,
+  buildCutSequence,
   assignAutomaticCutOrder,
   cleanTracePaths,
+  findUnbridgedInteriorPaths,
   inspectLaserFile,
   nearestPositionOnClosedPath,
+  pathLabelPoint,
   pointOnClosedPath,
   prepareBinaryImageData,
   traceImageData,
@@ -98,6 +104,11 @@ function ImageToDxf() {
   const [showRedPaths, setShowRedPaths] = useState(true);
   const [showEngravePaths, setShowEngravePaths] = useState(true);
   const [draggingNode, setDraggingNode] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [geometryUndoStack, setGeometryUndoStack] = useState([]);
+  const [geometryRedoStack, setGeometryRedoStack] = useState([]);
+  const [cutPreviewStage, setCutPreviewStage] = useState("all");
+  const [previewZoom, setPreviewZoom] = useState(100);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [threshold, setThreshold] = useState(160);
@@ -118,6 +129,9 @@ function ImageToDxf() {
     setBridges([]);
     setUndoStack([]);
     setRedoStack([]);
+    setSelectedNode(null);
+    setGeometryUndoStack([]);
+    setGeometryRedoStack([]);
     setError("");
     return () => URL.revokeObjectURL(url);
   }, [file]);
@@ -159,6 +173,26 @@ function ImageToDxf() {
     });
   }, [trace, width, height, lockRatio, pathRoles, bridges]);
 
+  const cutSequence = useMemo(
+    () => (trace ? buildCutSequence(trace, pathRoles) : []),
+    [trace, pathRoles],
+  );
+
+  const sequenceByPath = useMemo(
+    () => new Map(cutSequence.map((entry) => [entry.pathIndex, entry.sequence])),
+    [cutSequence],
+  );
+
+  const unbridgedInteriorPaths = useMemo(
+    () => (trace ? findUnbridgedInteriorPaths(trace, { pathRoles, bridges }) : []),
+    [trace, pathRoles, bridges],
+  );
+
+  const unbridgedPathSet = useMemo(
+    () => new Set(unbridgedInteriorPaths),
+    [unbridgedInteriorPaths],
+  );
+
   async function convertImage() {
     if (!file || !sourceUrl) return;
     setWorking(true);
@@ -193,6 +227,9 @@ function ImageToDxf() {
       setBridges([]);
       setUndoStack([]);
       setRedoStack([]);
+      setSelectedNode(null);
+      setGeometryUndoStack([]);
+      setGeometryRedoStack([]);
       if (lockRatio) setHeight(Number((width * nextTrace.sourceHeight / nextTrace.sourceWidth).toFixed(3)));
     } catch (conversionError) {
       setError(conversionError.message || "The image could not be converted.");
@@ -230,19 +267,30 @@ function ImageToDxf() {
       markPath(pathIndex);
       return;
     }
+    if (editMode !== "bridge") return;
     const location = svgLocation(event);
     if (!location || pathRoles[pathIndex] === "engrave") return;
     const position = nearestPositionOnClosedPath(trace.paths[pathIndex].points, location);
     if (bridges.some((bridge) => bridge.pathIndex === pathIndex && Math.abs(bridge.position - position) < 0.01)) return;
+    rememberGeometry();
     setBridges((current) => [...current, { pathIndex, position }]);
   }
 
   function removeBridge(bridgeIndex) {
+    rememberGeometry();
     setBridges((current) => current.filter((_, index) => index !== bridgeIndex));
   }
 
   function cleanAllPaths() {
+    rememberGeometry();
     setTrace((current) => cleanTracePaths(current, { widthInches: width, heightInches: height, keepAspect: lockRatio, toleranceInches: 0.01 }));
+    setSelectedNode(null);
+  }
+
+  function clearAllBridges() {
+    if (!bridges.length) return;
+    rememberGeometry();
+    setBridges([]);
   }
 
   function applyAutomaticOrder() {
@@ -286,10 +334,104 @@ function ImageToDxf() {
     setFile(createDemoArtwork());
   }
 
+  function rememberGeometry() {
+    setGeometryUndoStack((current) => [
+      ...current.slice(-29),
+      { trace, bridges, selectedNode },
+    ]);
+    setGeometryRedoStack([]);
+  }
+
+  function undoGeometry() {
+    if (!geometryUndoStack.length) return;
+    const previous = geometryUndoStack[geometryUndoStack.length - 1];
+    setGeometryRedoStack((current) => [...current, { trace, bridges, selectedNode }]);
+    setGeometryUndoStack((current) => current.slice(0, -1));
+    setTrace(previous.trace);
+    setBridges(previous.bridges);
+    setSelectedNode(previous.selectedNode);
+  }
+
+  function redoGeometry() {
+    if (!geometryRedoStack.length) return;
+    const next = geometryRedoStack[geometryRedoStack.length - 1];
+    setGeometryUndoStack((current) => [...current, { trace, bridges, selectedNode }]);
+    setGeometryRedoStack((current) => current.slice(0, -1));
+    setTrace(next.trace);
+    setBridges(next.bridges);
+    setSelectedNode(next.selectedNode);
+  }
+
+  function updateSelectedPath(updater) {
+    if (!selectedNode) return;
+    rememberGeometry();
+    setTrace((current) => ({
+      ...current,
+      paths: current.paths.map((path, pathIndex) => (
+        pathIndex === selectedNode.pathIndex ? updater(path) : path
+      )),
+    }));
+  }
+
+  function addNodeAfterSelected() {
+    if (!selectedNode) return;
+    updateSelectedPath((path) => {
+      const nextIndex = (selectedNode.nodeIndex + 1) % path.points.length;
+      const currentPoint = path.points[selectedNode.nodeIndex];
+      const nextPoint = path.points[nextIndex];
+      const points = path.points.slice();
+      points.splice(selectedNode.nodeIndex + 1, 0, {
+        x: (currentPoint.x + nextPoint.x) / 2,
+        y: (currentPoint.y + nextPoint.y) / 2,
+      });
+      return { ...path, points };
+    });
+    setSelectedNode((current) => ({ ...current, nodeIndex: current.nodeIndex + 1 }));
+  }
+
+  function deleteSelectedNode() {
+    if (!selectedNode || trace.paths[selectedNode.pathIndex].points.length <= 3) return;
+    updateSelectedPath((path) => ({
+      ...path,
+      points: path.points.filter((_, nodeIndex) => nodeIndex !== selectedNode.nodeIndex),
+    }));
+    setSelectedNode(null);
+  }
+
+  function straightenSelectedNode(axis) {
+    if (!selectedNode) return;
+    updateSelectedPath((path) => {
+      const previousIndex = (selectedNode.nodeIndex - 1 + path.points.length) % path.points.length;
+      return {
+        ...path,
+        points: path.points.map((point, nodeIndex) => (
+          nodeIndex !== selectedNode.nodeIndex
+            ? point
+            : {
+              ...point,
+              [axis]: path.points[previousIndex][axis],
+            }
+        )),
+      };
+    });
+  }
+
+  function addAutomaticBridges() {
+    if (!trace) return;
+    rememberGeometry();
+    setBridges(buildAutomaticBridges(trace, {
+      pathRoles,
+      bridges,
+      bridgesPerPath: 2,
+    }));
+  }
+
   function beginNodeDrag(event, pathIndex, nodeIndex) {
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    rememberGeometry();
+    setSelectedNode({ pathIndex, nodeIndex });
     setDraggingNode({ pathIndex, nodeIndex });
   }
 
@@ -407,8 +549,9 @@ function ImageToDxf() {
               data={[
                 { label: "Assign Path Color", value: "role" },
                 { label: "Add Yellow Bridge", value: "bridge" },
+                { label: "Edit Nodes", value: "node" },
               ]}
-              color={editMode === "bridge" ? "yellow" : "red"}
+              color={editMode === "bridge" ? "yellow" : editMode === "node" ? "blue" : "red"}
             />
             <SegmentedControl
               fullWidth
@@ -427,7 +570,8 @@ function ImageToDxf() {
                 <Button size="compact-sm" variant="default" leftSection={<IconArrowForwardUp size={15} />} disabled={!redoStack.length} onClick={redoRoles}>Redo</Button>
                 <Button size="compact-sm" variant="light" color="gray" onClick={cleanAllPaths}>Clean / Straighten Nodes</Button>
                 <Button size="compact-sm" variant="light" color="red" onClick={applyAutomaticOrder}>Auto Cut Order</Button>
-                <Button size="compact-sm" variant="light" color="yellow" disabled={!bridges.length} onClick={() => setBridges([])}>Clear Bridges</Button>
+                <Button size="compact-sm" variant="light" color="yellow" disabled={!unbridgedInteriorPaths.length} onClick={addAutomaticBridges}>Auto Add Bridges</Button>
+                <Button size="compact-sm" variant="light" color="yellow" disabled={!bridges.length} onClick={clearAllBridges}>Clear Bridges</Button>
               </Group>
               <Group gap="xs">
                 <Button size="compact-sm" variant="light" color="blue" onClick={() => markAll("engrave")}>All Blue</Button>
@@ -440,20 +584,62 @@ function ImageToDxf() {
               <Button size="compact-sm" variant={showBlackPaths ? "filled" : "outline"} color="dark" leftSection={showBlackPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowBlackPaths((value) => !value)}>Black Layer</Button>
               <Button size="compact-sm" variant={showRedPaths ? "filled" : "outline"} color="red" leftSection={showRedPaths ? <IconEye size={15} /> : <IconEyeOff size={15} />} onClick={() => setShowRedPaths((value) => !value)}>Red Layer</Button>
             </Group>
+            {editMode === "node" && <Paper p="sm" withBorder radius="md">
+              <Stack gap="xs">
+                <Text size="sm" fw={900}>Node Tools</Text>
+                <Text size="xs" c="dimmed">Select or drag a node, then use these controls. Horizontal and vertical alignment use the previous node on the path.</Text>
+                <Group gap="xs">
+                  <Button size="compact-sm" variant="light" leftSection={<IconPlus size={14} />} disabled={!selectedNode} onClick={addNodeAfterSelected}>Add Node After</Button>
+                  <Button size="compact-sm" variant="light" color="red" leftSection={<IconTrash size={14} />} disabled={!selectedNode || trace.paths[selectedNode.pathIndex].points.length <= 3} onClick={deleteSelectedNode}>Delete Node</Button>
+                  <Button size="compact-sm" variant="light" color="blue" disabled={!selectedNode} onClick={() => straightenSelectedNode("y")}>Make Horizontal</Button>
+                  <Button size="compact-sm" variant="light" color="blue" disabled={!selectedNode} onClick={() => straightenSelectedNode("x")}>Make Vertical</Button>
+                  <Button size="compact-sm" variant="default" leftSection={<IconArrowBackUp size={14} />} disabled={!geometryUndoStack.length} onClick={undoGeometry}>Undo Geometry</Button>
+                  <Button size="compact-sm" variant="default" leftSection={<IconArrowForwardUp size={14} />} disabled={!geometryRedoStack.length} onClick={redoGeometry}>Redo Geometry</Button>
+                </Group>
+              </Stack>
+            </Paper>}
+            <Paper p="sm" withBorder radius="md">
+              <Stack gap="xs">
+                <Group justify="space-between"><Text size="sm" fw={900}>Cut-Order Preview</Text><Badge variant="light">{cutSequence.length} operations</Badge></Group>
+                <SegmentedControl
+                  fullWidth
+                  value={cutPreviewStage}
+                  onChange={setCutPreviewStage}
+                  data={[
+                    { label: "All Paths", value: "all" },
+                    { label: "1 · Blue Mark", value: "engrave" },
+                    { label: "2 · Black Interior", value: "intact" },
+                    { label: "3 · Red Outside", value: "cut" },
+                  ]}
+                />
+                <div><Group justify="space-between"><Text size="xs" fw={700}>Preview Zoom</Text><Text size="xs" c="dimmed">{previewZoom}%</Text></Group><Slider value={previewZoom} onChange={setPreviewZoom} min={100} max={300} step={25} color="blue" /></div>
+              </Stack>
+            </Paper>
           </Stack>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
-          <div className="mw-dxf-preview">
-            {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: "100%", height: "100%", maxHeight: 620, touchAction: "none" }} aria-label="Interactive DXF path and node editor">
+          <div className="mw-dxf-preview" style={{ overflow: previewZoom > 100 ? "auto" : "hidden" }}>
+            {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: `${previewZoom}%`, height: `${previewZoom}%`, minWidth: `${previewZoom}%`, minHeight: `${previewZoom}%`, maxHeight: previewZoom === 100 ? 620 : "none", touchAction: "none" }} aria-label="Interactive DXF path and node editor">
               {trace.paths.map((path, pathIndex) => {
                 const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
                 const role = pathRoles[pathIndex];
                 const color = role === "cut" ? "#ff0000" : role === "engrave" ? "#0000ff" : "#111111";
-                const visible = role === "cut" ? showRedPaths : role === "engrave" ? showEngravePaths : showBlackPaths;
+                const previewRank = { engrave: 0, intact: 1, cut: 2 };
+                const selectedRank = cutPreviewStage === "all" ? 2 : previewRank[cutPreviewStage];
+                const visibleForPreview = (previewRank[role] ?? 1) <= selectedRank;
+                const visible = visibleForPreview && (role === "cut" ? showRedPaths : role === "engrave" ? showEngravePaths : showBlackPaths);
                 if (!visible) return null;
                 return <g key={pathIndex} onClick={(event) => handlePathClick(event, pathIndex)} style={{ cursor: editMode === "bridge" ? "crosshair" : "pointer" }}>
                   <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
                   <polygon points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                  {showNodes && path.points.map((point, nodeIndex) => <circle key={nodeIndex} cx={point.x} cy={point.y} r="3.2" fill="#fff" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />)}
+                  {unbridgedPathSet.has(pathIndex) && <polygon points={points} fill="none" stroke="#ff9f1c" strokeWidth="5" strokeDasharray="8 6" opacity="0.72" vectorEffect="non-scaling-stroke" />}
+                  {showNodes && path.points.map((point, nodeIndex) => {
+                    const selected = selectedNode?.pathIndex === pathIndex && selectedNode?.nodeIndex === nodeIndex;
+                    return <circle key={nodeIndex} cx={point.x} cy={point.y} r={selected ? 5 : 3.2} fill={selected ? "#ffd43b" : "#fff"} stroke={selected ? "#5f4500" : color} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />;
+                  })}
+                  {cutPreviewStage !== "all" && (() => {
+                    const labelPoint = pathLabelPoint(path);
+                    return <g pointerEvents="none"><circle cx={labelPoint.x} cy={labelPoint.y} r="10" fill="#fff" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" /><text x={labelPoint.x} y={labelPoint.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="900" fill="#111">{sequenceByPath.get(pathIndex)}</text></g>;
+                  })()}
                 </g>;
               })}
               {bridges.map((bridge, bridgeIndex) => {
