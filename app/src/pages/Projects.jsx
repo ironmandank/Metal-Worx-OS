@@ -1538,20 +1538,33 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         <Badge mt={6} size="xs" color={item.color || queue.color}>{item.stage}</Badge>
                         <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                         <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
-                        <Button
-                          fullWidth
-                          size="xs"
-                          color={queue.color}
-                          variant="light"
-                          mt="sm"
-                          onClick={() => {
-                            if (item.kind === "visit") openVisitEditor(item.visit);
-                            else if (item.kind === "quote") openLinkedQuote(item.visit);
-                            else openProject(item.project);
-                          }}
-                        >
-                          {item.kind === "visit" ? "Open Request" : item.kind === "quote" ? "Open Quote" : "Open Project"}
-                        </Button>
+                        <SimpleGrid cols={item.kind === "project" ? 2 : 1} spacing="xs" mt="sm">
+                          <Button
+                            fullWidth
+                            size="xs"
+                            color={queue.color}
+                            variant="light"
+                            onClick={() => {
+                              if (item.kind === "visit") openVisitEditor(item.visit);
+                              else if (item.kind === "quote") openLinkedQuote(item.visit);
+                              else openProject(item.project);
+                            }}
+                          >
+                            {item.kind === "visit" ? "Open Request" : item.kind === "quote" ? "Open Quote" : "Open Project"}
+                          </Button>
+                          {item.kind === "project" && (
+                            <Button
+                              fullWidth
+                              size="xs"
+                              color="green"
+                              leftSection={<IconCircleCheck size={14} />}
+                              loading={completingProjectId === item.project.id}
+                              onClick={() => completeProject(item.project)}
+                            >
+                              Quick Complete
+                            </Button>
+                          )}
+                        </SimpleGrid>
                       </Paper>
                     ))}
                   </SimpleGrid>
