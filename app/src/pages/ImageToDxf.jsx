@@ -30,6 +30,7 @@ import {
   IconArrowForwardUp,
   IconUpload,
 } from "@tabler/icons-react";
+import JSZip from "jszip";
 
 import {
   buildCorelSvg,
@@ -330,6 +331,50 @@ function ImageToDxf() {
     downloadText(svgExport.svg, `${safeBaseName(file?.name)}-${svgExport.width.toFixed(2)}in.svg`, "image/svg+xml");
   }
 
+  async function downloadProductionPackage() {
+    if (!physicalSize || !svgExport || !inspection) return;
+    const baseName = `${safeBaseName(file?.name)}-${physicalSize.width.toFixed(2)}in`;
+    const zip = new JSZip();
+    zip.file(`${baseName}.dxf`, physicalSize.dxf);
+    zip.file(`${baseName}.svg`, svgExport.svg);
+    zip.file("PRODUCTION-INSPECTION.json", JSON.stringify({
+      sourceFile: file?.name || "Untitled artwork",
+      generatedAt: new Date().toISOString(),
+      finishedSizeInches: { width: physicalSize.width, height: physicalSize.height },
+      corelDraw: "CorelDRAW 2021 compatible DXF (R12/AC1009) and layered SVG",
+      layerWorkflow: {
+        blue: "Score or mark only",
+        black: "Interior cut first; add bridges to retained pieces",
+        red: "Outside perimeter cut last",
+        yellow: "Preview marker for an actual uncut bridge gap",
+      },
+      inspection,
+      cutSequence,
+    }, null, 2));
+    zip.file("READ-ME-FIRST.txt", [
+      "METAL WORX LASER PRODUCTION PACKAGE",
+      "",
+      `Source: ${file?.name || "Untitled artwork"}`,
+      `Finished size: ${physicalSize.width.toFixed(3)} x ${physicalSize.height.toFixed(3)} inches`,
+      `Inspection: ${inspection.label}`,
+      "",
+      "BLUE = score/mark only",
+      "BLACK = interior cut first",
+      "RED = outside perimeter cut last",
+      "YELLOW = uncut bridge location shown in the app preview",
+      "",
+      "Open the DXF or SVG in CorelDRAW 2021 and complete a final visual inspection before sending it to the laser.",
+      ...inspection.issues.map((issue) => `REVIEW: ${issue}`),
+    ].join("\n"));
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${baseName}-production-package.zip`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function loadDemo() {
     setFile(createDemoArtwork());
   }
@@ -534,6 +579,7 @@ function ImageToDxf() {
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
               <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Blue/Black/Red SVG</Button>
+              <Button onClick={downloadProductionPackage} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="red">Download Complete Production Package</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
           </Paper>

@@ -8,6 +8,7 @@ import {
   Group,
   Image,
   Loader,
+  Modal,
   Paper,
   Progress,
   SegmentedControl,
@@ -16,11 +17,12 @@ import {
   Stack,
   Switch,
   Text,
+  TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowRight, IconCamera, IconDownload, IconEye, IconFlag, IconPhoto, IconStar, IconUpload } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconEye, IconFlag, IconPhoto, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
@@ -96,6 +98,9 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [view, setView] = useState("Internal Project Story");
   const [presentationTemplate, setPresentationTemplate] = useState("industrial");
   const [exporting, setExporting] = useState(null);
+  const [editingPhoto, setEditingPhoto] = useState(null);
+  const [photoDraft, setPhotoDraft] = useState({ description: "", story_stage: STORY_STAGES[0], photo_taken_at: "", customer_visible: false });
+  const [savingPhoto, setSavingPhoto] = useState(false);
 
   async function loadStory() {
     if (!project?.id) return;
@@ -208,6 +213,62 @@ function ProjectStoryBoard({ project, activeUser }) {
       await supabase.from("project_files").update({ is_cover_photo: false }).eq("project_id", project.id).neq("id", file.id);
     }
     await loadStory();
+  }
+
+  function openPhotoEditor(file) {
+    const takenAt = file.photo_taken_at || file.created_at;
+    setEditingPhoto(file);
+    setPhotoDraft({
+      description: file.description || "",
+      story_stage: file.story_stage || STORY_STAGES[0],
+      photo_taken_at: takenAt ? new Date(takenAt).toISOString().slice(0, 10) : "",
+      customer_visible: Boolean(file.customer_visible),
+    });
+  }
+
+  async function savePhotoChanges() {
+    if (!editingPhoto) return;
+    setSavingPhoto(true);
+    const { error } = await supabase.from("project_files").update({
+      description: photoDraft.description.trim() || null,
+      story_stage: photoDraft.story_stage,
+      photo_taken_at: photoDraft.photo_taken_at ? `${photoDraft.photo_taken_at}T12:00:00` : null,
+      customer_visible: photoDraft.customer_visible,
+    }).eq("id", editingPhoto.id);
+    setSavingPhoto(false);
+    if (error) {
+      notifications.show({ title: "Photo Could Not Be Updated", message: error.message, color: "red" });
+      return;
+    }
+    setEditingPhoto(null);
+    await loadStory();
+    notifications.show({ title: "Story Photo Updated", message: "The caption, phase, date, and visibility were saved.", color: "green" });
+  }
+
+  async function movePhoto(file, direction) {
+    const ordered = [...files].sort((left, right) => (left.story_sort_order || 0) - (right.story_sort_order || 0) || new Date(left.created_at) - new Date(right.created_at));
+    const currentIndex = ordered.findIndex((item) => item.id === file.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+    const results = await Promise.all([
+      supabase.from("project_files").update({ story_sort_order: targetIndex }).eq("id", ordered[currentIndex].id),
+      supabase.from("project_files").update({ story_sort_order: currentIndex }).eq("id", ordered[targetIndex].id),
+    ]);
+    const error = results.find((result) => result.error)?.error;
+    if (error) notifications.show({ title: "Photo Could Not Be Reordered", message: error.message, color: "red" });
+    else await loadStory();
+  }
+
+  async function deletePhoto(file) {
+    if (!window.confirm(`Remove ${file.file_name || "this photo"} from the project story?`)) return;
+    const { error } = await supabase.from("project_files").delete().eq("id", file.id);
+    if (error) {
+      notifications.show({ title: "Photo Could Not Be Removed", message: error.message, color: "red" });
+      return;
+    }
+    if (file.storage_path) await supabase.storage.from("project-files").remove([file.storage_path]);
+    await loadStory();
+    notifications.show({ title: "Story Photo Removed", message: "The photo was removed from this project story.", color: "green" });
   }
 
   async function exportPdf(mode) {
@@ -389,10 +450,13 @@ function ProjectStoryBoard({ project, activeUser }) {
                       <Stack gap={6} mt="sm">
                         <Group justify="space-between" gap="xs" align="flex-start"><Text fw={800} size="sm" style={{ flex: 1 }}>{file.description || file.file_name}</Text>{file.is_cover_photo && <Badge color="yellow" leftSection={<IconStar size={12} />}>Cover</Badge>}</Group>
                         <Text size="xs" c="dimmed">{isExample ? "SSU Two-Container Project · Customer-facing example" : `${new Date(file.photo_taken_at || file.created_at).toLocaleString()} · ${file.uploaded_by || "Metal Worx"}`}</Text>
-                        {view === "Internal Project Story" && <Group grow>
-                          <Button size="xs" variant="light" color={file.customer_visible ? "green" : "gray"} onClick={() => updatePhoto(file, { customer_visible: !file.customer_visible })}>{file.customer_visible ? "Customer Visible" : "Internal Only"}</Button>
-                          <Button size="xs" variant="light" color="yellow" leftSection={<IconFlag size={14} />} onClick={() => updatePhoto(file, { is_cover_photo: true })}>Set Cover</Button>
-                        </Group>}
+                        {view === "Internal Project Story" && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6}>
+                          <Button fullWidth size="xs" variant="light" color="blue" leftSection={<IconEdit size={14} />} onClick={() => openPhotoEditor(file)}>Edit Photo Details</Button>
+                          <Button fullWidth size="xs" variant="light" color={file.customer_visible ? "green" : "gray"} onClick={() => updatePhoto(file, { customer_visible: !file.customer_visible })}>{file.customer_visible ? "Customer Visible" : "Internal Only"}</Button>
+                          <Button fullWidth size="xs" variant="light" color="yellow" leftSection={<IconFlag size={14} />} onClick={() => updatePhoto(file, { is_cover_photo: true })}>Set as Cover Photo</Button>
+                          <Group grow gap={6}><Button aria-label="Move photo earlier" size="xs" variant="default" leftSection={<IconArrowUp size={13} />} onClick={() => movePhoto(file, -1)}>Earlier</Button><Button aria-label="Move photo later" size="xs" variant="default" leftSection={<IconArrowDown size={13} />} onClick={() => movePhoto(file, 1)}>Later</Button></Group>
+                          <Button fullWidth size="xs" variant="light" color="red" leftSection={<IconTrash size={14} />} onClick={() => deletePhoto(file)}>Remove Photo</Button>
+                        </SimpleGrid>}
                       </Stack>
                     </Card>
                   ))}
@@ -402,6 +466,19 @@ function ProjectStoryBoard({ project, activeUser }) {
           );
         })}
       </Stack>
+
+      <Modal opened={Boolean(editingPhoto)} onClose={() => setEditingPhoto(null)} title="Edit Project Story Photo" centered size="lg">
+        <Stack>
+          {editingPhoto && <Image src={urls[editingPhoto.id]} alt={editingPhoto.file_name} h={240} fit="contain" radius="md" bg="dark.8" />}
+          <TextInput label="Photo caption" value={photoDraft.description} onChange={(event) => setPhotoDraft((current) => ({ ...current, description: event.currentTarget.value }))} placeholder="Describe the work shown in this photo" />
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Select label="Project phase" data={STORY_STAGES} value={photoDraft.story_stage} onChange={(value) => setPhotoDraft((current) => ({ ...current, story_stage: value || STORY_STAGES[0] }))} />
+            <TextInput label="Photo date" type="date" value={photoDraft.photo_taken_at} onChange={(event) => setPhotoDraft((current) => ({ ...current, photo_taken_at: event.currentTarget.value }))} />
+          </SimpleGrid>
+          <Switch checked={photoDraft.customer_visible} onChange={(event) => setPhotoDraft((current) => ({ ...current, customer_visible: event.currentTarget.checked }))} label="Include in customer presentation" description="Leave off for internal-only progress records." />
+          <Button color="red" fullWidth loading={savingPhoto} onClick={savePhotoChanges}>Save Photo Changes</Button>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
