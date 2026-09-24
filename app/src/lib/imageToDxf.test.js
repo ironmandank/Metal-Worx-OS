@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   assignAutomaticCutOrder,
+  buildAutomaticBridges,
+  buildCutSequence,
   buildCorelSvg,
   buildDxf,
   cleanTracePaths,
+  findUnbridgedInteriorPaths,
   inspectLaserFile,
   prepareBinaryImageData,
 } from "./imageToDxf";
@@ -114,5 +117,36 @@ describe("image to DXF helpers", () => {
     expect(report.status).toBe("unsafe");
     expect(report.smallPieces).toBe(1);
     expect(report.nodeCount).toBe(3);
+  });
+
+  it("orders blue marks, black interiors, and red exteriors in production order", () => {
+    const sequence = buildCutSequence({
+      paths: [
+        { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] },
+        { points: [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 3 }] },
+        { points: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }] },
+      ],
+    }, ["cut", "engrave", "intact"]);
+    expect(sequence.map((entry) => entry.role)).toEqual(["engrave", "intact", "cut"]);
+    expect(sequence.map((entry) => entry.sequence)).toEqual([1, 2, 3]);
+  });
+
+  it("adds balanced bridge suggestions only to unbridged black paths", () => {
+    const trace = {
+      paths: [
+        { points: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }] },
+        { points: [{ x: 5, y: 5 }, { x: 8, y: 5 }, { x: 8, y: 8 }] },
+      ],
+    };
+    const bridges = buildAutomaticBridges(trace, {
+      pathRoles: ["intact", "cut"],
+      bridges: [],
+      bridgesPerPath: 2,
+    });
+    expect(bridges).toEqual([
+      { pathIndex: 0, position: 0.25, automatic: true },
+      { pathIndex: 0, position: 0.75, automatic: true },
+    ]);
+    expect(findUnbridgedInteriorPaths(trace, { pathRoles: ["intact", "cut"], bridges })).toEqual([]);
   });
 });
