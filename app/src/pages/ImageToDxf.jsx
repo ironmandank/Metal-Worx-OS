@@ -41,6 +41,7 @@ import {
   analyzeSourceArtwork,
   cleanTracePaths,
   findUnbridgedInteriorPaths,
+  getArtworkFileSupport,
   inspectLaserFile,
   nearestPositionOnClosedPath,
   pathLabelPoint,
@@ -61,6 +62,11 @@ const styles = `
   @media (max-width:900px) { .mw-dxf-grid { grid-template-columns:1fr; } .mw-dxf-preview { min-height:390px; } }
   @media (max-width:650px) { .mw-laser-legend { grid-template-columns:1fr 1fr; } }
 `;
+
+const ARTWORK_ACCEPT = [
+  "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif", "image/svg+xml", "image/tiff",
+  "application/pdf", ".dxf", ".cdr", ".ai", ".eps", ".tif", ".tiff",
+].join(",");
 
 function safeBaseName(name = "metal-worx-cut-file") {
   return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "metal-worx-cut-file";
@@ -122,11 +128,52 @@ function ImageToDxf() {
   const [lockRatio, setLockRatio] = useState(true);
   const [layerName, setLayerName] = useState("CUT");
   const [sourceAnalysis, setSourceAnalysis] = useState(null);
+  const [sourceMessage, setSourceMessage] = useState("");
+  const [productionApproved, setProductionApproved] = useState(false);
+
+  const fileSupport = useMemo(() => getArtworkFileSupport(file || {}), [file]);
 
   useEffect(() => {
     if (!file) return undefined;
-    const url = URL.createObjectURL(file);
-    setSourceUrl(url);
+    let disposed = false;
+    let url = "";
+    async function prepareSource() {
+      setSourceUrl("");
+      setSourceMessage("");
+      try {
+        if (fileSupport.renderMode === "pdf") {
+          const pdfjs = await import("pdfjs-dist");
+          const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+          pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
+          const pdfDocument = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+          const page = await pdfDocument.getPage(1);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const scale = Math.min(2.5, 1600 / Math.max(baseViewport.width, baseViewport.height));
+          const viewport = page.getViewport({ scale });
+          const pdfCanvas = window.document.createElement("canvas");
+          pdfCanvas.width = Math.ceil(viewport.width);
+          pdfCanvas.height = Math.ceil(viewport.height);
+          await page.render({ canvasContext: pdfCanvas.getContext("2d"), viewport }).promise;
+          const blob = await new Promise((resolve) => pdfCanvas.toBlob(resolve, "image/png"));
+          if (!blob) throw new Error("The PDF preview could not be created.");
+          url = URL.createObjectURL(blob);
+          if (!disposed) {
+            setSourceUrl(url);
+            setSourceMessage(pdfDocument.numPages > 1 ? `Showing page 1 of ${pdfDocument.numPages}. Upload or export the correct design page if needed.` : "PDF page 1 is ready for tracing.");
+          }
+          return;
+        }
+        if (fileSupport.renderMode === "image") {
+          url = URL.createObjectURL(file);
+          if (!disposed) setSourceUrl(url);
+          return;
+        }
+        setSourceMessage(fileSupport.guidance);
+      } catch (prepareError) {
+        if (!disposed) setSourceMessage(prepareError.message || "The artwork preview could not be prepared.");
+      }
+    }
+    prepareSource();
     setTrace(null);
     setPathRoles([]);
     setBridges([]);
@@ -137,8 +184,12 @@ function ImageToDxf() {
     setGeometryRedoStack([]);
     setError("");
     setSourceAnalysis(null);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    setProductionApproved(false);
+    return () => {
+      disposed = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file, fileSupport]);
 
   const physicalSize = useMemo(() => {
     if (!trace) return null;
@@ -197,6 +248,20 @@ function ImageToDxf() {
     () => new Set(unbridgedInteriorPaths),
     [unbridgedInteriorPaths],
   );
+
+  const laserApprovalChecks = useMemo(() => [
+    { label: "Artwork uploaded", pass: Boolean(file) },
+    { label: "Vector paths created", pass: Boolean(trace?.paths?.length) },
+    { label: "Finished size confirmed", pass: width > 0 && height > 0 },
+    { label: "Outside cut path assigned", pass: pathRoles.includes("cut") },
+    { label: "Retained interior pieces connected", pass: Boolean(trace) && unbridgedInteriorPaths.length === 0 },
+    { label: "No critical preflight errors", pass: inspection?.status !== "unsafe" },
+  ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection]);
+  const canApproveForLaser = laserApprovalChecks.every((check) => check.pass);
+
+  useEffect(() => {
+    setProductionApproved(false);
+  }, [trace, pathRoles, bridges, width, height, bridgeWidth]);
 
   async function convertImage() {
     if (!file || !sourceUrl) return;
@@ -337,7 +402,7 @@ function ImageToDxf() {
   }
 
   async function downloadProductionPackage() {
-    if (!physicalSize || !svgExport || !inspection) return;
+    if (!physicalSize || !svgExport || !inspection || !productionApproved) return;
     const baseName = `${safeBaseName(file?.name)}-${physicalSize.width.toFixed(2)}in`;
     const zip = new JSZip();
     zip.file(`${baseName}.dxf`, physicalSize.dxf);
@@ -547,15 +612,15 @@ function ImageToDxf() {
             <Stack gap="md">
               <div>
                 <Text fw={900} mb={4}>1. Upload the artwork</Text>
-                <Text size="sm" c="dimmed">Use a clear JPG or PNG. High contrast produces the cleanest cut file.</Text>
+                <Text size="sm" c="dimmed">Accepts PDF, SVG, PNG, JPG, WebP, BMP, GIF, TIFF, DXF, AI, EPS, and CorelDRAW files.</Text>
               </div>
               <Group grow>
-                <FileButton onChange={setFile} accept="image/png,image/jpeg,image/webp,image/bmp">
-                  {(props) => <Button {...props} leftSection={<IconUpload size={18} />} color="red" variant={file ? "light" : "filled"}>{file ? "Choose Different Image" : "Choose Image"}</Button>}
+                <FileButton onChange={setFile} accept={ARTWORK_ACCEPT}>
+                  {(props) => <Button {...props} leftSection={<IconUpload size={18} />} color="red" variant={file ? "light" : "filled"}>{file ? "Choose Different Artwork" : "Choose Artwork File"}</Button>}
                 </FileButton>
                 <Button variant="outline" color="gray" leftSection={<IconPhoto size={18} />} onClick={loadDemo}>Load Sample Design</Button>
               </Group>
-              {file && <div className="mw-dxf-drop"><IconPhoto size={25} color="#ef233c" /><Text fw={800} size="sm">{file.name}</Text><Text size="xs" c="dimmed">{(file.size / 1024 / 1024).toFixed(2)} MB</Text></div>}
+              {file && <div className="mw-dxf-drop"><IconPhoto size={25} color="#ef233c" /><Text fw={800} size="sm">{file.name}</Text><Group justify="center" gap="xs" mt={4}><Badge variant="light" color={fileSupport.canTrace ? "green" : "yellow"}>{fileSupport.kind}</Badge><Text size="xs" c="dimmed">{(file.size / 1024 / 1024).toFixed(2)} MB</Text></Group><Text size="xs" c="dimmed" mt={6}>{sourceMessage || fileSupport.guidance}</Text></div>}
             </Stack>
           </Paper>
 
@@ -566,7 +631,8 @@ function ImageToDxf() {
               <Checkbox checked={invert} onChange={(event) => setInvert(event.currentTarget.checked)} label="Reverse black and white" />
               <div><Group justify="space-between"><Text size="sm" fw={700}>Remove Small Specks</Text><Text size="sm" c="dimmed">{speckleSize}px</Text></Group><Slider value={speckleSize} onChange={setSpeckleSize} min={0} max={40} color="red" /></div>
               <div><Text size="sm" fw={700} mb={6}>Line Style</Text><SegmentedControl fullWidth value={smoothing} onChange={setSmoothing} data={[{ label: "Sharp", value: "sharp" }, { label: "Balanced", value: "balanced" }, { label: "Smooth", value: "smooth" }]} /></div>
-              <Button onClick={convertImage} disabled={!file} loading={working} leftSection={<IconRefresh size={18} />} color="red">Create Cut-Line Preview</Button>
+              <Button onClick={convertImage} disabled={!file || !sourceUrl || !fileSupport.canTrace} loading={working} leftSection={<IconRefresh size={18} />} color="red">Create Cut-Line Preview</Button>
+              {file && !fileSupport.canTrace && <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />}>{fileSupport.guidance}</Alert>}
               {working && <Progress value={100} animated color="red" />}
             </Stack>
           </Paper>
@@ -582,9 +648,17 @@ function ImageToDxf() {
               <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
               <NumberInput label="Bridge width (in)" description="Actual uncut connection left in the metal" value={bridgeWidth} onChange={(value) => setBridgeWidth(Math.max(0.005, Number(value) || 0.04))} min={0.005} max={0.5} step={0.005} decimalScale={3} />
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
-              <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="green" size="md">Download CorelDRAW DXF</Button>
-              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Blue/Black/Red SVG</Button>
-              <Button onClick={downloadProductionPackage} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="red">Download Complete Production Package</Button>
+              <Paper withBorder radius="md" p="sm">
+                <Stack gap={6}>
+                  <Group justify="space-between"><Text fw={900} size="sm">Laser Readiness Gate</Text><Badge color={productionApproved ? "green" : canApproveForLaser ? "blue" : "yellow"}>{productionApproved ? "LASER READY" : canApproveForLaser ? "READY TO APPROVE" : "IN REVIEW"}</Badge></Group>
+                  {laserApprovalChecks.map((check) => <Group key={check.label} justify="space-between" gap="xs"><Text size="xs">{check.label}</Text><Badge size="xs" color={check.pass ? "green" : "gray"}>{check.pass ? "PASS" : "NEEDED"}</Badge></Group>)}
+                  <Button color="green" disabled={!canApproveForLaser} onClick={() => setProductionApproved(true)}>Approve File for Laser</Button>
+                  <Text size="xs" c="dimmed">Any path, bridge, size, or node change removes approval and requires another check.</Text>
+                </Stack>
+              </Paper>
+              <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="gray" size="md">Download Draft CorelDRAW DXF</Button>
+              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Draft Blue/Black/Red SVG</Button>
+              <Button onClick={downloadProductionPackage} disabled={!productionApproved} leftSection={<IconDownload size={18} />} color="green">Download Laser-Ready Production Package</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
           </Paper>

@@ -8,6 +8,7 @@ import {
   buildDxf,
   cleanTracePaths,
   findUnbridgedInteriorPaths,
+  getArtworkFileSupport,
   inspectLaserFile,
   prepareBinaryImageData,
 } from "./imageToDxf";
@@ -145,6 +146,13 @@ describe("image to DXF helpers", () => {
     const analysis = analyzeSourceArtwork({ width: 8, height: 8, data: new Uint8ClampedArray(pixels) });
     expect(analysis.label).toBe("Photo / Complex Image");
     expect(analysis.complexityTier).toBe(4);
+  });
+
+  it("routes supported artwork files to the correct intake workflow", () => {
+    expect(getArtworkFileSupport({ name: "customer-art.pdf", type: "application/pdf" })).toMatchObject({ renderMode: "pdf", canTrace: true });
+    expect(getArtworkFileSupport({ name: "logo.svg", type: "image/svg+xml" })).toMatchObject({ renderMode: "image", canTrace: true });
+    expect(getArtworkFileSupport({ name: "laser-file.dxf" })).toMatchObject({ renderMode: "vector-review", canTrace: false });
+    expect(getArtworkFileSupport({ name: "original.cdr" })).toMatchObject({ renderMode: "vector-review", canTrace: false });
   });
 
   it("orders blue marks, black interiors, and red exteriors in production order", () => {

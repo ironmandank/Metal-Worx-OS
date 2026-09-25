@@ -603,6 +603,33 @@ export function analyzeSourceArtwork(imageData) {
   return { label: "Photo / Complex Image", color: "orange", complexityTier: 4, colorGroupCount, sampledPixels };
 }
 
+export function getArtworkFileSupport(file = {}) {
+  const name = String(file.name || "").toLowerCase();
+  const extension = name.includes(".") ? name.split(".").pop() : "";
+  const mime = String(file.type || "").toLowerCase();
+  const rasterExtensions = new Set(["png", "jpg", "jpeg", "webp", "bmp", "gif"]);
+
+  if (mime === "application/pdf" || extension === "pdf") {
+    return { extension, kind: "PDF Artwork", renderMode: "pdf", canTrace: true, guidance: "The first PDF page will be rendered for tracing. Confirm scale before laser approval." };
+  }
+  if (mime === "image/svg+xml" || extension === "svg") {
+    return { extension, kind: "SVG Vector", renderMode: "image", canTrace: true, guidance: "SVG can be traced now. Native vector import will preserve paths in a later phase." };
+  }
+  if (rasterExtensions.has(extension) || mime.startsWith("image/") && extension !== "tif" && extension !== "tiff") {
+    return { extension, kind: "Raster Artwork", renderMode: "image", canTrace: true, guidance: "The image can be cleaned and traced automatically." };
+  }
+  if (["tif", "tiff"].includes(extension)) {
+    return { extension, kind: "TIFF Artwork", renderMode: "unsupported", canTrace: false, guidance: "TIFF is accepted for the job record. Convert it to PNG or PDF before tracing." };
+  }
+  if (extension === "dxf") {
+    return { extension, kind: "DXF Vector", renderMode: "vector-review", canTrace: false, guidance: "DXF is already a vector file. It requires vector preflight rather than image tracing." };
+  }
+  if (["cdr", "ai", "eps"].includes(extension)) {
+    return { extension, kind: `${extension.toUpperCase()} Design File`, renderMode: "vector-review", canTrace: false, guidance: "The original design is accepted. Export a PDF or SVG copy for preview and automated preflight." };
+  }
+  return { extension, kind: "Other Artwork File", renderMode: "unsupported", canTrace: false, guidance: "This file is attached, but a PDF, SVG, PNG, or JPG copy is needed for automatic tracing." };
+}
+
 export function buildPreviewSvg(trace) {
   if (!trace?.paths?.length) return "";
   const pathMarkup = trace.paths.map((path) => {
