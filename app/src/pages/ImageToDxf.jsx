@@ -89,6 +89,59 @@ const MATERIAL_PRESETS = {
   Custom: { kerf: 0, bridge: 0.04 },
 };
 
+const CONSTRUCTION_MODES = [
+  { value: "single", label: "Single-Layer Cutout" },
+  { value: "two", label: "Two-Layer Sign" },
+  { value: "multi", label: "Multi-Layer Assembly" },
+];
+
+const PHYSICAL_LAYER_COLORS = ["#767f88", "#ef233c", "#f59f00"];
+
+function subsetTraceByLayer(trace, pathRoles, physicalLayers, layerIndex, bridges) {
+  const keptIndexes = trace.paths.map((_, index) => index).filter((index) => physicalLayers[index] === layerIndex);
+  const indexMap = new Map(keptIndexes.map((original, next) => [original, next]));
+  return {
+    trace: { ...trace, paths: keptIndexes.map((index) => trace.paths[index]) },
+    pathRoles: keptIndexes.map((index) => pathRoles[index]),
+    bridges: bridges.filter((bridge) => indexMap.has(bridge.pathIndex)).map((bridge) => ({ ...bridge, pathIndex: indexMap.get(bridge.pathIndex) })),
+  };
+}
+
+function buildBackerSvg(width, height, style = "rounded", holes = []) {
+  const radius = style === "rounded" ? Math.min(width, height) * 0.035 : 0;
+  const holeMarkup = holes.map((hole) => `<circle cx="${hole.xInches.toFixed(6)}" cy="${hole.yInches.toFixed(6)}" r="${(hole.diameterInches / 2).toFixed(6)}" />`).join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${width.toFixed(6)}in" height="${height.toFixed(6)}in" viewBox="0 0 ${width.toFixed(6)} ${height.toFixed(6)}"><g id="BACKER_CUT_FIRST_BLACK" fill="none" stroke="#000000" stroke-width="0.001">${holeMarkup}</g><g id="BACKER_CUT_LAST_RED" fill="none" stroke="#ff0000" stroke-width="0.001"><rect x="0.01" y="0.01" width="${Math.max(0.01, width - 0.02).toFixed(6)}" height="${Math.max(0.01, height - 0.02).toFixed(6)}" rx="${radius.toFixed(6)}" /></g></svg>`;
+}
+
+function buildBackerTrace(width, height, style = "rounded", holes = []) {
+  const radius = style === "rounded" ? Math.min(width, height) * 0.035 : 0;
+  const steps = radius ? 8 : 1;
+  const points = [];
+  const corners = [
+    { cx: width - radius, cy: radius, start: -Math.PI / 2 },
+    { cx: width - radius, cy: height - radius, start: 0 },
+    { cx: radius, cy: height - radius, start: Math.PI / 2 },
+    { cx: radius, cy: radius, start: Math.PI },
+  ];
+  if (!radius) {
+    points.push({ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height });
+  } else {
+    corners.forEach((corner) => {
+      for (let step = 0; step <= steps; step += 1) {
+        const angle = corner.start + (Math.PI / 2) * (step / steps);
+        points.push({ x: corner.cx + Math.cos(angle) * radius, y: corner.cy + Math.sin(angle) * radius });
+      }
+    });
+  }
+  const holePaths = holes.map((hole) => ({
+    points: Array.from({ length: 24 }, (_, index) => {
+      const angle = Math.PI * 2 * index / 24;
+      return { x: hole.xInches + Math.cos(angle) * hole.diameterInches / 2, y: hole.yInches + Math.sin(angle) * hole.diameterInches / 2 };
+    }),
+  }));
+  return { sourceWidth: width, sourceHeight: height, paths: [...holePaths, { points }] };
+}
+
 function safeBaseName(name = "metal-worx-cut-file") {
   return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "metal-worx-cut-file";
 }
@@ -166,6 +219,14 @@ function ImageToDxf() {
   const [approvalRequired, setApprovalRequired] = useState(false);
   const [customerApproved, setCustomerApproved] = useState(false);
   const [approvedBy, setApprovedBy] = useState("");
+  const [constructionMode, setConstructionMode] = useState("single");
+  const [physicalLayers, setPhysicalLayers] = useState([]);
+  const [activePhysicalLayer, setActivePhysicalLayer] = useState(1);
+  const [backerStyle, setBackerStyle] = useState("rounded");
+  const [attachmentMethod, setAttachmentMethod] = useState("plug-weld");
+  const [weldPoints, setWeldPoints] = useState([]);
+  const [assemblyPointType, setAssemblyPointType] = useState("weld");
+  const [registrationHoleDiameter, setRegistrationHoleDiameter] = useState(0.25);
 
   const fileSupport = useMemo(() => getArtworkFileSupport(file || {}), [file]);
 
@@ -213,6 +274,8 @@ function ImageToDxf() {
     setTrace(null);
     setPathRoles([]);
     setBridges([]);
+    setPhysicalLayers([]);
+    setWeldPoints([]);
     setUndoStack([]);
     setRedoStack([]);
     setSelectedNode(null);
@@ -300,13 +363,37 @@ function ImageToDxf() {
     { label: "Production node count under 2,000", pass: Boolean(trace) && countTraceNodes(trace) <= 2000 },
     { label: "Retained interior pieces connected", pass: Boolean(trace) && unbridgedInteriorPaths.length === 0 },
     { label: "No critical preflight errors", pass: inspection?.status !== "unsafe" },
+    ...(constructionMode === "single" ? [] : [
+      { label: "Face-layer paths assigned", pass: physicalLayers.some((layer) => layer === 1) },
+      { label: attachmentMethod === "plug-weld" ? "Weld locations marked" : "Attachment method selected", pass: attachmentMethod !== "plug-weld" || weldPoints.some((point) => (point.type || "weld") === "weld") },
+    ]),
     { label: approvalRequired ? "Customer approval recorded" : "Customer approval not required", pass: !approvalRequired || customerApproved },
-  ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection, approvalRequired, customerApproved]);
+  ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection, constructionMode, physicalLayers, attachmentMethod, weldPoints, approvalRequired, customerApproved]);
   const canApproveForLaser = laserApprovalChecks.every((check) => check.pass);
+
+  const physicalLayerCounts = useMemo(() => physicalLayers.reduce((counts, layer) => {
+    counts[layer] = (counts[layer] || 0) + 1;
+    return counts;
+  }, {}), [physicalLayers]);
+
+  useEffect(() => {
+    if (!trace) return;
+    setPhysicalLayers((current) => trace.paths.map((_, index) => {
+      if (constructionMode === "single") return 0;
+      const existing = current[index];
+      if (constructionMode === "two") return 1;
+      return existing === 2 ? 2 : 1;
+    }));
+    if (constructionMode === "single") {
+      setWeldPoints([]);
+      setEditMode((current) => current === "layer" || current === "weld" ? "role" : current);
+    }
+    setActivePhysicalLayer((current) => constructionMode === "multi" ? Math.min(2, Math.max(1, current)) : 1);
+  }, [constructionMode, trace]);
 
   useEffect(() => {
     setProductionApproved(false);
-  }, [trace, pathRoles, bridges, width, height, bridgeWidth, curveTension, cornerAngle, kerfCompensation, material, materialThickness, revision, customerApproved, approvedBy]);
+  }, [trace, pathRoles, bridges, width, height, bridgeWidth, curveTension, cornerAngle, kerfCompensation, material, materialThickness, revision, customerApproved, approvedBy, constructionMode, physicalLayers, backerStyle, attachmentMethod, weldPoints, registrationHoleDiameter]);
 
   function applyTracePreset(value) {
     const preset = TRACE_PRESETS[value];
@@ -364,6 +451,8 @@ function ImageToDxf() {
       setNodeReductionResult(reductionResult);
       setTrace(cleanedTrace);
       setPathRoles(assignAutomaticCutOrder(cleanedTrace));
+      setPhysicalLayers(cleanedTrace.paths.map(() => constructionMode === "single" ? 0 : 1));
+      setWeldPoints([]);
       setBridges([]);
       setUndoStack([]);
       setRedoStack([]);
@@ -403,6 +492,15 @@ function ImageToDxf() {
 
   function handlePathClick(event, pathIndex) {
     event.stopPropagation();
+    if (editMode === "layer") {
+      setPhysicalLayers((current) => current.map((layer, index) => index === pathIndex ? activePhysicalLayer : layer));
+      return;
+    }
+    if (editMode === "weld") {
+      const location = svgLocation(event);
+      if (location) setWeldPoints((current) => [...current, { x: location.x, y: location.y, layer: physicalLayers[pathIndex] || 1, type: assemblyPointType }]);
+      return;
+    }
     if (editMode === "role") {
       markPath(pathIndex);
       return;
@@ -485,6 +583,70 @@ function ImageToDxf() {
     const zip = new JSZip();
     zip.file(`${baseName}.dxf`, physicalSize.dxf);
     zip.file(`${baseName}.svg`, svgExport.svg);
+    const scaledWeldPoints = weldPoints.map((point, index) => ({
+      number: index + 1,
+      type: point.type || "weld",
+      layer: point.layer + 1,
+      xInches: Number((point.x / trace.sourceWidth * physicalSize.width).toFixed(4)),
+      yInches: Number((point.y / trace.sourceHeight * physicalSize.height).toFixed(4)),
+      diameterInches: point.type === "registration-hole" ? registrationHoleDiameter : null,
+    }));
+    const registrationHoles = scaledWeldPoints.filter((point) => point.type === "registration-hole");
+    const layerManifest = [];
+    if (constructionMode !== "single") {
+      const backerTrace = buildBackerTrace(physicalSize.width, physicalSize.height, backerStyle, registrationHoles);
+      const backerDxf = buildDxf(backerTrace, {
+        widthInches: physicalSize.width,
+        heightInches: physicalSize.height,
+        keepAspect: false,
+        layerName: "LAYER-1-BACKER",
+        pathRoles: [...registrationHoles.map(() => "intact"), "cut"],
+        bridges: [],
+        bridgeWidthInches: bridgeWidth,
+      });
+      zip.file("LAYERS/LAYER-1-BACKER.svg", buildBackerSvg(physicalSize.width, physicalSize.height, backerStyle, registrationHoles));
+      zip.file("LAYERS/LAYER-1-BACKER.dxf", backerDxf.dxf);
+      layerManifest.push({ layer: 1, name: "Backer", generated: true, pathCount: 1 + registrationHoles.length, registrationHoleCount: registrationHoles.length });
+
+      const lastLayer = constructionMode === "multi" ? 2 : 1;
+      for (let layerIndex = 1; layerIndex <= lastLayer; layerIndex += 1) {
+        const subset = subsetTraceByLayer(productionTrace, pathRoles, physicalLayers, layerIndex, bridges);
+        if (!subset.trace.paths.length) continue;
+        const number = layerIndex + 1;
+        const name = layerIndex === 1 ? "FACE" : "ACCENT";
+        const layerSvg = buildCorelSvg(subset.trace, {
+          widthInches: width,
+          heightInches: height,
+          keepAspect: lockRatio,
+          pathRoles: subset.pathRoles,
+          bridges: subset.bridges,
+          bridgeWidthInches: bridgeWidth,
+          title: `${file?.name || "Artwork"} — Layer ${number} ${name}`,
+          curveTension,
+          cornerAngleDegrees: cornerAngle,
+        });
+        const layerDxf = buildDxf(subset.trace, {
+          widthInches: width,
+          heightInches: height,
+          keepAspect: lockRatio,
+          layerName: `LAYER-${number}-${name}`,
+          pathRoles: subset.pathRoles,
+          bridges: subset.bridges,
+          bridgeWidthInches: bridgeWidth,
+        });
+        zip.file(`LAYERS/LAYER-${number}-${name}.svg`, layerSvg.svg);
+        zip.file(`LAYERS/LAYER-${number}-${name}.dxf`, layerDxf.dxf);
+        layerManifest.push({ layer: number, name, generated: false, pathCount: subset.trace.paths.length });
+      }
+    }
+    zip.file("ASSEMBLY-PLAN.json", JSON.stringify({
+      constructionMode,
+      attachmentMethod,
+      backerStyle: constructionMode === "single" ? null : backerStyle,
+      layers: constructionMode === "single" ? [{ layer: 1, name: "Single cut piece", pathCount: trace.paths.length }] : layerManifest,
+      weldOrRegistrationPoints: scaledWeldPoints,
+      note: "Confirm face orientation, material, offsets, and attachment locations before cutting or welding.",
+    }, null, 2));
     zip.file("PRODUCTION-INSPECTION.json", JSON.stringify({
       sourceFile: file?.name || "Untitled artwork",
       generatedAt: new Date().toISOString(),
@@ -495,6 +657,7 @@ function ImageToDxf() {
       revision,
       material: { name: material, thicknessInches: materialThickness, kerfInches: kerfCompensation },
       approval: { required: approvalRequired, customerApproved, approvedBy: approvedBy || null },
+      construction: { mode: constructionMode, attachmentMethod, backerStyle: constructionMode === "single" ? null : backerStyle, layers: layerManifest, weldOrRegistrationPoints: scaledWeldPoints },
       layerWorkflow: {
         blue: "Score or mark only",
         black: "Interior cut first; add bridges to retained pieces",
@@ -514,6 +677,13 @@ function ImageToDxf() {
       `Material: ${material}, ${materialThickness.toFixed(3)} inch`,
       `Kerf compensation: ${kerfCompensation.toFixed(4)} inch`,
       `Customer approval: ${approvalRequired ? (customerApproved ? `YES${approvedBy ? ` — ${approvedBy}` : ""}` : "REQUIRED — NOT RECORDED") : "NOT REQUIRED"}`,
+      `Construction: ${CONSTRUCTION_MODES.find((mode) => mode.value === constructionMode)?.label}`,
+      `Attachment: ${attachmentMethod}`,
+      ...(constructionMode === "single" ? [] : [
+        `Backer: ${backerStyle}`,
+        `Assembly points: ${scaledWeldPoints.length}`,
+        "Separate cut files are inside the LAYERS folder.",
+      ]),
       "",
       "BLUE = score/mark only",
       "BLACK = interior cut first",
@@ -608,6 +778,7 @@ function ImageToDxf() {
     rememberGeometry();
     setTrace((current) => ({ ...current, paths: current.paths.filter((_, index) => index !== removedIndex) }));
     setPathRoles((current) => current.filter((_, index) => index !== removedIndex));
+    setPhysicalLayers((current) => current.filter((_, index) => index !== removedIndex));
     setBridges((current) => current.filter((bridge) => bridge.pathIndex !== removedIndex).map((bridge) => ({ ...bridge, pathIndex: bridge.pathIndex > removedIndex ? bridge.pathIndex - 1 : bridge.pathIndex })));
     setSelectedNode(null);
   }
@@ -682,6 +853,13 @@ function ImageToDxf() {
     setDraggingNode(null);
   }
 
+  function addWeldPoint(event) {
+    if (editMode !== "weld" || !trace) return;
+    const location = svgLocation(event);
+    if (!location) return;
+    setWeldPoints((current) => [...current, { x: location.x, y: location.y, layer: activePhysicalLayer, type: assemblyPointType }]);
+  }
+
   return (
     <div style={{ padding: "22px", maxWidth: 1500, margin: "0 auto" }}>
       <style>{styles}</style>
@@ -707,6 +885,17 @@ function ImageToDxf() {
 
       <div className="mw-dxf-grid">
         <Stack gap="md">
+          <Paper withBorder p="md" radius="md">
+            <Stack gap="md">
+              <div><Text fw={900}>Choose how this sign is built</Text><Text size="sm" c="dimmed">This controls the cut files and assembly plan in the production package.</Text></div>
+              <SegmentedControl fullWidth value={constructionMode} onChange={setConstructionMode} data={CONSTRUCTION_MODES} />
+              {constructionMode === "single" ? <Alert color="gray" variant="light">One metal piece with cutouts, scoring, and bridges as needed.</Alert> : <>
+                <Select label="Backer shape" value={backerStyle} onChange={(value) => setBackerStyle(value || "rounded")} data={[{ value: "rounded", label: "Rounded rectangle" }, { value: "rectangle", label: "Square-corner rectangle" }]} />
+                <Select label="How the layers attach" value={attachmentMethod} onChange={(value) => setAttachmentMethod(value || "plug-weld")} data={[{ value: "plug-weld", label: "Plug weld / weld points" }, { value: "studs", label: "Studs / standoffs" }, { value: "adhesive", label: "Industrial adhesive" }, { value: "decide-later", label: "Decide during fabrication" }]} />
+                <Alert color="red" variant="light">Layer 1 is the generated backer. Assign the traced artwork to the face and optional accent layers in the preview.</Alert>
+              </>}
+            </Stack>
+          </Paper>
           <Paper withBorder p="md" radius="md">
             <Stack gap="md">
               <div>
@@ -791,10 +980,27 @@ function ImageToDxf() {
               data={[
                 { label: "Assign Path Color", value: "role" },
                 { label: "Add Yellow Bridge", value: "bridge" },
+                ...(constructionMode !== "single" ? [{ label: "Assign Build Layer", value: "layer" }, { label: "Add Weld / Register", value: "weld" }] : []),
                 { label: "Edit Nodes", value: "node" },
               ]}
-              color={editMode === "bridge" ? "yellow" : editMode === "node" ? "blue" : "red"}
+              color={editMode === "bridge" ? "yellow" : editMode === "node" ? "blue" : editMode === "layer" ? "orange" : editMode === "weld" ? "grape" : "red"}
             />
+            {constructionMode !== "single" && (editMode === "layer" || editMode === "weld") && <Paper p="sm" withBorder radius="md">
+              <Stack gap="xs">
+                <Group justify="space-between"><Text fw={900} size="sm">Physical Build Layers</Text><Group gap={5}><Badge color="gray">Backer generated</Badge><Badge color="red">Face {physicalLayerCounts[1] || 0}</Badge>{constructionMode === "multi" && <Badge color="orange">Accent {physicalLayerCounts[2] || 0}</Badge>}</Group></Group>
+                <SegmentedControl
+                  fullWidth
+                  value={String(activePhysicalLayer)}
+                  onChange={(value) => setActivePhysicalLayer(Number(value))}
+                  data={constructionMode === "multi" ? [{ value: "1", label: "Layer 2 — Face" }, { value: "2", label: "Layer 3 — Accent" }] : [{ value: "1", label: "Layer 2 — Face" }]}
+                />
+                {editMode === "weld" && <>
+                  <SegmentedControl fullWidth value={assemblyPointType} onChange={setAssemblyPointType} data={[{ value: "weld", label: "Weld Location" }, { value: "registration-hole", label: "Backer Registration Hole" }]} />
+                  {assemblyPointType === "registration-hole" && <NumberInput label="Registration hole diameter (in)" value={registrationHoleDiameter} onChange={(value) => setRegistrationHoleDiameter(Math.max(0.03, Number(value) || 0.25))} min={0.03} max={2} step={0.01} decimalScale={3} />}
+                </>}
+                <Text size="xs" c="dimmed">{editMode === "layer" ? "Click each contour to place it on the selected physical layer." : "Click anywhere on the design to add an attachment or registration location. Click a marker to remove it."}</Text>
+              </Stack>
+            </Paper>}
             <SegmentedControl
               fullWidth
               value={markingMode}
@@ -863,7 +1069,8 @@ function ImageToDxf() {
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
           <div className="mw-dxf-preview" style={{ overflow: previewZoom > 100 ? "auto" : "hidden" }}>
             {trace && showOriginal && sourceUrl && <img src={sourceUrl} alt="Original artwork comparison" style={{ position: "absolute", inset: 24, width: "calc(100% - 48px)", height: "calc(100% - 48px)", objectFit: "contain", opacity: 0.28, pointerEvents: "none" }} />}
-            {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: `${previewZoom}%`, height: `${previewZoom}%`, minWidth: `${previewZoom}%`, minHeight: `${previewZoom}%`, maxHeight: previewZoom === 100 ? 620 : "none", touchAction: "none" }} aria-label="Interactive DXF path and node editor">
+            {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onClick={addWeldPoint} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: `${previewZoom}%`, height: `${previewZoom}%`, minWidth: `${previewZoom}%`, minHeight: `${previewZoom}%`, maxHeight: previewZoom === 100 ? 620 : "none", touchAction: "none" }} aria-label="Interactive DXF path and node editor">
+              {constructionMode !== "single" && <rect x="1" y="1" width={Math.max(1, trace.sourceWidth - 2)} height={Math.max(1, trace.sourceHeight - 2)} rx={backerStyle === "rounded" ? Math.min(trace.sourceWidth, trace.sourceHeight) * 0.035 : 0} fill="#d9dde1" stroke={PHYSICAL_LAYER_COLORS[0]} strokeWidth="2" strokeDasharray="8 6" opacity="0.38" />}
               {trace.paths.map((path, pathIndex) => {
                 const smoothPath = buildSmoothPathData(path.points, { tension: curveTension, cornerAngleDegrees: cornerAngle });
                 const role = pathRoles[pathIndex];
@@ -875,6 +1082,7 @@ function ImageToDxf() {
                 if (!visible) return null;
                 return <g key={pathIndex} onClick={(event) => handlePathClick(event, pathIndex)} style={{ cursor: editMode === "bridge" ? "crosshair" : "pointer" }}>
                   <path d={smoothPath} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
+                  {constructionMode !== "single" && <path d={smoothPath} fill="none" stroke={PHYSICAL_LAYER_COLORS[physicalLayers[pathIndex] || 1]} strokeWidth="7" opacity="0.3" vectorEffect="non-scaling-stroke" />}
                   <path d={smoothPath} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
                   {unbridgedPathSet.has(pathIndex) && <path d={smoothPath} fill="none" stroke="#ff9f1c" strokeWidth="5" strokeDasharray="8 6" opacity="0.72" vectorEffect="non-scaling-stroke" />}
                   {showNodes && path.points.map((point, nodeIndex) => {
@@ -894,6 +1102,11 @@ function ImageToDxf() {
                   <line x1={point.x - 4} y1={point.y} x2={point.x + 4} y2={point.y} stroke="#5f4500" strokeWidth="2" vectorEffect="non-scaling-stroke" />
                 </g>;
               })}
+              {weldPoints.map((point, pointIndex) => <g key={`weld-${pointIndex}`} onClick={(event) => { event.stopPropagation(); setWeldPoints((current) => current.filter((_, index) => index !== pointIndex)); }} style={{ cursor: "pointer" }}>
+                <circle cx={point.x} cy={point.y} r="9" fill="#fff" stroke={(point.type || "weld") === "weld" ? "#9c36b5" : "#0c8599"} strokeWidth="3" vectorEffect="non-scaling-stroke" />
+                <line x1={point.x - 5} y1={point.y} x2={point.x + 5} y2={point.y} stroke={(point.type || "weld") === "weld" ? "#9c36b5" : "#0c8599"} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                <line x1={point.x} y1={point.y - 5} x2={point.x} y2={point.y + 5} stroke={(point.type || "weld") === "weld" ? "#9c36b5" : "#0c8599"} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              </g>)}
             </svg> : sourceUrl ? <><img src={sourceUrl} alt="Uploaded artwork" style={{ opacity: 0.55 }} /><Text pos="absolute" bottom={16} c="dark" fw={900}>Click Create Cut-Line Preview</Text></> : <div className="mw-dxf-empty"><IconPhoto size={58} stroke={1.4} /><Title order={3}>Your cut paths will appear here</Title><Text size="sm">Upload an image, adjust the cleanup controls, and create a preview before downloading the DXF.</Text></div>}
           </div>
           {inspection && <Paper mt="md" p="md" withBorder radius="md">
