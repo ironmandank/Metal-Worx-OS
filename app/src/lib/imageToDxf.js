@@ -41,6 +41,9 @@ export function cleanTracePaths(trace, options = {}) {
     ? width / (trace.sourceWidth / trace.sourceHeight)
     : Math.max(0.01, Number(options.heightInches) || 1);
   const toleranceInches = Math.max(0.0001, Number(options.toleranceInches) || 0.01);
+  const minimumFeatureInches = Math.max(0, Number(options.minimumFeatureInches) || 0);
+  const scaleX = width / trace.sourceWidth;
+  const scaleY = height / trace.sourceHeight;
   const tolerance = toleranceInches / ((width / trace.sourceWidth + height / trace.sourceHeight) / 2);
   const paths = trace.paths.map((path) => {
     const points = normalizedClosedPoints(path.points).filter((point, index, source) => (
@@ -53,7 +56,15 @@ export function cleanTracePaths(trace, options = {}) {
     const rotated = [...points.slice(anchorIndex), ...points.slice(0, anchorIndex), points[anchorIndex]];
     const simplified = simplifyOpenPoints(rotated, tolerance);
     return { ...path, points: simplified.slice(0, -1) };
-  }).filter((path) => path.points.length >= 3);
+  }).filter((path) => {
+    if (path.points.length < 3) return false;
+    if (!minimumFeatureInches) return true;
+    const xs = path.points.map((point) => point.x);
+    const ys = path.points.map((point) => point.y);
+    const physicalWidth = (Math.max(...xs) - Math.min(...xs)) * scaleX;
+    const physicalHeight = (Math.max(...ys) - Math.min(...ys)) * scaleY;
+    return Math.max(physicalWidth, physicalHeight) >= minimumFeatureInches;
+  });
   return { ...trace, paths };
 }
 
@@ -61,15 +72,57 @@ export function countTraceNodes(trace) {
   return (trace?.paths || []).reduce((total, path) => total + (path.points?.length || 0), 0);
 }
 
+export function smoothTracePaths(trace, options = {}) {
+  const width = Math.max(0.01, Number(options.widthInches) || 1);
+  const height = options.keepAspect !== false
+    ? width / (trace.sourceWidth / trace.sourceHeight)
+    : Math.max(0.01, Number(options.heightInches) || 1);
+  const scaleX = width / trace.sourceWidth;
+  const scaleY = height / trace.sourceHeight;
+  const passes = Math.max(0, Math.min(5, Number(options.passes) || 0));
+  const strength = clamp(Number(options.strength) || 0.28, 0.05, 0.48);
+  const cornerAngle = Math.max(20, Number(options.cornerAngleDegrees) || 58) * Math.PI / 180;
+  const cornerEdgeInches = Math.max(0.01, Number(options.cornerEdgeInches) || 0.07);
+
+  let paths = trace.paths.map((path) => ({ ...path, points: normalizedClosedPoints(path.points) }));
+  for (let pass = 0; pass < passes; pass += 1) {
+    paths = paths.map((path) => {
+      if (path.points.length < 5) return path;
+      const points = path.points.map((point, index, source) => {
+        const previous = source[(index - 1 + source.length) % source.length];
+        const next = source[(index + 1) % source.length];
+        const incoming = { x: (point.x - previous.x) * scaleX, y: (point.y - previous.y) * scaleY };
+        const outgoing = { x: (next.x - point.x) * scaleX, y: (next.y - point.y) * scaleY };
+        const incomingLength = Math.hypot(incoming.x, incoming.y);
+        const outgoingLength = Math.hypot(outgoing.x, outgoing.y);
+        const cosine = incomingLength && outgoingLength
+          ? clamp((incoming.x * outgoing.x + incoming.y * outgoing.y) / (incomingLength * outgoingLength), -1, 1)
+          : 1;
+        const turnAngle = Math.acos(cosine);
+        const isIntentionalCorner = turnAngle >= cornerAngle
+          && Math.min(incomingLength, outgoingLength) >= cornerEdgeInches;
+        if (isIntentionalCorner) return point;
+        return {
+          x: point.x * (1 - strength) + ((previous.x + next.x) / 2) * strength,
+          y: point.y * (1 - strength) + ((previous.y + next.y) / 2) * strength,
+        };
+      });
+      return { ...path, points };
+    });
+  }
+  return { ...trace, paths };
+}
+
 export function reduceTraceToNodeBudget(trace, options = {}) {
   const targetNodes = Math.max(100, Number(options.targetNodes) || 1200);
   const maxToleranceInches = Math.max(0.01, Number(options.maxToleranceInches) || 0.08);
   let toleranceInches = Math.max(0.001, Number(options.toleranceInches) || 0.02);
-  let reduced = cleanTracePaths(trace, { ...options, toleranceInches });
+  const smoothed = smoothTracePaths(trace, options);
+  let reduced = cleanTracePaths(smoothed, { ...options, toleranceInches });
 
   while (countTraceNodes(reduced) > targetNodes && toleranceInches < maxToleranceInches) {
     toleranceInches = Math.min(maxToleranceInches, toleranceInches * 1.35);
-    reduced = cleanTracePaths(trace, { ...options, toleranceInches });
+    reduced = cleanTracePaths(smoothed, { ...options, toleranceInches });
   }
 
   return {

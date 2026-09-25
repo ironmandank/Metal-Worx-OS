@@ -13,6 +13,7 @@ import {
   inspectLaserFile,
   prepareBinaryImageData,
   reduceTraceToNodeBudget,
+  smoothTracePaths,
 } from "./imageToDxf";
 
 describe("image to DXF helpers", () => {
@@ -127,6 +128,20 @@ describe("image to DXF helpers", () => {
     expect(result.originalNodeCount).toBe(360);
     expect(result.nodeCount).toBeLessThan(100);
     expect(countTraceNodes(result.trace)).toBe(result.nodeCount);
+  });
+
+  it("smooths short stair steps while preserving a long intentional corner", () => {
+    const trace = {
+      sourceWidth: 100,
+      sourceHeight: 100,
+      paths: [{ points: [
+        { x: 0, y: 0 }, { x: 20, y: 0 }, { x: 21, y: 1 }, { x: 22, y: 0 },
+        { x: 40, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 40 },
+      ] }],
+    };
+    const result = smoothTracePaths(trace, { widthInches: 10, passes: 2, strength: 0.3, cornerEdgeInches: 0.5 });
+    expect(result.paths[0].points[2].y).toBeLessThan(1);
+    expect(result.paths[0].points[4]).toEqual({ x: 40, y: 0 });
   });
 
   it("reports readiness, nodes, and very small red pieces", () => {

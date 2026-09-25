@@ -298,9 +298,9 @@ function ImageToDxf() {
         throw new Error("No cut lines were detected. Try moving the Detail Threshold or turning on Reverse Black / White.");
       }
       const reductionSettings = {
-        fine: { toleranceInches: 0.01, targetNodes: 2200, maxToleranceInches: 0.035 },
-        production: { toleranceInches: 0.025, targetNodes: 1200, maxToleranceInches: 0.08 },
-        aggressive: { toleranceInches: 0.05, targetNodes: 700, maxToleranceInches: 0.12 },
+        fine: { toleranceInches: 0.008, targetNodes: 2400, maxToleranceInches: 0.025, passes: 1, strength: 0.18, minimumFeatureInches: 0.01 },
+        production: { toleranceInches: 0.015, targetNodes: 1600, maxToleranceInches: 0.05, passes: 2, strength: 0.28, minimumFeatureInches: 0.025 },
+        aggressive: { toleranceInches: 0.025, targetNodes: 1000, maxToleranceInches: 0.08, passes: 3, strength: 0.34, minimumFeatureInches: 0.04 },
       }[nodeReduction];
       const reductionResult = reduceTraceToNodeBudget(nextTrace, {
         widthInches: width,
@@ -372,9 +372,9 @@ function ImageToDxf() {
   function cleanAllPaths() {
     rememberGeometry();
     const reductionSettings = {
-      fine: { toleranceInches: 0.01, targetNodes: 2200, maxToleranceInches: 0.035 },
-      production: { toleranceInches: 0.025, targetNodes: 1200, maxToleranceInches: 0.08 },
-      aggressive: { toleranceInches: 0.05, targetNodes: 700, maxToleranceInches: 0.12 },
+      fine: { toleranceInches: 0.008, targetNodes: 2400, maxToleranceInches: 0.025, passes: 1, strength: 0.18, minimumFeatureInches: 0.01 },
+      production: { toleranceInches: 0.015, targetNodes: 1600, maxToleranceInches: 0.05, passes: 2, strength: 0.28, minimumFeatureInches: 0.025 },
+      aggressive: { toleranceInches: 0.025, targetNodes: 1000, maxToleranceInches: 0.08, passes: 3, strength: 0.34, minimumFeatureInches: 0.04 },
     }[nodeReduction];
     const result = reduceTraceToNodeBudget(trace, { widthInches: width, heightInches: height, keepAspect: lockRatio, ...reductionSettings });
     setTrace(result.trace);
@@ -660,10 +660,10 @@ function ImageToDxf() {
               <div>
                 <Text size="sm" fw={700} mb={6}>Production Node Reduction</Text>
                 <SegmentedControl fullWidth value={nodeReduction} onChange={setNodeReduction} data={[{ label: "Fine", value: "fine" }, { label: "Production", value: "production" }, { label: "Aggressive", value: "aggressive" }]} />
-                <Text size="xs" c="dimmed" mt={5}>Production targets about 1,200 nodes. Use Aggressive for photographs or heavily textured logos, then visually inspect the curves.</Text>
+                <Text size="xs" c="dimmed" mt={5}>Production smooths pixel stair-steps first, then targets about 1,600 nodes. Genuine long corners are protected.</Text>
               </div>
               <Button onClick={convertImage} disabled={!file || !sourceUrl || !fileSupport.canTrace} loading={working} leftSection={<IconRefresh size={18} />} color="red">Create Cut-Line Preview</Button>
-              {nodeReductionResult && <Alert color={nodeReductionResult.nodeCount <= 1200 ? "green" : nodeReductionResult.nodeCount <= 2000 ? "yellow" : "red"} variant="light">
+              {nodeReductionResult && <Alert color={nodeReductionResult.nodeCount <= 1600 ? "green" : nodeReductionResult.nodeCount <= 2000 ? "yellow" : "red"} variant="light">
                 Node cleanup reduced {nodeReductionResult.originalNodeCount.toLocaleString()} nodes to {nodeReductionResult.nodeCount.toLocaleString()} using a {nodeReductionResult.toleranceInches.toFixed(3)}-inch tolerance.
               </Alert>}
               {file && !fileSupport.canTrace && <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />}>{fileSupport.guidance}</Alert>}
