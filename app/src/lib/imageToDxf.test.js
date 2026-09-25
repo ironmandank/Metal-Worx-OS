@@ -7,10 +7,12 @@ import {
   buildCorelSvg,
   buildDxf,
   cleanTracePaths,
+  countTraceNodes,
   findUnbridgedInteriorPaths,
   getArtworkFileSupport,
   inspectLaserFile,
   prepareBinaryImageData,
+  reduceTraceToNodeBudget,
 } from "./imageToDxf";
 
 describe("image to DXF helpers", () => {
@@ -109,6 +111,22 @@ describe("image to DXF helpers", () => {
     }, { widthInches: 10, toleranceInches: 0.05 });
     expect(cleaned.paths[0].points.length).toBeLessThan(5);
     expect(cleaned.paths[0].points.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("reduces dense production paths toward a node budget", () => {
+    const points = Array.from({ length: 360 }, (_, index) => {
+      const angle = index / 360 * Math.PI * 2;
+      return { x: 50 + Math.cos(angle) * 40, y: 50 + Math.sin(angle) * 40 };
+    });
+    const result = reduceTraceToNodeBudget({ sourceWidth: 100, sourceHeight: 100, paths: [{ points }] }, {
+      widthInches: 10,
+      targetNodes: 80,
+      toleranceInches: 0.01,
+      maxToleranceInches: 0.1,
+    });
+    expect(result.originalNodeCount).toBe(360);
+    expect(result.nodeCount).toBeLessThan(100);
+    expect(countTraceNodes(result.trace)).toBe(result.nodeCount);
   });
 
   it("reports readiness, nodes, and very small red pieces", () => {

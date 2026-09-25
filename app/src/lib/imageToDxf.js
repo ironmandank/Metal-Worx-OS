@@ -57,6 +57,30 @@ export function cleanTracePaths(trace, options = {}) {
   return { ...trace, paths };
 }
 
+export function countTraceNodes(trace) {
+  return (trace?.paths || []).reduce((total, path) => total + (path.points?.length || 0), 0);
+}
+
+export function reduceTraceToNodeBudget(trace, options = {}) {
+  const targetNodes = Math.max(100, Number(options.targetNodes) || 1200);
+  const maxToleranceInches = Math.max(0.01, Number(options.maxToleranceInches) || 0.08);
+  let toleranceInches = Math.max(0.001, Number(options.toleranceInches) || 0.02);
+  let reduced = cleanTracePaths(trace, { ...options, toleranceInches });
+
+  while (countTraceNodes(reduced) > targetNodes && toleranceInches < maxToleranceInches) {
+    toleranceInches = Math.min(maxToleranceInches, toleranceInches * 1.35);
+    reduced = cleanTracePaths(trace, { ...options, toleranceInches });
+  }
+
+  return {
+    trace: reduced,
+    originalNodeCount: countTraceNodes(trace),
+    nodeCount: countTraceNodes(reduced),
+    toleranceInches,
+    targetNodes,
+  };
+}
+
 function polygonArea(points) {
   return points.reduce((total, point, index) => {
     const next = points[(index + 1) % points.length];
@@ -510,7 +534,8 @@ export function inspectLaserFile(trace, options = {}) {
   if (duplicatePaths) issues.push(`${duplicatePaths} possible duplicate path${duplicatePaths === 1 ? "" : "s"} could cut twice.`);
   if (repeatedNodes) issues.push(`${repeatedNodes} repeated node${repeatedNodes === 1 ? "" : "s"} should be reviewed.`);
   if (smallPieces) issues.push(`${smallPieces} red second-pass path${smallPieces === 1 ? " is" : "s are"} smaller than 0.08 inch.`);
-  if (nodeCount > 5000) issues.push(`High node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting.`);
+  if (nodeCount > 2000) issues.push(`Excessive node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting. Use stronger node reduction.`);
+  else if (nodeCount > 1200) issues.push(`Detailed node count (${nodeCount.toLocaleString()}) should be reviewed before cutting.`);
   if (!roles.includes("cut")) issues.push("No red second-pass paths are selected.");
   const bridgedPathCount = new Set(bridges.map((bridge) => bridge.pathIndex)).size;
   const unbridgedInteriorPaths = findUnbridgedInteriorPaths(trace, { pathRoles: roles, bridges });

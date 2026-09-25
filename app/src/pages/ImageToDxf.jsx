@@ -39,7 +39,7 @@ import {
   buildCutSequence,
   assignAutomaticCutOrder,
   analyzeSourceArtwork,
-  cleanTracePaths,
+  countTraceNodes,
   findUnbridgedInteriorPaths,
   getArtworkFileSupport,
   inspectLaserFile,
@@ -47,6 +47,7 @@ import {
   pathLabelPoint,
   pointOnClosedPath,
   prepareBinaryImageData,
+  reduceTraceToNodeBudget,
   traceImageData,
 } from "../lib/imageToDxf";
 
@@ -123,6 +124,8 @@ function ImageToDxf() {
   const [invert, setInvert] = useState(false);
   const [speckleSize, setSpeckleSize] = useState(8);
   const [smoothing, setSmoothing] = useState("balanced");
+  const [nodeReduction, setNodeReduction] = useState("production");
+  const [nodeReductionResult, setNodeReductionResult] = useState(null);
   const [width, setWidth] = useState(24);
   const [height, setHeight] = useState(24);
   const [lockRatio, setLockRatio] = useState(true);
@@ -184,6 +187,7 @@ function ImageToDxf() {
     setGeometryRedoStack([]);
     setError("");
     setSourceAnalysis(null);
+    setNodeReductionResult(null);
     setProductionApproved(false);
     return () => {
       disposed = true;
@@ -254,6 +258,7 @@ function ImageToDxf() {
     { label: "Vector paths created", pass: Boolean(trace?.paths?.length) },
     { label: "Finished size confirmed", pass: width > 0 && height > 0 },
     { label: "Outside cut path assigned", pass: pathRoles.includes("cut") },
+    { label: "Production node count under 2,000", pass: Boolean(trace) && countTraceNodes(trace) <= 2000 },
     { label: "Retained interior pieces connected", pass: Boolean(trace) && unbridgedInteriorPaths.length === 0 },
     { label: "No critical preflight errors", pass: inspection?.status !== "unsafe" },
   ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection]);
@@ -292,7 +297,19 @@ function ImageToDxf() {
       if (!nextTrace.paths.length) {
         throw new Error("No cut lines were detected. Try moving the Detail Threshold or turning on Reverse Black / White.");
       }
-      const cleanedTrace = cleanTracePaths(nextTrace, { widthInches: width, heightInches: height, keepAspect: lockRatio, toleranceInches: 0.01 });
+      const reductionSettings = {
+        fine: { toleranceInches: 0.01, targetNodes: 2200, maxToleranceInches: 0.035 },
+        production: { toleranceInches: 0.025, targetNodes: 1200, maxToleranceInches: 0.08 },
+        aggressive: { toleranceInches: 0.05, targetNodes: 700, maxToleranceInches: 0.12 },
+      }[nodeReduction];
+      const reductionResult = reduceTraceToNodeBudget(nextTrace, {
+        widthInches: width,
+        heightInches: height,
+        keepAspect: lockRatio,
+        ...reductionSettings,
+      });
+      const cleanedTrace = reductionResult.trace;
+      setNodeReductionResult(reductionResult);
       setTrace(cleanedTrace);
       setPathRoles(assignAutomaticCutOrder(cleanedTrace));
       setBridges([]);
@@ -354,7 +371,16 @@ function ImageToDxf() {
 
   function cleanAllPaths() {
     rememberGeometry();
-    setTrace((current) => cleanTracePaths(current, { widthInches: width, heightInches: height, keepAspect: lockRatio, toleranceInches: 0.01 }));
+    const reductionSettings = {
+      fine: { toleranceInches: 0.01, targetNodes: 2200, maxToleranceInches: 0.035 },
+      production: { toleranceInches: 0.025, targetNodes: 1200, maxToleranceInches: 0.08 },
+      aggressive: { toleranceInches: 0.05, targetNodes: 700, maxToleranceInches: 0.12 },
+    }[nodeReduction];
+    const result = reduceTraceToNodeBudget(trace, { widthInches: width, heightInches: height, keepAspect: lockRatio, ...reductionSettings });
+    setTrace(result.trace);
+    setPathRoles(assignAutomaticCutOrder(result.trace));
+    setBridges([]);
+    setNodeReductionResult(result);
     setSelectedNode(null);
   }
 
@@ -631,7 +657,15 @@ function ImageToDxf() {
               <Checkbox checked={invert} onChange={(event) => setInvert(event.currentTarget.checked)} label="Reverse black and white" />
               <div><Group justify="space-between"><Text size="sm" fw={700}>Remove Small Specks</Text><Text size="sm" c="dimmed">{speckleSize}px</Text></Group><Slider value={speckleSize} onChange={setSpeckleSize} min={0} max={40} color="red" /></div>
               <div><Text size="sm" fw={700} mb={6}>Line Style</Text><SegmentedControl fullWidth value={smoothing} onChange={setSmoothing} data={[{ label: "Sharp", value: "sharp" }, { label: "Balanced", value: "balanced" }, { label: "Smooth", value: "smooth" }]} /></div>
+              <div>
+                <Text size="sm" fw={700} mb={6}>Production Node Reduction</Text>
+                <SegmentedControl fullWidth value={nodeReduction} onChange={setNodeReduction} data={[{ label: "Fine", value: "fine" }, { label: "Production", value: "production" }, { label: "Aggressive", value: "aggressive" }]} />
+                <Text size="xs" c="dimmed" mt={5}>Production targets about 1,200 nodes. Use Aggressive for photographs or heavily textured logos, then visually inspect the curves.</Text>
+              </div>
               <Button onClick={convertImage} disabled={!file || !sourceUrl || !fileSupport.canTrace} loading={working} leftSection={<IconRefresh size={18} />} color="red">Create Cut-Line Preview</Button>
+              {nodeReductionResult && <Alert color={nodeReductionResult.nodeCount <= 1200 ? "green" : nodeReductionResult.nodeCount <= 2000 ? "yellow" : "red"} variant="light">
+                Node cleanup reduced {nodeReductionResult.originalNodeCount.toLocaleString()} nodes to {nodeReductionResult.nodeCount.toLocaleString()} using a {nodeReductionResult.toleranceInches.toFixed(3)}-inch tolerance.
+              </Alert>}
               {file && !fileSupport.canTrace && <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={18} />}>{fileSupport.guidance}</Alert>}
               {working && <Progress value={100} animated color="red" />}
             </Stack>
