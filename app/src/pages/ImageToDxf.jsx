@@ -376,6 +376,16 @@ function ImageToDxf() {
     return counts;
   }, {}), [physicalLayers]);
 
+  const physicalLayerPreviewPaths = useMemo(() => {
+    if (!trace || constructionMode === "single") return {};
+    return trace.paths.reduce((layers, path, index) => {
+      const layer = physicalLayers[index] || 1;
+      const pathData = buildSmoothPathData(path.points, { tension: curveTension, cornerAngleDegrees: cornerAngle });
+      layers[layer] = `${layers[layer] || ""} ${pathData}`.trim();
+      return layers;
+    }, {});
+  }, [trace, constructionMode, physicalLayers, curveTension, cornerAngle]);
+
   useEffect(() => {
     if (!trace) return;
     setPhysicalLayers((current) => trace.paths.map((_, index) => {
@@ -1001,6 +1011,10 @@ function ImageToDxf() {
                 <Text size="xs" c="dimmed">{editMode === "layer" ? "Click each contour to place it on the selected physical layer." : "Click anywhere on the design to add an attachment or registration location. Click a marker to remove it."}</Text>
               </Stack>
             </Paper>}
+            {constructionMode !== "single" && <Group gap="xs">
+              <Badge color="gray" variant="filled">Off-color = backer / revealed area</Badge>
+              <Badge color="gray" variant="outline" styles={{ root: { background: "#fff", color: "#222" } }}>White = retained face metal</Badge>
+            </Group>}
             <SegmentedControl
               fullWidth
               value={markingMode}
@@ -1070,7 +1084,11 @@ function ImageToDxf() {
           <div className="mw-dxf-preview" style={{ overflow: previewZoom > 100 ? "auto" : "hidden" }}>
             {trace && showOriginal && sourceUrl && <img src={sourceUrl} alt="Original artwork comparison" style={{ position: "absolute", inset: 24, width: "calc(100% - 48px)", height: "calc(100% - 48px)", objectFit: "contain", opacity: 0.28, pointerEvents: "none" }} />}
             {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onClick={addWeldPoint} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: `${previewZoom}%`, height: `${previewZoom}%`, minWidth: `${previewZoom}%`, minHeight: `${previewZoom}%`, maxHeight: previewZoom === 100 ? 620 : "none", touchAction: "none" }} aria-label="Interactive DXF path and node editor">
-              {constructionMode !== "single" && <rect x="1" y="1" width={Math.max(1, trace.sourceWidth - 2)} height={Math.max(1, trace.sourceHeight - 2)} rx={backerStyle === "rounded" ? Math.min(trace.sourceWidth, trace.sourceHeight) * 0.035 : 0} fill="#d9dde1" stroke={PHYSICAL_LAYER_COLORS[0]} strokeWidth="2" strokeDasharray="8 6" opacity="0.38" />}
+              {constructionMode !== "single" && <>
+                <rect x="1" y="1" width={Math.max(1, trace.sourceWidth - 2)} height={Math.max(1, trace.sourceHeight - 2)} rx={backerStyle === "rounded" ? Math.min(trace.sourceWidth, trace.sourceHeight) * 0.035 : 0} fill="#aeb6bd" stroke={PHYSICAL_LAYER_COLORS[0]} strokeWidth="2" strokeDasharray="8 6" />
+                {physicalLayerPreviewPaths[1] && <path d={physicalLayerPreviewPaths[1]} fill="#ffffff" fillRule="evenodd" stroke="none" />}
+                {physicalLayerPreviewPaths[2] && <path d={physicalLayerPreviewPaths[2]} fill="#ffffff" fillRule="evenodd" stroke="none" opacity="0.94" />}
+              </>}
               {trace.paths.map((path, pathIndex) => {
                 const smoothPath = buildSmoothPathData(path.points, { tension: curveTension, cornerAngleDegrees: cornerAngle });
                 const role = pathRoles[pathIndex];
