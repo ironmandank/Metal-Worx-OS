@@ -178,7 +178,7 @@ function ImageToDxf() {
   const [bridges, setBridges] = useState([]);
   const [bridgeWidth, setBridgeWidth] = useState(0.04);
   const [editMode, setEditMode] = useState("role");
-  const [showNodes, setShowNodes] = useState(true);
+  const [showNodes, setShowNodes] = useState(false);
   const [markingMode, setMarkingMode] = useState("engrave");
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -963,7 +963,7 @@ function ImageToDxf() {
               <Group grow align="flex-start"><TextInput label="File revision" value={revision} onChange={(event) => setRevision(event.currentTarget.value)} /><TextInput label="Approved by" placeholder="Customer or reviewer" value={approvedBy} onChange={(event) => setApprovedBy(event.currentTarget.value)} /></Group>
               <Checkbox checked={approvalRequired} onChange={(event) => { setApprovalRequired(event.currentTarget.checked); if (!event.currentTarget.checked) setCustomerApproved(false); }} label="Customer approval is required" />
               {approvalRequired && <Checkbox checked={customerApproved} onChange={(event) => setCustomerApproved(event.currentTarget.checked)} label="Customer approved this exact design revision" />}
-              <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
+              <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes while using Edit Nodes" />
               <Paper withBorder radius="md" p="sm">
                 <Stack gap={6}>
                   <Group justify="space-between"><Text fw={900} size="sm">Laser Readiness Gate</Text><Badge color={productionApproved ? "green" : canApproveForLaser ? "blue" : "yellow"}>{productionApproved ? "LASER READY" : canApproveForLaser ? "READY TO APPROVE" : "IN REVIEW"}</Badge></Group>
@@ -986,7 +986,10 @@ function ImageToDxf() {
             <SegmentedControl
               fullWidth
               value={editMode}
-              onChange={setEditMode}
+              onChange={(value) => {
+                setEditMode(value);
+                if (value === "node") setShowNodes(true);
+              }}
               data={[
                 { label: "Assign Path Color", value: "role" },
                 { label: "Add Yellow Bridge", value: "bridge" },
@@ -1103,7 +1106,7 @@ function ImageToDxf() {
                   {constructionMode !== "single" && <path d={smoothPath} fill="none" stroke={PHYSICAL_LAYER_COLORS[physicalLayers[pathIndex] || 1]} strokeWidth="7" opacity="0.3" vectorEffect="non-scaling-stroke" />}
                   <path d={smoothPath} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
                   {unbridgedPathSet.has(pathIndex) && <path d={smoothPath} fill="none" stroke="#ff9f1c" strokeWidth="5" strokeDasharray="8 6" opacity="0.72" vectorEffect="non-scaling-stroke" />}
-                  {showNodes && path.points.map((point, nodeIndex) => {
+                  {showNodes && editMode === "node" && path.points.map((point, nodeIndex) => {
                     const selected = selectedNode?.pathIndex === pathIndex && selectedNode?.nodeIndex === nodeIndex;
                     return <circle key={nodeIndex} cx={point.x} cy={point.y} r={selected ? 5 : 3.2} fill={selected ? "#ffd43b" : "#fff"} stroke={selected ? "#5f4500" : color} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />;
                   })}
