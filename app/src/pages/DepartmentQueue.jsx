@@ -1394,10 +1394,10 @@ function DepartmentQueue({
             placeholder="Example: AMC_Auto_Sales_Logo.cdr"
             description="Enter the exact CorelDRAW, SVG, DXF, PDF, or customer file name."
             value={designDraft.fileName}
-            onChange={(event) => setDesignDraft((current) => ({
-              ...current,
-              fileName: event.currentTarget.value,
-            }))}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setDesignDraft((current) => ({ ...current, fileName: value }));
+            }}
           />
           <Textarea
             label="Design / Placement Instructions"
@@ -1405,10 +1405,10 @@ function DepartmentQueue({
             minRows={4}
             autosize
             value={designDraft.description}
-            onChange={(event) => setDesignDraft((current) => ({
-              ...current,
-              description: event.currentTarget.value,
-            }))}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setDesignDraft((current) => ({ ...current, description: value }));
+            }}
           />
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
             <DateInput
@@ -1433,27 +1433,27 @@ function DepartmentQueue({
               label="Assigned To"
               placeholder="Kory or design team member"
               value={designDraft.assignedTo}
-              onChange={(event) => setDesignDraft((current) => ({
-                ...current,
-                assignedTo: event.currentTarget.value,
-              }))}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setDesignDraft((current) => ({ ...current, assignedTo: value }));
+              }}
             />
             <TextInput
               label="Customer Phone"
               value={designDraft.phone}
-              onChange={(event) => setDesignDraft((current) => ({
-                ...current,
-                phone: event.currentTarget.value,
-              }))}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setDesignDraft((current) => ({ ...current, phone: value }));
+              }}
             />
             <TextInput
               label="Customer Email"
               type="email"
               value={designDraft.email}
-              onChange={(event) => setDesignDraft((current) => ({
-                ...current,
-                email: event.currentTarget.value,
-              }))}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setDesignDraft((current) => ({ ...current, email: value }));
+              }}
             />
           </SimpleGrid>
           <Paper withBorder radius="md" p="md">
@@ -1461,20 +1461,23 @@ function DepartmentQueue({
               <Switch
                 label="Design fee is required"
                 checked={designDraft.feeRequired}
-                onChange={(event) => setDesignDraft((current) => ({
-                  ...current,
-                  feeRequired: event.currentTarget.checked,
-                  feePaid: event.currentTarget.checked ? current.feePaid : false,
-                }))}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setDesignDraft((current) => ({
+                    ...current,
+                    feeRequired: checked,
+                    feePaid: checked ? current.feePaid : false,
+                  }));
+                }}
               />
               <Switch
                 label="Customer paid the design fee"
                 checked={designDraft.feePaid}
                 disabled={!designDraft.feeRequired}
-                onChange={(event) => setDesignDraft((current) => ({
-                  ...current,
-                  feePaid: event.currentTarget.checked,
-                }))}
+                onChange={(event) => {
+                  const checked = event.currentTarget.checked;
+                  setDesignDraft((current) => ({ ...current, feePaid: checked }));
+                }}
               />
             </Stack>
           </Paper>
