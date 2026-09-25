@@ -113,6 +113,85 @@ export function smoothTracePaths(trace, options = {}) {
   return { ...trace, paths };
 }
 
+export function straightenTracePaths(trace, options = {}) {
+  const angleTolerance = Math.max(0.5, Number(options.angleToleranceDegrees) || 3) * Math.PI / 180;
+  const snapAxis = (points, axis) => {
+    const values = points.map((point) => point[axis]);
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return points.map((point) => ({ ...point, [axis]: average }));
+  };
+  return {
+    ...trace,
+    paths: trace.paths.map((path) => {
+      const points = normalizedClosedPoints(path.points);
+      if (points.length < 3) return path;
+      const output = points.map((point) => ({ ...point }));
+      for (let index = 0; index < points.length; index += 1) {
+        const nextIndex = (index + 1) % points.length;
+        const dx = points[nextIndex].x - points[index].x;
+        const dy = points[nextIndex].y - points[index].y;
+        const angle = Math.atan2(Math.abs(dy), Math.abs(dx));
+        if (angle <= angleTolerance) {
+          const [start, end] = snapAxis([output[index], output[nextIndex]], "y");
+          output[index] = start; output[nextIndex] = end;
+        } else if (Math.abs(Math.PI / 2 - angle) <= angleTolerance) {
+          const [start, end] = snapAxis([output[index], output[nextIndex]], "x");
+          output[index] = start; output[nextIndex] = end;
+        }
+      }
+      return { ...path, points: output };
+    }),
+  };
+}
+
+export function fitRoundTracePaths(trace, options = {}) {
+  const maximumError = Math.max(0.005, Number(options.maximumErrorRatio) || 0.035);
+  return {
+    ...trace,
+    paths: trace.paths.map((path) => {
+      const points = normalizedClosedPoints(path.points);
+      if (points.length < 6) return path;
+      const center = points.reduce((value, point) => ({ x: value.x + point.x / points.length, y: value.y + point.y / points.length }), { x: 0, y: 0 });
+      const radii = points.map((point) => distance(point, center));
+      const radius = radii.reduce((sum, value) => sum + value, 0) / radii.length;
+      if (!radius) return path;
+      const radialError = Math.sqrt(radii.reduce((sum, value) => sum + (value - radius) ** 2, 0) / radii.length) / radius;
+      if (radialError > maximumError) return path;
+      const nodeCount = Math.max(8, Math.min(32, Math.round(Math.PI * 2 * radius / 18)));
+      const firstAngle = Math.atan2(points[0].y - center.y, points[0].x - center.x);
+      return {
+        ...path,
+        fittedShape: "circle",
+        points: Array.from({ length: nodeCount }, (_, index) => {
+          const angle = firstAngle + index / nodeCount * Math.PI * 2;
+          return { x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius };
+        }),
+      };
+    }),
+  };
+}
+
+export function offsetTracePaths(trace, options = {}) {
+  const offsetInches = Number(options.offsetInches) || 0;
+  if (!offsetInches) return trace;
+  const width = Math.max(0.01, Number(options.widthInches) || 1);
+  const height = options.keepAspect !== false ? width / (trace.sourceWidth / trace.sourceHeight) : Math.max(0.01, Number(options.heightInches) || 1);
+  const scale = ((width / trace.sourceWidth) + (height / trace.sourceHeight)) / 2;
+  const offset = offsetInches / scale;
+  return {
+    ...trace,
+    paths: trace.paths.map((path) => {
+      const points = normalizedClosedPoints(path.points);
+      const center = polygonCenter(points);
+      return { ...path, points: points.map((point) => {
+        const dx = point.x - center.x; const dy = point.y - center.y;
+        const length = Math.hypot(dx, dy) || 1;
+        return { x: point.x + dx / length * offset, y: point.y + dy / length * offset };
+      }) };
+    }),
+  };
+}
+
 export function reduceTraceToNodeBudget(trace, options = {}) {
   const targetNodes = Math.max(100, Number(options.targetNodes) || 1200);
   const maxToleranceInches = Math.max(0.01, Number(options.maxToleranceInches) || 0.08);
@@ -151,6 +230,43 @@ function polygonCenter(points) {
     const cross = point.x * next.y - next.x * point.y;
     return { x: center.x + (point.x + next.x) * cross / (6 * area), y: center.y + (point.y + next.y) * cross / (6 * area) };
   }, { x: 0, y: 0 });
+}
+
+function isSharpCorner(points, index, angleDegrees = 55) {
+  if (points.length < 3) return true;
+  const previous = points[(index - 1 + points.length) % points.length];
+  const point = points[index];
+  const next = points[(index + 1) % points.length];
+  const incoming = { x: point.x - previous.x, y: point.y - previous.y };
+  const outgoing = { x: next.x - point.x, y: next.y - point.y };
+  const incomingLength = Math.hypot(incoming.x, incoming.y);
+  const outgoingLength = Math.hypot(outgoing.x, outgoing.y);
+  if (!incomingLength || !outgoingLength) return false;
+  const cosine = clamp((incoming.x * outgoing.x + incoming.y * outgoing.y) / (incomingLength * outgoingLength), -1, 1);
+  return Math.acos(cosine) >= angleDegrees * Math.PI / 180;
+}
+
+export function buildSmoothPathData(inputPoints, options = {}) {
+  const points = normalizedClosedPoints(inputPoints || []);
+  if (!points.length) return "";
+  if (points.length < 3) return `M ${points.map((point) => `${point.x.toFixed(6)} ${point.y.toFixed(6)}`).join(" L ")}`;
+  const closed = options.closed !== false;
+  const tension = clamp(Number(options.tension) || 0.82, 0.1, 1);
+  const cornerFlags = points.map((_, index) => isSharpCorner(points, index, Number(options.cornerAngleDegrees) || 55));
+  const commands = [`M ${points[0].x.toFixed(6)} ${points[0].y.toFixed(6)}`];
+  const segmentCount = closed ? points.length : points.length - 1;
+  for (let index = 0; index < segmentCount; index += 1) {
+    const p0 = points[closed ? (index - 1 + points.length) % points.length : Math.max(0, index - 1)];
+    const p1 = points[index];
+    const p2Index = (index + 1) % points.length;
+    const p2 = points[p2Index];
+    const p3 = points[closed ? (index + 2) % points.length : Math.min(points.length - 1, index + 2)];
+    const control1 = cornerFlags[index] ? p1 : { x: p1.x + (p2.x - p0.x) * tension / 6, y: p1.y + (p2.y - p0.y) * tension / 6 };
+    const control2 = cornerFlags[p2Index] ? p2 : { x: p2.x - (p3.x - p1.x) * tension / 6, y: p2.y - (p3.y - p1.y) * tension / 6 };
+    commands.push(`C ${control1.x.toFixed(6)} ${control1.y.toFixed(6)} ${control2.x.toFixed(6)} ${control2.y.toFixed(6)} ${p2.x.toFixed(6)} ${p2.y.toFixed(6)}`);
+  }
+  if (closed) commands.push("Z");
+  return commands.join(" ");
 }
 
 function pointInPolygon(point, points) {
@@ -516,13 +632,7 @@ export function buildCorelSvg(trace, options = {}) {
     const pathBridges = bridges.filter((bridge) => bridge.pathIndex === pathIndex).map((bridge) => bridge.position);
     const pieces = role === "engrave" ? [{ points, closed: true }] : splitPathForBridges(points, pathBridges, bridgeWidth);
     pieces.forEach((piece) => {
-      const [first, ...rest] = piece.points;
-      const commands = [
-        `M ${first.x.toFixed(6)} ${first.y.toFixed(6)}`,
-        ...rest.map((point) => `L ${point.x.toFixed(6)} ${point.y.toFixed(6)}`),
-        ...(piece.closed ? ["Z"] : []),
-      ];
-      groups[role].push(`<path d="${commands.join(" ")}" />`);
+      groups[role].push(`<path d="${buildSmoothPathData(piece.points, { closed: piece.closed, tension: options.curveTension, cornerAngleDegrees: options.cornerAngleDegrees })}" />`);
     });
   });
 
@@ -558,6 +668,8 @@ export function inspectLaserFile(trace, options = {}) {
   let nodeCount = 0;
   let repeatedNodes = 0;
   let smallPieces = 0;
+  let narrowSegments = 0;
+  let selfIntersections = 0;
   const signatures = new Map();
 
   trace.paths.forEach((path, pathIndex) => {
@@ -569,8 +681,20 @@ export function inspectLaserFile(trace, options = {}) {
       if (pointIndex > 0) {
         const previous = path.points[pointIndex - 1];
         if (Math.hypot(point.x - previous.x, point.y - previous.y) < 0.01) repeatedNodes += 1;
+        if (Math.hypot((point.x - previous.x) * scaleX, (point.y - previous.y) * scaleY) < 0.015) narrowSegments += 1;
       }
     });
+    const points = normalizedClosedPoints(path.points);
+    const orientation = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    for (let first = 0; first < points.length; first += 1) {
+      const firstNext = (first + 1) % points.length;
+      for (let second = first + 2; second < points.length; second += 1) {
+        const secondNext = (second + 1) % points.length;
+        if (first === secondNext || firstNext === second) continue;
+        const a = points[first]; const b = points[firstNext]; const c = points[second]; const d = points[secondNext];
+        if (orientation(a, b, c) * orientation(a, b, d) < 0 && orientation(c, d, a) * orientation(c, d, b) < 0) selfIntersections += 1;
+      }
+    }
     const physicalWidth = (maxX - minX) * scaleX;
     const physicalHeight = (maxY - minY) * scaleY;
     if (roles[pathIndex] === "cut" && Math.max(physicalWidth, physicalHeight) < 0.08) smallPieces += 1;
@@ -587,6 +711,8 @@ export function inspectLaserFile(trace, options = {}) {
   if (duplicatePaths) issues.push(`${duplicatePaths} possible duplicate path${duplicatePaths === 1 ? "" : "s"} could cut twice.`);
   if (repeatedNodes) issues.push(`${repeatedNodes} repeated node${repeatedNodes === 1 ? "" : "s"} should be reviewed.`);
   if (smallPieces) issues.push(`${smallPieces} red second-pass path${smallPieces === 1 ? " is" : "s are"} smaller than 0.08 inch.`);
+  if (narrowSegments) issues.push(`${narrowSegments} segment${narrowSegments === 1 ? " is" : "s are"} shorter than 0.015 inch and may burn away or stutter.`);
+  if (selfIntersections) issues.push(`${selfIntersections} self-intersection${selfIntersections === 1 ? "" : "s"} could create an incorrect cut.`);
   if (nodeCount > 2000) issues.push(`Excessive node count (${nodeCount.toLocaleString()}) may cause rough or slow cutting. Use stronger node reduction.`);
   else if (nodeCount > 1200) issues.push(`Detailed node count (${nodeCount.toLocaleString()}) should be reviewed before cutting.`);
   if (!roles.includes("cut")) issues.push("No red second-pass paths are selected.");
@@ -596,7 +722,7 @@ export function inspectLaserFile(trace, options = {}) {
     issues.push(`${unbridgedInteriorPaths.length} black interior path${unbridgedInteriorPaths.length === 1 ? " has" : "s have"} no bridge. Confirm each one is intended scrap or add yellow bridges.`);
   }
   if (!bridges.length && roles.some((role) => role !== "engrave")) issues.push("No yellow bridges are placed; every black and red contour will cut completely free.");
-  const criticalCount = duplicatePaths + smallPieces;
+  const criticalCount = duplicatePaths + smallPieces + selfIntersections;
   const status = criticalCount ? "unsafe" : issues.length ? "review" : "ready";
   const pathCount = trace.paths.length;
   const activeLayerCount = new Set(roles.filter(Boolean)).size;
@@ -624,6 +750,8 @@ export function inspectLaserFile(trace, options = {}) {
     duplicatePaths,
     repeatedNodes,
     smallPieces,
+    narrowSegments,
+    selfIntersections,
     bridgeCount: bridges.length,
     bridgedPathCount,
     unbridgedInteriorPaths,
