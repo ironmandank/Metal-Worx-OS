@@ -10,16 +10,21 @@ import {
   Modal,
   Paper,
   Progress,
+  Select,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
   Textarea,
+  TextInput,
   Title,
 } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
 import {
   IconAlertTriangle,
   IconClock,
   IconChevronRight,
+  IconEdit,
   IconFlag,
   IconInfoCircle,
   IconHistory,
@@ -66,6 +71,19 @@ function DepartmentQueue({
   const [activities, setActivities] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [detailTarget, setDetailTarget] = useState(null);
+  const [editDesignTarget, setEditDesignTarget] = useState(null);
+  const [designDraft, setDesignDraft] = useState({
+    workType: "New Design Required",
+    fileName: "",
+    description: "",
+    dueDate: null,
+    assignedTo: "",
+    priority: "Normal",
+    feeRequired: false,
+    feePaid: false,
+    phone: "",
+    email: "",
+  });
   const [hotTodayItems, setHotTodayItems] = useState([]);
 
   useEffect(() => {
@@ -299,7 +317,115 @@ function DepartmentQueue({
     return {
       workType: lines[0] || "",
       fileName: fileLine ? fileLine.slice(fileLine.indexOf(":") + 1).trim() : "",
+      description: lines
+        .slice(1)
+        .filter((line) => !line.toLowerCase().startsWith("design file:"))
+        .join("\n"),
     };
+  }
+
+  function toDateInputValue(value) {
+    if (!value) return null;
+    const parsed = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function toDateString(value) {
+    if (!value) return null;
+    if (typeof value === "string") return value.slice(0, 10);
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function openDesignEditor(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id];
+    const designWork = getDesignWorkDetails(detail?.order);
+    setDesignDraft({
+      workType: designWork.workType || "New Design Required",
+      fileName: designWork.fileName || "",
+      description: designWork.description || "",
+      dueDate: toDateInputValue(detail?.job?.due_date),
+      assignedTo: workOrder.assigned_to || "",
+      priority: workOrder.priority || "Normal",
+      feeRequired: Boolean(detail?.order?.design_fee_required),
+      feePaid: Boolean(
+        detail?.order?.design_fee_paid ||
+        detail?.order?.design_fee_status === "Paid"
+      ),
+      phone: detail?.customer?.phone || "",
+      email: detail?.customer?.email || "",
+    });
+    setEditDesignTarget(workOrder);
+  }
+
+  async function saveDesignJob() {
+    if (!editDesignTarget || savingAction) return;
+    const detail = jobDetails[editDesignTarget.production_job_id];
+    const designNotes = [
+      designDraft.workType,
+      designDraft.fileName.trim()
+        ? `Design file: ${designDraft.fileName.trim()}`
+        : "",
+      designDraft.description.trim(),
+    ].filter(Boolean).join("\n");
+
+    setSavingAction(true);
+    try {
+      const updates = [
+        supabase.from("work_orders").update({
+          assigned_to: designDraft.assignedTo.trim() || null,
+          priority: designDraft.priority,
+        }).eq("id", editDesignTarget.id),
+        supabase.from("production_jobs").update({
+          due_date: toDateString(designDraft.dueDate),
+        }).eq("id", editDesignTarget.production_job_id),
+      ];
+
+      if (detail?.order?.id) {
+        updates.push(
+          supabase.from("customer_orders").update({
+            design_notes: designNotes,
+            design_fee_required: designDraft.feeRequired,
+            design_fee_paid: designDraft.feeRequired && designDraft.feePaid,
+            design_fee_status: !designDraft.feeRequired
+              ? "Not Required"
+              : designDraft.feePaid ? "Paid" : "Pending",
+          }).eq("id", detail.order.id)
+        );
+      }
+
+      if (detail?.customer?.id) {
+        updates.push(
+          supabase.from("customers").update({
+            phone: designDraft.phone.trim() || null,
+            email: designDraft.email.trim() || null,
+          }).eq("id", detail.customer.id)
+        );
+      }
+
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+
+      notifications.show({
+        title: "Design Job Updated",
+        message: "The artwork request and queue information were saved.",
+        color: "green",
+      });
+      setEditDesignTarget(null);
+      setDetailTarget(null);
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Design Job Could Not Be Updated",
+        message: error?.message || "Please try again.",
+        color: "red",
+      });
+    } finally {
+      setSavingAction(false);
+    }
   }
 
   function isPastDue(value) {
@@ -884,6 +1010,18 @@ function DepartmentQueue({
           )}
 
           <SimpleGrid cols={2} spacing="xs">
+            {department === "Design" && (
+              <Button
+                fullWidth
+                size="xs"
+                color="blue"
+                variant="light"
+                leftSection={<IconEdit size={15} />}
+                onClick={() => openDesignEditor(workOrder)}
+              >
+                Edit Design Job
+              </Button>
+            )}
             <Button fullWidth size="xs" variant="subtle" color="gray" leftSection={<IconHistory size={15} />} onClick={() => openHistory(workOrder)}>
               History
             </Button>
@@ -1055,6 +1193,21 @@ function DepartmentQueue({
 
           <Stack gap={6}>
             <Text size="xs" c="dimmed" ta="center">Click the card to view files, notes, materials, and actions</Text>
+            {department === "Design" && (
+              <Button
+                fullWidth
+                size="xs"
+                color="blue"
+                variant="light"
+                leftSection={<IconEdit size={15} />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openDesignEditor(workOrder);
+                }}
+              >
+                Edit Design Job
+              </Button>
+            )}
             {workOrder.status === "Ready" && (
               <Button
                 fullWidth
@@ -1205,6 +1358,131 @@ function DepartmentQueue({
         scrollAreaComponent={Modal.NativeScrollArea}
       >
         {detailTarget && renderWorkOrder(detailTarget)}
+      </Modal>
+
+      <Modal
+        opened={Boolean(editDesignTarget)}
+        onClose={() => setEditDesignTarget(null)}
+        title="Edit Design Job"
+        centered
+        size="lg"
+        scrollAreaComponent={Modal.NativeScrollArea}
+      >
+        <Stack gap="md">
+          <Alert color="blue" icon={<IconInfoCircle size={18} />}>
+            Update the artwork request here. These details appear on the Design Queue card and inside the production job.
+          </Alert>
+          <Select
+            label="What does Design need to do?"
+            data={[
+              "New Design Required",
+              "Existing Logo — Placement Only",
+              "Design Already on File",
+              "Customer-Supplied Cut-Ready File",
+              "Design Changes Required",
+            ]}
+            value={designDraft.workType}
+            onChange={(value) => setDesignDraft((current) => ({
+              ...current,
+              workType: value || "New Design Required",
+            }))}
+            searchable
+            allowDeselect={false}
+          />
+          <TextInput
+            label="Existing File Name / Search Name"
+            placeholder="Example: AMC_Auto_Sales_Logo.cdr"
+            description="Enter the exact CorelDRAW, SVG, DXF, PDF, or customer file name."
+            value={designDraft.fileName}
+            onChange={(event) => setDesignDraft((current) => ({
+              ...current,
+              fileName: event.currentTarget.value,
+            }))}
+          />
+          <Textarea
+            label="Design / Placement Instructions"
+            placeholder="Place the existing logo on the 24-inch flag, centered above the plaque..."
+            minRows={4}
+            autosize
+            value={designDraft.description}
+            onChange={(event) => setDesignDraft((current) => ({
+              ...current,
+              description: event.currentTarget.value,
+            }))}
+          />
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <DateInput
+              label="Required Completion Date"
+              placeholder="Select date"
+              valueFormat="MMM D, YYYY"
+              value={designDraft.dueDate}
+              onChange={(value) => setDesignDraft((current) => ({ ...current, dueDate: value }))}
+              clearable
+            />
+            <Select
+              label="Priority"
+              data={["Normal", "High", "Rush", "Emergency"]}
+              value={designDraft.priority}
+              onChange={(value) => setDesignDraft((current) => ({
+                ...current,
+                priority: value || "Normal",
+              }))}
+              allowDeselect={false}
+            />
+            <TextInput
+              label="Assigned To"
+              placeholder="Kory or design team member"
+              value={designDraft.assignedTo}
+              onChange={(event) => setDesignDraft((current) => ({
+                ...current,
+                assignedTo: event.currentTarget.value,
+              }))}
+            />
+            <TextInput
+              label="Customer Phone"
+              value={designDraft.phone}
+              onChange={(event) => setDesignDraft((current) => ({
+                ...current,
+                phone: event.currentTarget.value,
+              }))}
+            />
+            <TextInput
+              label="Customer Email"
+              type="email"
+              value={designDraft.email}
+              onChange={(event) => setDesignDraft((current) => ({
+                ...current,
+                email: event.currentTarget.value,
+              }))}
+            />
+          </SimpleGrid>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <Switch
+                label="Design fee is required"
+                checked={designDraft.feeRequired}
+                onChange={(event) => setDesignDraft((current) => ({
+                  ...current,
+                  feeRequired: event.currentTarget.checked,
+                  feePaid: event.currentTarget.checked ? current.feePaid : false,
+                }))}
+              />
+              <Switch
+                label="Customer paid the design fee"
+                checked={designDraft.feePaid}
+                disabled={!designDraft.feeRequired}
+                onChange={(event) => setDesignDraft((current) => ({
+                  ...current,
+                  feePaid: event.currentTarget.checked,
+                }))}
+              />
+            </Stack>
+          </Paper>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setEditDesignTarget(null)}>Cancel</Button>
+            <Button color="red" loading={savingAction} onClick={saveDesignJob}>Save Design Job</Button>
+          </Group>
+        </Stack>
       </Modal>
 
       <Modal

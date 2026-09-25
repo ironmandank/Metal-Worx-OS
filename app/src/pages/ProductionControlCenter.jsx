@@ -165,6 +165,10 @@ function getStatusColor(status) {
   return "gray";
 }
 
+function isActiveBoardStatus(status) {
+  return ["Ready", "In Progress", "Blocked", "On Hold"].includes(status);
+}
+
 function getDepartmentColor(department) {
   if (department === "Design") return "orange";
   if (department === "Laser") return "red";
@@ -487,7 +491,11 @@ function ProductionControlCenter({
     return [
       ...new Set(
         workOrders
-          .filter((workOrder) => !jobs[workOrder.production_job_id]?.project_id)
+          .filter(
+            (workOrder) =>
+              !jobs[workOrder.production_job_id]?.project_id &&
+              isActiveBoardStatus(workOrder.status),
+          )
           .map((workOrder) => workOrder.department)
           .filter(Boolean),
       ),
@@ -513,6 +521,7 @@ function ProductionControlCenter({
     return workOrders.filter((workOrder) => {
       const job = jobs[workOrder.production_job_id];
       if (job?.project_id) return false;
+      if (!isActiveBoardStatus(workOrder.status)) return false;
 
       if (
         departmentFilter !== "all" &&
