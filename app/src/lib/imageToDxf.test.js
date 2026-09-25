@@ -6,14 +6,18 @@ import {
   buildCutSequence,
   buildCorelSvg,
   buildDxf,
+  buildSmoothPathData,
   cleanTracePaths,
   countTraceNodes,
   findUnbridgedInteriorPaths,
   getArtworkFileSupport,
   inspectLaserFile,
+  fitRoundTracePaths,
+  offsetTracePaths,
   prepareBinaryImageData,
   reduceTraceToNodeBudget,
   smoothTracePaths,
+  straightenTracePaths,
 } from "./imageToDxf";
 
 describe("image to DXF helpers", () => {
@@ -76,6 +80,17 @@ describe("image to DXF helpers", () => {
     expect(result.svg).toContain('id="SCORE_MARK_BLUE"');
     expect(result.svg).toContain('stroke="#0000ff"');
     expect(result.svg).toContain('stroke="#ff0000"');
+    expect(result.svg).toContain(" C ");
+  });
+
+  it("fits true curves through rounded points while retaining a closed path", () => {
+    const data = buildSmoothPathData([
+      { x: 0, y: 5 }, { x: 1.5, y: 1.5 }, { x: 5, y: 0 },
+      { x: 8.5, y: 1.5 }, { x: 10, y: 5 }, { x: 8.5, y: 8.5 },
+      { x: 5, y: 10 }, { x: 1.5, y: 8.5 },
+    ]);
+    expect(data).toContain("C ");
+    expect(data.endsWith("Z")).toBe(true);
   });
 
   it("exports a bridged contour as open DXF pieces with a real gap", () => {
@@ -142,6 +157,32 @@ describe("image to DXF helpers", () => {
     const result = smoothTracePaths(trace, { widthInches: 10, passes: 2, strength: 0.3, cornerEdgeInches: 0.5 });
     expect(result.paths[0].points[2].y).toBeLessThan(1);
     expect(result.paths[0].points[4]).toEqual({ x: 40, y: 0 });
+  });
+
+  it("straightens nearly horizontal production edges", () => {
+    const result = straightenTracePaths({ sourceWidth: 100, sourceHeight: 100, paths: [{ points: [
+      { x: 0, y: 0 }, { x: 50, y: 0.5 }, { x: 50, y: 40 }, { x: 0, y: 40 },
+    ] }] }, { angleToleranceDegrees: 3 });
+    expect(result.paths[0].points[0].y).toBeCloseTo(result.paths[0].points[1].y);
+  });
+
+  it("rebuilds a nearly circular contour as a fitted round path", () => {
+    const points = Array.from({ length: 16 }, (_, index) => {
+      const angle = index / 16 * Math.PI * 2;
+      return { x: 50 + Math.cos(angle) * 20, y: 50 + Math.sin(angle) * 20 };
+    });
+    const result = fitRoundTracePaths({ sourceWidth: 100, sourceHeight: 100, paths: [{ points }] });
+    expect(result.paths[0].fittedShape).toBe("circle");
+    expect(result.paths[0].points.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("applies physical kerf offset without changing the source trace", () => {
+    const trace = { sourceWidth: 10, sourceHeight: 10, paths: [{ points: [
+      { x: 2, y: 2 }, { x: 8, y: 2 }, { x: 8, y: 8 }, { x: 2, y: 8 },
+    ] }] };
+    const result = offsetTracePaths(trace, { widthInches: 10, offsetInches: 0.1 });
+    expect(result.paths[0].points[0].x).toBeLessThan(2);
+    expect(trace.paths[0].points[0].x).toBe(2);
   });
 
   it("reports readiness, nodes, and very small red pieces", () => {
