@@ -9,6 +9,7 @@ import {
   NumberInput,
   Paper,
   Progress,
+  Select,
   SegmentedControl,
   Slider,
   Stack,
@@ -37,6 +38,7 @@ import {
   buildDxf,
   buildAutomaticBridges,
   buildCutSequence,
+  buildSmoothPathData,
   assignAutomaticCutOrder,
   analyzeSourceArtwork,
   countTraceNodes,
@@ -48,6 +50,9 @@ import {
   pointOnClosedPath,
   prepareBinaryImageData,
   reduceTraceToNodeBudget,
+  fitRoundTracePaths,
+  offsetTracePaths,
+  straightenTracePaths,
   traceImageData,
 } from "../lib/imageToDxf";
 
@@ -68,6 +73,21 @@ const ARTWORK_ACCEPT = [
   "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif", "image/svg+xml", "image/tiff",
   "application/pdf", ".dxf", ".cdr", ".ai", ".eps", ".tif", ".tiff",
 ].join(",");
+
+const TRACE_PRESETS = {
+  logo: { label: "Simple Logo", smoothing: "balanced", nodeReduction: "production", speckleSize: 10, curveTension: 0.82, cornerAngle: 55 },
+  detailed: { label: "Detailed Artwork", smoothing: "sharp", nodeReduction: "fine", speckleSize: 5, curveTension: 0.72, cornerAngle: 62 },
+  text: { label: "Text / Lettering", smoothing: "sharp", nodeReduction: "production", speckleSize: 7, curveTension: 0.62, cornerAngle: 42 },
+  round: { label: "Round Emblem", smoothing: "smooth", nodeReduction: "production", speckleSize: 8, curveTension: 0.9, cornerAngle: 70 },
+  photo: { label: "Photo / Complex Image", smoothing: "smooth", nodeReduction: "aggressive", speckleSize: 18, curveTension: 0.86, cornerAngle: 65 },
+};
+
+const MATERIAL_PRESETS = {
+  "Mild Steel": { kerf: 0.006, bridge: 0.04 },
+  "Stainless Steel": { kerf: 0.005, bridge: 0.035 },
+  Aluminum: { kerf: 0.008, bridge: 0.05 },
+  Custom: { kerf: 0, bridge: 0.04 },
+};
 
 function safeBaseName(name = "metal-worx-cut-file") {
   return name.replace(/\.[^.]+$/, "").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "metal-worx-cut-file";
@@ -133,6 +153,19 @@ function ImageToDxf() {
   const [sourceAnalysis, setSourceAnalysis] = useState(null);
   const [sourceMessage, setSourceMessage] = useState("");
   const [productionApproved, setProductionApproved] = useState(false);
+  const [tracePreset, setTracePreset] = useState("logo");
+  const [curveTension, setCurveTension] = useState(0.82);
+  const [cornerAngle, setCornerAngle] = useState(55);
+  const [fitRounds, setFitRounds] = useState(true);
+  const [straightenLines, setStraightenLines] = useState(true);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [material, setMaterial] = useState("Mild Steel");
+  const [materialThickness, setMaterialThickness] = useState(0.075);
+  const [kerfCompensation, setKerfCompensation] = useState(0);
+  const [revision, setRevision] = useState("R1");
+  const [approvalRequired, setApprovalRequired] = useState(false);
+  const [customerApproved, setCustomerApproved] = useState(false);
+  const [approvedBy, setApprovedBy] = useState("");
 
   const fileSupport = useMemo(() => getArtworkFileSupport(file || {}), [file]);
 
@@ -195,9 +228,13 @@ function ImageToDxf() {
     };
   }, [file, fileSupport]);
 
+  const productionTrace = useMemo(() => trace ? offsetTracePaths(trace, {
+    widthInches: width, heightInches: height, keepAspect: lockRatio, offsetInches: kerfCompensation / 2,
+  }) : null, [trace, width, height, lockRatio, kerfCompensation]);
+
   const physicalSize = useMemo(() => {
-    if (!trace) return null;
-    return buildDxf(trace, {
+    if (!productionTrace) return null;
+    return buildDxf(productionTrace, {
       widthInches: width,
       heightInches: height,
       keepAspect: lockRatio,
@@ -206,11 +243,11 @@ function ImageToDxf() {
       bridges,
       bridgeWidthInches: bridgeWidth,
     });
-  }, [trace, width, height, lockRatio, layerName, pathRoles, bridges, bridgeWidth]);
+  }, [productionTrace, width, height, lockRatio, layerName, pathRoles, bridges, bridgeWidth]);
 
   const svgExport = useMemo(() => {
-    if (!trace) return null;
-    return buildCorelSvg(trace, {
+    if (!productionTrace) return null;
+    return buildCorelSvg(productionTrace, {
       widthInches: width,
       heightInches: height,
       keepAspect: lockRatio,
@@ -218,12 +255,14 @@ function ImageToDxf() {
       bridges,
       bridgeWidthInches: bridgeWidth,
       title: file?.name,
+      curveTension,
+      cornerAngleDegrees: cornerAngle,
     });
-  }, [trace, width, height, lockRatio, pathRoles, bridges, bridgeWidth, file]);
+  }, [productionTrace, width, height, lockRatio, pathRoles, bridges, bridgeWidth, file, curveTension, cornerAngle]);
 
   const inspection = useMemo(() => {
-    if (!trace) return null;
-    return inspectLaserFile(trace, {
+    if (!productionTrace) return null;
+    return inspectLaserFile(productionTrace, {
       widthInches: width,
       heightInches: height,
       keepAspect: lockRatio,
@@ -231,7 +270,7 @@ function ImageToDxf() {
       bridges,
       sourceAnalysis,
     });
-  }, [trace, width, height, lockRatio, pathRoles, bridges, sourceAnalysis]);
+  }, [productionTrace, width, height, lockRatio, pathRoles, bridges, sourceAnalysis]);
 
   const cutSequence = useMemo(
     () => (trace ? buildCutSequence(trace, pathRoles) : []),
@@ -261,12 +300,23 @@ function ImageToDxf() {
     { label: "Production node count under 2,000", pass: Boolean(trace) && countTraceNodes(trace) <= 2000 },
     { label: "Retained interior pieces connected", pass: Boolean(trace) && unbridgedInteriorPaths.length === 0 },
     { label: "No critical preflight errors", pass: inspection?.status !== "unsafe" },
-  ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection]);
+    { label: approvalRequired ? "Customer approval recorded" : "Customer approval not required", pass: !approvalRequired || customerApproved },
+  ], [file, trace, width, height, pathRoles, unbridgedInteriorPaths, inspection, approvalRequired, customerApproved]);
   const canApproveForLaser = laserApprovalChecks.every((check) => check.pass);
 
   useEffect(() => {
     setProductionApproved(false);
-  }, [trace, pathRoles, bridges, width, height, bridgeWidth]);
+  }, [trace, pathRoles, bridges, width, height, bridgeWidth, curveTension, cornerAngle, kerfCompensation, material, materialThickness, revision, customerApproved, approvedBy]);
+
+  function applyTracePreset(value) {
+    const preset = TRACE_PRESETS[value];
+    setTracePreset(value);
+    setSmoothing(preset.smoothing);
+    setNodeReduction(preset.nodeReduction);
+    setSpeckleSize(preset.speckleSize);
+    setCurveTension(preset.curveTension);
+    setCornerAngle(preset.cornerAngle);
+  }
 
   async function convertImage() {
     if (!file || !sourceUrl) return;
@@ -308,7 +358,9 @@ function ImageToDxf() {
         keepAspect: lockRatio,
         ...reductionSettings,
       });
-      const cleanedTrace = reductionResult.trace;
+      let cleanedTrace = reductionResult.trace;
+      if (straightenLines) cleanedTrace = straightenTracePaths(cleanedTrace, { angleToleranceDegrees: 3 });
+      if (fitRounds) cleanedTrace = fitRoundTracePaths(cleanedTrace, { maximumErrorRatio: 0.035 });
       setNodeReductionResult(reductionResult);
       setTrace(cleanedTrace);
       setPathRoles(assignAutomaticCutOrder(cleanedTrace));
@@ -438,6 +490,11 @@ function ImageToDxf() {
       generatedAt: new Date().toISOString(),
       finishedSizeInches: { width: physicalSize.width, height: physicalSize.height },
       corelDraw: "CorelDRAW 2021 compatible DXF (R12/AC1009) and layered SVG",
+      preferredLaserFile: `${baseName}.svg — fitted curves and sharp corners`,
+      compatibilityFile: `${baseName}.dxf — segmented R12 fallback`,
+      revision,
+      material: { name: material, thicknessInches: materialThickness, kerfInches: kerfCompensation },
+      approval: { required: approvalRequired, customerApproved, approvedBy: approvedBy || null },
       layerWorkflow: {
         blue: "Score or mark only",
         black: "Interior cut first; add bridges to retained pieces",
@@ -453,13 +510,19 @@ function ImageToDxf() {
       `Source: ${file?.name || "Untitled artwork"}`,
       `Finished size: ${physicalSize.width.toFixed(3)} x ${physicalSize.height.toFixed(3)} inches`,
       `Inspection: ${inspection.label}`,
+      `Revision: ${revision}`,
+      `Material: ${material}, ${materialThickness.toFixed(3)} inch`,
+      `Kerf compensation: ${kerfCompensation.toFixed(4)} inch`,
+      `Customer approval: ${approvalRequired ? (customerApproved ? `YES${approvedBy ? ` — ${approvedBy}` : ""}` : "REQUIRED — NOT RECORDED") : "NOT REQUIRED"}`,
       "",
       "BLUE = score/mark only",
       "BLACK = interior cut first",
       "RED = outside perimeter cut last",
       "YELLOW = uncut bridge location shown in the app preview",
       "",
-      "Open the DXF or SVG in CorelDRAW 2021 and complete a final visual inspection before sending it to the laser.",
+      "PREFERRED: Open the SMOOTH SVG in CorelDRAW 2021. It preserves fitted curves and intentional sharp corners.",
+      "FALLBACK: The DXF is an R12 segmented compatibility file.",
+      "Complete a final visual inspection before sending either file to the laser.",
       ...inspection.issues.map((issue) => `REVIEW: ${issue}`),
     ].join("\n"));
     const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
@@ -536,6 +599,16 @@ function ImageToDxf() {
       ...path,
       points: path.points.filter((_, nodeIndex) => nodeIndex !== selectedNode.nodeIndex),
     }));
+    setSelectedNode(null);
+  }
+
+  function deleteSelectedPath() {
+    if (!selectedNode) return;
+    const removedIndex = selectedNode.pathIndex;
+    rememberGeometry();
+    setTrace((current) => ({ ...current, paths: current.paths.filter((_, index) => index !== removedIndex) }));
+    setPathRoles((current) => current.filter((_, index) => index !== removedIndex));
+    setBridges((current) => current.filter((bridge) => bridge.pathIndex !== removedIndex).map((bridge) => ({ ...bridge, pathIndex: bridge.pathIndex > removedIndex ? bridge.pathIndex - 1 : bridge.pathIndex })));
     setSelectedNode(null);
   }
 
@@ -653,10 +726,15 @@ function ImageToDxf() {
           <Paper withBorder p="md" radius="md">
             <Stack gap="md">
               <div><Text fw={900}>2. Clean up the cut lines</Text><Text size="sm" c="dimmed">Adjust these only when the preview misses part of the design.</Text></div>
+              <Select label="Artwork type" description="Starts with settings suited to this kind of design" value={tracePreset} onChange={(value) => applyTracePreset(value || "logo")} data={Object.entries(TRACE_PRESETS).map(([value, preset]) => ({ value, label: preset.label }))} />
               <div><Group justify="space-between"><Text size="sm" fw={700}>Detail Threshold</Text><Text size="sm" c="dimmed">{threshold}</Text></Group><Slider value={threshold} onChange={setThreshold} min={20} max={235} color="red" /></div>
               <Checkbox checked={invert} onChange={(event) => setInvert(event.currentTarget.checked)} label="Reverse black and white" />
               <div><Group justify="space-between"><Text size="sm" fw={700}>Remove Small Specks</Text><Text size="sm" c="dimmed">{speckleSize}px</Text></Group><Slider value={speckleSize} onChange={setSpeckleSize} min={0} max={40} color="red" /></div>
               <div><Text size="sm" fw={700} mb={6}>Line Style</Text><SegmentedControl fullWidth value={smoothing} onChange={setSmoothing} data={[{ label: "Sharp", value: "sharp" }, { label: "Balanced", value: "balanced" }, { label: "Smooth", value: "smooth" }]} /></div>
+              <div><Group justify="space-between"><Text size="sm" fw={700}>Curve Strength</Text><Text size="sm" c="dimmed">{Math.round(curveTension * 100)}%</Text></Group><Slider value={curveTension} onChange={setCurveTension} min={0.35} max={1} step={0.01} color="blue" /></div>
+              <div><Group justify="space-between"><Text size="sm" fw={700}>Corner Protection</Text><Text size="sm" c="dimmed">{cornerAngle}°</Text></Group><Slider value={cornerAngle} onChange={setCornerAngle} min={30} max={80} step={1} color="red" /><Text size="xs" c="dimmed">Lower values protect more corners. Higher values allow more rounding.</Text></div>
+              <Checkbox checked={straightenLines} onChange={(event) => setStraightenLines(event.currentTarget.checked)} label="Straighten nearly horizontal and vertical lines" />
+              <Checkbox checked={fitRounds} onChange={(event) => setFitRounds(event.currentTarget.checked)} label="Recognize and rebuild circular contours" />
               <div>
                 <Text size="sm" fw={700} mb={6}>Production Node Reduction</Text>
                 <SegmentedControl fullWidth value={nodeReduction} onChange={setNodeReduction} data={[{ label: "Fine", value: "fine" }, { label: "Production", value: "production" }, { label: "Aggressive", value: "aggressive" }]} />
@@ -681,6 +759,11 @@ function ImageToDxf() {
               <Checkbox checked={lockRatio} onChange={(event) => setLockRatio(event.currentTarget.checked)} label="Keep the image proportions" />
               <TextInput label="CorelDRAW layer prefix" value={layerName} onChange={(event) => setLayerName(event.currentTarget.value)} />
               <NumberInput label="Bridge width (in)" description="Actual uncut connection left in the metal" value={bridgeWidth} onChange={(value) => setBridgeWidth(Math.max(0.005, Number(value) || 0.04))} min={0.005} max={0.5} step={0.005} decimalScale={3} />
+              <Select label="Material" value={material} onChange={(value) => { const next = value || "Custom"; setMaterial(next); setBridgeWidth(MATERIAL_PRESETS[next].bridge); setKerfCompensation(MATERIAL_PRESETS[next].kerf); }} data={Object.keys(MATERIAL_PRESETS)} />
+              <Group grow align="flex-start"><NumberInput label="Thickness (in)" value={materialThickness} onChange={(value) => setMaterialThickness(Math.max(0, Number(value) || 0))} min={0} max={2} step={0.005} decimalScale={3} /><NumberInput label="Kerf (in)" description="Offsets each contour by half this value" value={kerfCompensation} onChange={(value) => setKerfCompensation(Math.max(0, Number(value) || 0))} min={0} max={0.1} step={0.001} decimalScale={4} /></Group>
+              <Group grow align="flex-start"><TextInput label="File revision" value={revision} onChange={(event) => setRevision(event.currentTarget.value)} /><TextInput label="Approved by" placeholder="Customer or reviewer" value={approvedBy} onChange={(event) => setApprovedBy(event.currentTarget.value)} /></Group>
+              <Checkbox checked={approvalRequired} onChange={(event) => { setApprovalRequired(event.currentTarget.checked); if (!event.currentTarget.checked) setCustomerApproved(false); }} label="Customer approval is required" />
+              {approvalRequired && <Checkbox checked={customerApproved} onChange={(event) => setCustomerApproved(event.currentTarget.checked)} label="Customer approved this exact design revision" />}
               <Checkbox checked={showNodes} onChange={(event) => setShowNodes(event.currentTarget.checked)} label="Show vector nodes in preview" />
               <Paper withBorder radius="md" p="sm">
                 <Stack gap={6}>
@@ -690,8 +773,8 @@ function ImageToDxf() {
                   <Text size="xs" c="dimmed">Any path, bridge, size, or node change removes approval and requires another check.</Text>
                 </Stack>
               </Paper>
-              <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} color="gray" size="md">Download Draft CorelDRAW DXF</Button>
-              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="blue">Download Draft Blue/Black/Red SVG</Button>
+              <Button onClick={downloadSvg} disabled={!trace} leftSection={<IconDownload size={18} />} color="blue" size="lg">Download Smooth CorelDRAW SVG</Button>
+              <Button onClick={downloadDxf} disabled={!trace} leftSection={<IconDownload size={18} />} variant="light" color="gray">Download Segmented DXF Compatibility File</Button>
               <Button onClick={downloadProductionPackage} disabled={!productionApproved} leftSection={<IconDownload size={18} />} color="green">Download Laser-Ready Production Package</Button>
               {physicalSize && <Text size="sm" ta="center" c="dimmed">Export size: {physicalSize.width.toFixed(3)} × {physicalSize.height.toFixed(3)} inches</Text>}
             </Stack>
@@ -750,6 +833,7 @@ function ImageToDxf() {
                 <Group gap="xs">
                   <Button size="compact-sm" variant="light" leftSection={<IconPlus size={14} />} disabled={!selectedNode} onClick={addNodeAfterSelected}>Add Node After</Button>
                   <Button size="compact-sm" variant="light" color="red" leftSection={<IconTrash size={14} />} disabled={!selectedNode || trace.paths[selectedNode.pathIndex].points.length <= 3} onClick={deleteSelectedNode}>Delete Node</Button>
+                  <Button size="compact-sm" variant="filled" color="red" leftSection={<IconTrash size={14} />} disabled={!selectedNode} onClick={deleteSelectedPath}>Delete Entire Path</Button>
                   <Button size="compact-sm" variant="light" color="blue" disabled={!selectedNode} onClick={() => straightenSelectedNode("y")}>Make Horizontal</Button>
                   <Button size="compact-sm" variant="light" color="blue" disabled={!selectedNode} onClick={() => straightenSelectedNode("x")}>Make Vertical</Button>
                   <Button size="compact-sm" variant="default" leftSection={<IconArrowBackUp size={14} />} disabled={!geometryUndoStack.length} onClick={undoGeometry}>Undo Geometry</Button>
@@ -772,14 +856,16 @@ function ImageToDxf() {
                   ]}
                 />
                 <div><Group justify="space-between"><Text size="xs" fw={700}>Preview Zoom</Text><Text size="xs" c="dimmed">{previewZoom}%</Text></Group><Slider value={previewZoom} onChange={setPreviewZoom} min={100} max={300} step={25} color="blue" /></div>
+                <Checkbox checked={showOriginal} onChange={(event) => setShowOriginal(event.currentTarget.checked)} label="Overlay original artwork for comparison" />
               </Stack>
             </Paper>
           </Stack>}
           {error && <Alert mb="md" color="red" icon={<IconAlertTriangle size={18} />}>{error}</Alert>}
           <div className="mw-dxf-preview" style={{ overflow: previewZoom > 100 ? "auto" : "hidden" }}>
+            {trace && showOriginal && sourceUrl && <img src={sourceUrl} alt="Original artwork comparison" style={{ position: "absolute", inset: 24, width: "calc(100% - 48px)", height: "calc(100% - 48px)", objectFit: "contain", opacity: 0.28, pointerEvents: "none" }} />}
             {trace ? <svg ref={svgRef} viewBox={`0 0 ${trace.sourceWidth} ${trace.sourceHeight}`} onPointerMove={moveNode} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onPointerLeave={endNodeDrag} style={{ width: `${previewZoom}%`, height: `${previewZoom}%`, minWidth: `${previewZoom}%`, minHeight: `${previewZoom}%`, maxHeight: previewZoom === 100 ? 620 : "none", touchAction: "none" }} aria-label="Interactive DXF path and node editor">
               {trace.paths.map((path, pathIndex) => {
-                const points = path.points.map((point) => `${point.x},${point.y}`).join(" ");
+                const smoothPath = buildSmoothPathData(path.points, { tension: curveTension, cornerAngleDegrees: cornerAngle });
                 const role = pathRoles[pathIndex];
                 const color = role === "cut" ? "#ff0000" : role === "engrave" ? "#0000ff" : "#111111";
                 const previewRank = { engrave: 0, intact: 1, cut: 2 };
@@ -788,9 +874,9 @@ function ImageToDxf() {
                 const visible = visibleForPreview && (role === "cut" ? showRedPaths : role === "engrave" ? showEngravePaths : showBlackPaths);
                 if (!visible) return null;
                 return <g key={pathIndex} onClick={(event) => handlePathClick(event, pathIndex)} style={{ cursor: editMode === "bridge" ? "crosshair" : "pointer" }}>
-                  <polyline points={points} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
-                  <polygon points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                  {unbridgedPathSet.has(pathIndex) && <polygon points={points} fill="none" stroke="#ff9f1c" strokeWidth="5" strokeDasharray="8 6" opacity="0.72" vectorEffect="non-scaling-stroke" />}
+                  <path d={smoothPath} fill="none" stroke="transparent" strokeWidth="12" vectorEffect="non-scaling-stroke" />
+                  <path d={smoothPath} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  {unbridgedPathSet.has(pathIndex) && <path d={smoothPath} fill="none" stroke="#ff9f1c" strokeWidth="5" strokeDasharray="8 6" opacity="0.72" vectorEffect="non-scaling-stroke" />}
                   {showNodes && path.points.map((point, nodeIndex) => {
                     const selected = selectedNode?.pathIndex === pathIndex && selectedNode?.nodeIndex === nodeIndex;
                     return <circle key={nodeIndex} cx={point.x} cy={point.y} r={selected ? 5 : 3.2} fill={selected ? "#ffd43b" : "#fff"} stroke={selected ? "#5f4500" : color} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" onPointerDown={(event) => beginNodeDrag(event, pathIndex, nodeIndex)} style={{ cursor: draggingNode?.pathIndex === pathIndex && draggingNode?.nodeIndex === nodeIndex ? "grabbing" : "grab" }} />;
