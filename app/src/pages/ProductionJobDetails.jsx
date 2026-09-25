@@ -9,11 +9,15 @@ import {
   Group,
   Image,
   Loader,
+  Modal,
   Paper,
   Progress,
+  Select,
   SimpleGrid,
   Stack,
   Text,
+  Textarea,
+  TextInput,
   Title,
 } from "@mantine/core";
 import {
@@ -43,6 +47,33 @@ import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
 import { uploadOrderImages } from "../services/orderImageService";
 
+const DESIGN_WORK_OPTIONS = [
+  "New Design Required",
+  "Existing Logo — Placement Only",
+  "Design Already on File",
+  "Customer-Supplied Cut-Ready File",
+  "Design Changes Required",
+];
+
+function parseDesignInstructions(notes) {
+  const lines = String(notes || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const fileLine = lines.find((line) =>
+    line.toLowerCase().startsWith("design file:")
+  );
+
+  return {
+    workType: lines[0] || "New Design Required",
+    fileName: fileLine?.slice(fileLine.indexOf(":") + 1).trim() || "",
+    description: lines
+      .slice(1)
+      .filter((line) => !line.toLowerCase().startsWith("design file:"))
+      .join("\n"),
+  };
+}
+
 function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [job, setJob] = useState(selectedProductionJob || null);
   const [customer, setCustomer] = useState(null);
@@ -56,7 +87,54 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [designModalOpen, setDesignModalOpen] = useState(false);
+  const [savingDesignInstructions, setSavingDesignInstructions] = useState(false);
+  const [designDraft, setDesignDraft] = useState(parseDesignInstructions(""));
   const [errorMessage, setErrorMessage] = useState("");
+
+  function openDesignInstructions() {
+    setDesignDraft(parseDesignInstructions(order?.design_notes));
+    setDesignModalOpen(true);
+  }
+
+  async function saveDesignInstructions() {
+    if (!order?.id) return;
+
+    setSavingDesignInstructions(true);
+    try {
+      const designNotes = [
+        designDraft.workType,
+        designDraft.fileName.trim()
+          ? `Design file: ${designDraft.fileName.trim()}`
+          : "",
+        designDraft.description.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const { error } = await supabase
+        .from("customer_orders")
+        .update({ design_notes: designNotes })
+        .eq("id", order.id);
+
+      if (error) throw error;
+      await loadJobFolder();
+      setDesignModalOpen(false);
+      notifications.show({
+        title: "Design Instructions Updated",
+        message: "The work type, file name, and placement notes are now visible to Production.",
+        color: "green",
+      });
+    } catch (error) {
+      console.error(error);
+      notifications.show({
+        title: "Design Instructions Could Not Be Saved",
+        message: error?.message || "Please try again.",
+        color: "red",
+      });
+    } finally {
+      setSavingDesignInstructions(false);
+    }
+  }
 
   async function addReferenceFiles(files) {
     const selectedFiles = Array.from(files || []);
@@ -425,6 +503,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
     materialRequests.every((request) =>
       ["Fulfilled", "Received", "Completed", "Cancelled"].includes(request.status)
     );
+  const designInstructions = parseDesignInstructions(order?.design_notes);
   const nextAction = blockedStep
     ? `Resolve ${blockedStep.step_name || blockedStep.department}: ${blockedStep.blocked_reason || "production is blocked"}`
     : inProgressStep
@@ -437,6 +516,68 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
 
   return (
     <>
+      <Modal
+        opened={designModalOpen}
+        onClose={() => setDesignModalOpen(false)}
+        title="Edit Design Instructions"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <Select
+            label="What does Design need to do?"
+            data={DESIGN_WORK_OPTIONS}
+            value={designDraft.workType}
+            onChange={(value) =>
+              setDesignDraft((current) => ({
+                ...current,
+                workType: value || "New Design Required",
+              }))
+            }
+            searchable
+            allowDeselect={false}
+          />
+          <TextInput
+            label="Existing File Name / Search Name"
+            description="Enter the CorelDRAW, SVG, DXF, PDF, or customer file name so it is easy to find."
+            placeholder="Example: Robert_AirForce_Logo.cdr"
+            value={designDraft.fileName}
+            onChange={(event) =>
+              setDesignDraft((current) => ({
+                ...current,
+                fileName: event.currentTarget.value,
+              }))
+            }
+          />
+          <Textarea
+            label="Placement / Design Instructions"
+            description="Explain where the logo goes, required size, holes, weld points, layers, or other details."
+            placeholder="Place the existing logo centered on the 24-inch flag..."
+            minRows={4}
+            autosize
+            value={designDraft.description}
+            onChange={(event) =>
+              setDesignDraft((current) => ({
+                ...current,
+                description: event.currentTarget.value,
+              }))
+            }
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDesignModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              loading={savingDesignInstructions}
+              onClick={saveDesignInstructions}
+            >
+              Save Design Instructions
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       <MWPageHeader
         title={jobDisplayName}
         subtitle={[
@@ -668,6 +809,48 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                   </Text>
                 </div>
               </SimpleGrid>
+            </Stack>
+          </MWSection>
+
+          <MWSection
+            title="Design Instructions"
+            subtitle="What Design needs to do and where to find the artwork"
+            action={
+              <Button
+                color="red"
+                variant="light"
+                leftSection={<IconClipboardCheck size={17} />}
+                onClick={openDesignInstructions}
+              >
+                Edit Instructions
+              </Button>
+            }
+          >
+            <Stack gap="md">
+              <Card withBorder radius="lg" p="md">
+                <Stack gap="sm">
+                  <div>
+                    <Text size="xs" fw={900} c="dimmed">DESIGN WORK</Text>
+                    <Badge color="violet" variant="light" size="lg" mt={4}>
+                      {designInstructions.workType}
+                    </Badge>
+                  </div>
+                  <Divider />
+                  <div>
+                    <Text size="xs" fw={900} c="dimmed">FIND FILE</Text>
+                    <Text fw={800} mt={3}>
+                      {designInstructions.fileName || "No file name or search location entered"}
+                    </Text>
+                  </div>
+                  <Divider />
+                  <div>
+                    <Text size="xs" fw={900} c="dimmed">PLACEMENT / DESIGN NOTES</Text>
+                    <Text mt={3} style={{ whiteSpace: "pre-wrap" }}>
+                      {designInstructions.description || "No placement or design instructions entered."}
+                    </Text>
+                  </div>
+                </Stack>
+              </Card>
             </Stack>
           </MWSection>
 

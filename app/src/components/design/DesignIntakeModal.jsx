@@ -33,6 +33,7 @@ const DEFAULT_FORM = {
   description: "",
   specialInstructions: "",
   designSource: "New Design Required",
+  designFileName: "",
   designFeePaid: false,
   paymentMethod: "Card",
   assignedDesigner: "Kory",
@@ -155,6 +156,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       const customer = await findOrCreateCustomer();
       const startingDepartment = needsDesign ? "Design" : "Laser";
       const orderNumber = `MW-${new Date().getFullYear()}-${Date.now()}`;
+      const designFileName = clean(form.designFileName) || files[0]?.name || "";
       const { data: order, error: orderError } = await supabase
         .from("customer_orders")
         .insert({
@@ -179,7 +181,11 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           design_fee_paid: feeRequired && form.designFeePaid,
           design_fee_paid_at: feeRequired && form.designFeePaid ? new Date().toISOString() : null,
           design_status: needsDesign ? "Ready" : "Existing Design",
-          design_notes: `${form.designSource}\n${clean(form.description)}`,
+          design_notes: [
+            form.designSource,
+            designFileName ? `Design file: ${designFileName}` : "",
+            clean(form.description),
+          ].filter(Boolean).join("\n"),
           starting_department: startingDepartment,
           fulfillment_method: "Pickup",
         })
@@ -270,12 +276,32 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Select
             label="Artwork / Design Source"
-            data={["New Design Required", "Existing Design With Changes", "Customer Supplied Finished File", "Design Already on File"]}
+            data={[
+              "New Design Required",
+              "Existing Logo — Placement Only",
+              "Existing Design With Changes",
+              "Customer Supplied Finished File",
+              "Design Already on File",
+            ]}
             value={form.designSource}
             onChange={(value) => update("designSource", value || "New Design Required")}
           />
           <Select label="Assigned Designer" data={["Kory", "Design Team", "Dan"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || "Kory")} />
         </SimpleGrid>
+
+        {form.designSource === "Existing Logo — Placement Only" && (
+          <Alert color="cyan" variant="light">
+            The logo artwork already exists. Design only needs to size and position it on the flag, sign, plaque, or other product.
+          </Alert>
+        )}
+
+        <TextInput
+          label="Existing File Name / Search Name"
+          description="Optional: enter the CorelDRAW filename, Google Drive filename, logo name, or folder reference Kory should search for."
+          placeholder="Example: SOCOM-logo-final.cdr or Flags / Military / SOCOM"
+          value={form.designFileName}
+          onChange={(event) => update("designFileName", event.currentTarget.value)}
+        />
 
         <Stack gap={6}>
           <Text size="sm" fw={700}>

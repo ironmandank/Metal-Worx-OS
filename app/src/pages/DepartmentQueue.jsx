@@ -293,6 +293,15 @@ function DepartmentQueue({
     return `${days}d${hours ? ` ${hours}h` : ""} in station`;
   }
 
+  function getDesignWorkDetails(order) {
+    const lines = String(order?.design_notes || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const fileLine = lines.find((line) => line.toLowerCase().startsWith("design file:"));
+    return {
+      workType: lines[0] || "",
+      fileName: fileLine ? fileLine.slice(fileLine.indexOf(":") + 1).trim() : "",
+    };
+  }
+
   function isPastDue(value) {
     if (!value) return false;
     const dueDate = new Date(`${value}T23:59:59`);
@@ -672,6 +681,7 @@ function DepartmentQueue({
     const job = detail?.job;
     const customer = detail?.customer;
     const order = detail?.order;
+    const designWork = department === "Design" ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
     const items = detail?.items || [];
     const products = detail?.products || [];
     const project = detail?.project;
@@ -734,6 +744,9 @@ function DepartmentQueue({
             {companyName && <Text fw={700}>{companyName}</Text>}
             {department === "Design" && order?.design_notes && (
               <Text size="sm"><b>Artwork:</b> {String(order.design_notes).split("\n")[0]}</Text>
+            )}
+            {department === "Design" && designWork.fileName && (
+              <Text size="sm"><b>Find File:</b> {designWork.fileName}</Text>
             )}
             {department === "Design" && (customer?.phone || customer?.email) && (
               <Text size="sm" c="dimmed">
@@ -940,7 +953,17 @@ function DepartmentQueue({
                 <Button color="red" variant="light" disabled={workOrder.status !== "Ready"} onClick={() => startWorkOrder(workOrder)}>Start</Button>
                 {department === "Design" ? (
                   <>
-                    <Button color="green" disabled={workOrder.status !== "In Progress"} onClick={() => approveDesign(workOrder)}>Completed — Ready to Cut</Button>
+                    <Button
+                      color="green"
+                      h="auto"
+                      mih={42}
+                      py={8}
+                      styles={{ label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center" } }}
+                      disabled={workOrder.status !== "In Progress"}
+                      onClick={() => approveDesign(workOrder)}
+                    >
+                      Completed — Ready to Cut
+                    </Button>
                     <FileButton onChange={(file) => submitDesignForApproval(workOrder, file)} accept="image/*,.pdf,.svg">
                       {(props) => <Button {...props} color="blue" variant="light" disabled={workOrder.status !== "In Progress"}>Upload Proof for Approval</Button>}
                     </FileButton>
@@ -962,6 +985,7 @@ function DepartmentQueue({
     const customer = detail?.customer;
     const project = detail?.project;
     const order = detail?.order;
+    const designWork = department === "Design" ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
     const customerName = project?.contact_name || getCustomerName(customer);
     const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
@@ -1012,6 +1036,16 @@ function DepartmentQueue({
 
           <div>
             <Text fw={900} size="lg" lineClamp={2}>{customerName} — {workName}</Text>
+            {designWork.workType && (
+              <Text size="xs" fw={800} c="cyan.3" mt={4} lineClamp={2}>
+                Design Work: {designWork.workType}
+              </Text>
+            )}
+            {designWork.fileName && (
+              <Text size="xs" fw={800} c="yellow.4" mt={3} lineClamp={2}>
+                Find File: {designWork.fileName}
+              </Text>
+            )}
             <Text size="sm" c="dimmed" mt={3}>
               {workOrder.assigned_to || "Unassigned"} · Due {formatDate(job?.due_date)} · {getStationAge(workOrder)}
             </Text>
@@ -1039,6 +1073,10 @@ function DepartmentQueue({
                 fullWidth
                 size="xs"
                 color="green"
+                h="auto"
+                mih={40}
+                py={8}
+                styles={{ label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center" } }}
                 onClick={(event) => {
                   event.stopPropagation();
                   completeWorkOrder(workOrder);
