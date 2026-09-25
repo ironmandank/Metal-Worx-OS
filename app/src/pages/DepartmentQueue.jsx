@@ -467,10 +467,23 @@ function DepartmentQueue({
     }
     try {
       await startProductionStep(workOrder.id, activeUser);
+      let designStatusWarning = "";
+      if (department === "Design" && order?.id) {
+        const note = `Design started by ${activeUser || "Design Team"} on ${new Date().toLocaleString()}.`;
+        const { error: orderError } = await supabase
+          .from("customer_orders")
+          .update({
+            status: "In Design",
+            design_status: "In Progress",
+            design_notes: [order.design_notes, note].filter(Boolean).join("\n"),
+          })
+          .eq("id", order.id);
+        if (orderError) designStatusWarning = " The work started, but the customer-order design label could not be synchronized.";
+      }
       notifications.show({
         title: "Work Started",
-        message: `${workOrder.work_order_number} is now in progress.`,
-        color: "green",
+        message: `${workOrder.work_order_number} is now in progress.${designStatusWarning}`,
+        color: designStatusWarning ? "orange" : "green",
       });
       await loadQueue();
     } catch (error) {
@@ -482,12 +495,12 @@ function DepartmentQueue({
     }
   }
 
-  async function submitDesignForApproval(workOrder, file) {
+  async function submitDesignForApproval(workOrder, file = null) {
     const detail = jobDetails[workOrder.production_job_id];
-    if (!detail?.order?.id || !file) return;
+    if (!detail?.order?.id) return;
     try {
-      await uploadOrderImages(detail.order.id, [file], "Design Proof");
-      const note = `Design proof submitted by ${activeUser || "Design Team"} on ${new Date().toLocaleString()}.`;
+      if (file) await uploadOrderImages(detail.order.id, [file], "Design Proof");
+      const note = `${file ? "Design proof submitted" : "Design marked complete"} by ${activeUser || "Design Team"} on ${new Date().toLocaleString()}.`;
       const { error } = await supabase
         .from("customer_orders")
         .update({
@@ -506,8 +519,10 @@ function DepartmentQueue({
         priority: "High",
       }).catch(console.warn);
       notifications.show({
-        title: "Ready for Customer Approval",
-        message: "The proof is saved. An administrator must confirm the customer approval before Laser.",
+        title: "Design Complete — Customer Approval Needed",
+        message: file
+          ? "The proof is saved. An administrator must confirm customer approval before Laser."
+          : "The design moved to Customer Approval. A proof can still be attached from the job record.",
         color: "green",
       });
       await loadQueue();
@@ -924,9 +939,12 @@ function DepartmentQueue({
               <>
                 <Button color="red" variant="light" disabled={workOrder.status !== "Ready"} onClick={() => startWorkOrder(workOrder)}>Start</Button>
                 {department === "Design" ? (
-                  <FileButton onChange={(file) => submitDesignForApproval(workOrder, file)} accept="image/*,.pdf,.svg">
-                    {(props) => <Button {...props} color="green" disabled={workOrder.status !== "In Progress"}>Upload Proof & Submit</Button>}
-                  </FileButton>
+                  <>
+                    <Button color="green" disabled={workOrder.status !== "In Progress"} onClick={() => approveDesign(workOrder)}>Completed — Ready to Cut</Button>
+                    <FileButton onChange={(file) => submitDesignForApproval(workOrder, file)} accept="image/*,.pdf,.svg">
+                      {(props) => <Button {...props} color="blue" variant="light" disabled={workOrder.status !== "In Progress"}>Upload Proof for Approval</Button>}
+                    </FileButton>
+                  </>
                 ) : (
                   <Button color="green" disabled={workOrder.status !== "In Progress"} onClick={() => completeWorkOrder(workOrder)}>Complete</Button>
                 )}
@@ -943,6 +961,7 @@ function DepartmentQueue({
     const job = detail?.job;
     const customer = detail?.customer;
     const project = detail?.project;
+    const order = detail?.order;
     const customerName = project?.contact_name || getCustomerName(customer);
     const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
@@ -973,6 +992,18 @@ function DepartmentQueue({
                 </Badge>
               )}
               <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
+              {department === "Design" && (
+                <Badge
+                  color={order?.design_fee_required
+                    ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "green" : "orange")
+                    : "gray"}
+                  variant="filled"
+                >
+                  {order?.design_fee_required
+                    ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "Design Fee Paid" : "Design Fee Pending")
+                    : "No Design Fee"}
+                </Badge>
+              )}
               {overdue && <Badge color="red">Overdue</Badge>}
               {workOrder.priority === "High" && <Badge color="orange">High Priority</Badge>}
             </Group>
@@ -1014,6 +1045,19 @@ function DepartmentQueue({
                 }}
               >
                 Complete
+              </Button>
+            )}
+            {workOrder.status === "In Progress" && department === "Design" && (
+              <Button
+                fullWidth
+                size="xs"
+                color="green"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  approveDesign(workOrder);
+                }}
+              >
+                Completed — Ready to Cut
               </Button>
             )}
           </Stack>
