@@ -1,5 +1,6 @@
 // Live Operations Command Center data service.
 import { supabase } from "../lib/supabase";
+import { getDesignComplexity, isDesignFeeCleared } from "../lib/designPriority";
 import { getActionCenterData } from "./actionCenterService";
 
 function startOfToday() {
@@ -1493,6 +1494,7 @@ export async function getDashboardData() {
     const itemSummary = itemNames.length > 1
       ? `${itemNames.slice(0, 2).join(" + ")}${itemNames.length > 2 ? ` + ${itemNames.length - 2} more` : ""}`
       : itemNames[0];
+    const designComplexity = getDesignComplexity({ order });
     return {
       id: order.id,
       sourceId: order.id,
@@ -1505,7 +1507,24 @@ export async function getDashboardData() {
       businessDaysInShop: businessDaysSince(receivedDate),
       dueDate: order.due_date || null,
       showOnHuddle: Boolean(order.show_on_huddle),
+      designWorkLabel: designComplexity.label,
+      designWorkColor: designComplexity.color,
+      designComplexityTier: designComplexity.tier,
+      designFeeCleared: isDesignFeeCleared({ order }),
+      designFeeStatus: !order.design_fee_required
+        ? "Not Required"
+        : order.design_fee_paid || order.design_fee_status === "Paid"
+          ? "Paid"
+          : "Pending",
     };
+  }).sort((left, right) => {
+    if (left.designFeeCleared !== right.designFeeCleared) {
+      return left.designFeeCleared ? -1 : 1;
+    }
+    if (left.designComplexityTier !== right.designComplexityTier) {
+      return left.designComplexityTier - right.designComplexityTier;
+    }
+    return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
   });
 
   const openProjects =

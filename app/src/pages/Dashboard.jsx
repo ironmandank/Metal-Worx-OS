@@ -1014,7 +1014,15 @@ function Dashboard({
   const regularArtwork = artworkOrders
     .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
     .filter((item) => Number(item.businessDaysInShop || 0) < 12)
-    .sort((left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0))
+    .sort((left, right) => {
+      if (left.designFeeCleared !== right.designFeeCleared) {
+        return left.designFeeCleared ? -1 : 1;
+      }
+      if (Number(left.designComplexityTier || 5) !== Number(right.designComplexityTier || 5)) {
+        return Number(left.designComplexityTier || 5) - Number(right.designComplexityTier || 5);
+      }
+      return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
+    })
     .slice(0, 10);
   const agedArtwork = artworkOrders
     .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
@@ -1481,6 +1489,14 @@ function Dashboard({
                 </span>
                 <strong className="mc-operating-card-title">{item.title || item.customer || item.job || "Work item"}</strong>
                 <span className="mc-operating-card-detail">{item.customer || item.detail || item.issue || item.location || item.type || "Metal Worx work item"}</span>
+                {item.designWorkLabel && (
+                  <span
+                    className="mc-operating-card-detail"
+                    style={{ color: `var(--mantine-color-${item.designWorkColor || "gray"}-4)`, fontWeight: 850 }}
+                  >
+                    {item.designWorkLabel} · Design fee {item.designFeeStatus || "Not Required"}
+                  </span>
+                )}
                 <span className="mc-operating-card-foot">
                   <span>Owner: {item.owner || "Unassigned"}</span>
                   <span>{item.dueDisplay || item.nextAction || item.notes || item.date || item.day || "Date not set"}</span>

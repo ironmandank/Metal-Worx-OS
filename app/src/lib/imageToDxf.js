@@ -477,6 +477,7 @@ export function inspectLaserFile(trace, options = {}) {
   const scaleY = height / trace.sourceHeight;
   const roles = options.pathRoles || [];
   const bridges = options.bridges || [];
+  const sourceAnalysis = options.sourceAnalysis || null;
   let nodeCount = 0;
   let repeatedNodes = 0;
   let smallPieces = 0;
@@ -519,11 +520,29 @@ export function inspectLaserFile(trace, options = {}) {
   if (!bridges.length && roles.some((role) => role !== "engrave")) issues.push("No yellow bridges are placed; every black and red contour will cut completely free.");
   const criticalCount = duplicatePaths + smallPieces;
   const status = criticalCount ? "unsafe" : issues.length ? "review" : "ready";
+  const pathCount = trace.paths.length;
+  const activeLayerCount = new Set(roles.filter(Boolean)).size;
+  const sourceTier = Number(sourceAnalysis?.complexityTier || 1);
+  const complexityPoints =
+    (nodeCount > 5000 ? 4 : nodeCount > 2500 ? 3 : nodeCount > 1000 ? 2 : nodeCount > 350 ? 1 : 0) +
+    (pathCount > 250 ? 4 : pathCount > 120 ? 3 : pathCount > 50 ? 2 : pathCount > 15 ? 1 : 0) +
+    Math.max(0, sourceTier - 1);
+  const artworkComplexity = complexityPoints >= 8
+    ? { label: "Extreme Detail", color: "red", tier: 4 }
+    : complexityPoints >= 5
+      ? { label: "Complex Artwork", color: "orange", tier: 3 }
+      : complexityPoints >= 2
+        ? { label: "Detailed Artwork", color: "yellow", tier: 2 }
+        : { label: "Simple Artwork", color: "green", tier: 1 };
   return {
     status,
     label: status === "ready" ? "Ready" : status === "review" ? "Needs Review" : "Unsafe",
     issues,
     nodeCount,
+    pathCount,
+    activeLayerCount,
+    artworkComplexity,
+    sourceAnalysis,
     duplicatePaths,
     repeatedNodes,
     smallPieces,
@@ -536,6 +555,52 @@ export function inspectLaserFile(trace, options = {}) {
     width,
     height,
   };
+}
+
+export function analyzeSourceArtwork(imageData) {
+  if (!imageData?.data?.length) {
+    return {
+      label: "Source Not Analyzed",
+      color: "gray",
+      complexityTier: 1,
+      colorGroupCount: 0,
+      sampledPixels: 0,
+    };
+  }
+
+  const pixels = imageData.data;
+  const pixelCount = Math.floor(pixels.length / 4);
+  const stride = Math.max(1, Math.floor(pixelCount / 12000));
+  const buckets = new Map();
+  let sampledPixels = 0;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += stride) {
+    const offset = pixelIndex * 4;
+    if (pixels[offset + 3] < 32) continue;
+    const red = Math.round(pixels[offset] / 64);
+    const green = Math.round(pixels[offset + 1] / 64);
+    const blue = Math.round(pixels[offset + 2] / 64);
+    const key = `${red}-${green}-${blue}`;
+    buckets.set(key, (buckets.get(key) || 0) + 1);
+    sampledPixels += 1;
+  }
+
+  const minimumGroupSize = Math.max(2, Math.floor(sampledPixels * 0.015));
+  const colorGroupCount = [...buckets.values()].filter(
+    (count) => count >= minimumGroupSize,
+  ).length;
+  const usedBucketCount = buckets.size;
+
+  if (colorGroupCount <= 2 && usedBucketCount <= 8) {
+    return { label: "One-Color / Silhouette", color: "green", complexityTier: 1, colorGroupCount, sampledPixels };
+  }
+  if (colorGroupCount <= 4 && usedBucketCount <= 20) {
+    return { label: "Limited-Color Artwork", color: "blue", complexityTier: 2, colorGroupCount, sampledPixels };
+  }
+  if (colorGroupCount <= 8 && usedBucketCount <= 40) {
+    return { label: "Multi-Color Logo", color: "violet", complexityTier: 3, colorGroupCount, sampledPixels };
+  }
+  return { label: "Photo / Complex Image", color: "orange", complexityTier: 4, colorGroupCount, sampledPixels };
 }
 
 export function buildPreviewSvg(trace) {

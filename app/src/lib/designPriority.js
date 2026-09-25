@@ -23,6 +23,34 @@ function sourceIsHot(hotItems, detail) {
   return (hotItems || []).some((item) => ids.has(String(item.source_id)));
 }
 
+export function getDesignComplexity(detail = {}) {
+  const designType = String(detail?.order?.design_notes || "")
+    .split("\n")[0]
+    .trim()
+    .toLowerCase();
+
+  if (designType.includes("cut-ready") || designType.includes("cut ready")) {
+    return { tier: 1, label: "Cut-Ready File", color: "green" };
+  }
+  if (designType.includes("already on file")) {
+    return { tier: 2, label: "Design Already on File", color: "teal" };
+  }
+  if (designType.includes("placement only") || designType.includes("existing logo")) {
+    return { tier: 3, label: "Existing Logo — Placement Only", color: "cyan" };
+  }
+  if (designType.includes("changes required") || designType.includes("design changes")) {
+    return { tier: 4, label: "Design Changes Required", color: "orange" };
+  }
+  return { tier: 5, label: "New Design Required", color: "red" };
+}
+
+export function isDesignFeeCleared(detail = {}) {
+  const order = detail?.order || {};
+  return !order.design_fee_required ||
+    order.design_fee_paid ||
+    order.design_fee_status === "Paid";
+}
+
 export function getDesignPriority(workOrder, detail = {}, hotItems = [], now = new Date()) {
   const job = detail.job || {};
   const order = detail.order || {};
@@ -60,6 +88,14 @@ export function getDesignPriority(workOrder, detail = {}, hotItems = [], now = n
 
 export function sortDesignQueue(workOrders, detailsByJob = {}, hotItems = [], now = new Date()) {
   return [...workOrders].sort((left, right) => {
+    const leftFeeCleared = isDesignFeeCleared(detailsByJob[left.production_job_id]);
+    const rightFeeCleared = isDesignFeeCleared(detailsByJob[right.production_job_id]);
+    if (leftFeeCleared !== rightFeeCleared) return leftFeeCleared ? -1 : 1;
+    const leftComplexity = getDesignComplexity(detailsByJob[left.production_job_id]);
+    const rightComplexity = getDesignComplexity(detailsByJob[right.production_job_id]);
+    if (leftComplexity.tier !== rightComplexity.tier) {
+      return leftComplexity.tier - rightComplexity.tier;
+    }
     const leftRank = getDesignPriority(left, detailsByJob[left.production_job_id], hotItems, now);
     const rightRank = getDesignPriority(right, detailsByJob[right.production_job_id], hotItems, now);
     if (leftRank.tier !== rightRank.tier) return leftRank.tier - rightRank.tier;

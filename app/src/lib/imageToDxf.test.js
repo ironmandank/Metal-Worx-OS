@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assignAutomaticCutOrder,
+  analyzeSourceArtwork,
   buildAutomaticBridges,
   buildCutSequence,
   buildCorelSvg,
@@ -117,6 +118,33 @@ describe("image to DXF helpers", () => {
     expect(report.status).toBe("unsafe");
     expect(report.smallPieces).toBe(1);
     expect(report.nodeCount).toBe(3);
+    expect(report.pathCount).toBe(1);
+    expect(report.activeLayerCount).toBe(1);
+    expect(report.artworkComplexity.label).toBe("Simple Artwork");
+  });
+
+  it("recognizes a simple one-color source image", () => {
+    const analysis = analyzeSourceArtwork({
+      width: 2,
+      height: 2,
+      data: new Uint8ClampedArray([
+        0, 0, 0, 255, 255, 255, 255, 255,
+        0, 0, 0, 255, 255, 255, 255, 255,
+      ]),
+    });
+    expect(analysis.label).toBe("One-Color / Silhouette");
+    expect(analysis.complexityTier).toBe(1);
+    expect(analysis.colorGroupCount).toBe(2);
+  });
+
+  it("recognizes a varied source image as complex", () => {
+    const pixels = [];
+    for (let index = 0; index < 64; index += 1) {
+      pixels.push((index * 37) % 256, (index * 71) % 256, (index * 113) % 256, 255);
+    }
+    const analysis = analyzeSourceArtwork({ width: 8, height: 8, data: new Uint8ClampedArray(pixels) });
+    expect(analysis.label).toBe("Photo / Complex Image");
+    expect(analysis.complexityTier).toBe(4);
   });
 
   it("orders blue marks, black interiors, and red exteriors in production order", () => {

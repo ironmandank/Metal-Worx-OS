@@ -47,7 +47,11 @@ import {
 import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { getTodaysHotTodayItems } from "../services/hotTodayService";
-import { getDesignPriority, sortDesignQueue } from "../lib/designPriority";
+import {
+  getDesignComplexity,
+  getDesignPriority,
+  sortDesignQueue,
+} from "../lib/designPriority";
 
 function DepartmentQueue({
   department,
@@ -314,6 +318,7 @@ function DepartmentQueue({
   function getDesignWorkDetails(order) {
     const lines = String(order?.design_notes || "").split("\n").map((line) => line.trim()).filter(Boolean);
     const fileLine = lines.find((line) => line.toLowerCase().startsWith("design file:"));
+    const complexity = getDesignComplexity({ order });
     return {
       workType: lines[0] || "",
       fileName: fileLine ? fileLine.slice(fileLine.indexOf(":") + 1).trim() : "",
@@ -321,6 +326,8 @@ function DepartmentQueue({
         .slice(1)
         .filter((line) => !line.toLowerCase().startsWith("design file:"))
         .join("\n"),
+      color: complexity.color,
+      easeLabel: complexity.label,
     };
   }
 
@@ -869,7 +876,9 @@ function DepartmentQueue({
           <Stack gap={2}>
             {companyName && <Text fw={700}>{companyName}</Text>}
             {department === "Design" && order?.design_notes && (
-              <Text size="sm"><b>Artwork:</b> {String(order.design_notes).split("\n")[0]}</Text>
+              <Text size="sm" c={`${designWork.color}.4`} fw={800}>
+                Artwork: {String(order.design_notes).split("\n")[0]}
+              </Text>
             )}
             {department === "Design" && designWork.fileName && (
               <Text size="sm"><b>Find File:</b> {designWork.fileName}</Text>
@@ -1175,7 +1184,7 @@ function DepartmentQueue({
           <div>
             <Text fw={900} size="lg" lineClamp={2}>{customerName} — {workName}</Text>
             {designWork.workType && (
-              <Text size="xs" fw={800} c="cyan.3" mt={4} lineClamp={2}>
+              <Text size="xs" fw={900} c={`${designWork.color}.4`} mt={4} lineClamp={2}>
                 Design Work: {designWork.workType}
               </Text>
             )}

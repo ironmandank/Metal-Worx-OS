@@ -38,6 +38,7 @@ import {
   buildAutomaticBridges,
   buildCutSequence,
   assignAutomaticCutOrder,
+  analyzeSourceArtwork,
   cleanTracePaths,
   findUnbridgedInteriorPaths,
   inspectLaserFile,
@@ -120,6 +121,7 @@ function ImageToDxf() {
   const [height, setHeight] = useState(24);
   const [lockRatio, setLockRatio] = useState(true);
   const [layerName, setLayerName] = useState("CUT");
+  const [sourceAnalysis, setSourceAnalysis] = useState(null);
 
   useEffect(() => {
     if (!file) return undefined;
@@ -134,6 +136,7 @@ function ImageToDxf() {
     setGeometryUndoStack([]);
     setGeometryRedoStack([]);
     setError("");
+    setSourceAnalysis(null);
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
@@ -171,8 +174,9 @@ function ImageToDxf() {
       keepAspect: lockRatio,
       pathRoles,
       bridges,
+      sourceAnalysis,
     });
-  }, [trace, width, height, lockRatio, pathRoles, bridges]);
+  }, [trace, width, height, lockRatio, pathRoles, bridges, sourceAnalysis]);
 
   const cutSequence = useMemo(
     () => (trace ? buildCutSequence(trace, pathRoles) : []),
@@ -211,6 +215,7 @@ function ImageToDxf() {
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const source = context.getImageData(0, 0, canvas.width, canvas.height);
+      setSourceAnalysis(analyzeSourceArtwork(source));
       const binary = prepareBinaryImageData(source, { threshold, invert });
       const tolerance = smoothing === "smooth" ? 2.5 : smoothing === "sharp" ? 0.35 : 1;
       const nextTrace = traceImageData(binary, {
@@ -702,6 +707,14 @@ function ImageToDxf() {
               <Text fw={900}>Pre-Cut File Inspection</Text>
               <Badge color={inspection.status === "ready" ? "green" : inspection.status === "review" ? "yellow" : "red"} size="lg">{inspection.label}</Badge>
             </Group>
+            <Group gap="xs" mb="xs">
+              <Badge color={inspection.artworkComplexity.color} size="lg">{inspection.artworkComplexity.label}</Badge>
+              {inspection.sourceAnalysis && <Badge variant="light" color={inspection.sourceAnalysis.color}>{inspection.sourceAnalysis.label}</Badge>}
+              {inspection.sourceAnalysis && <Badge variant="light" color="gray">Approx. {inspection.sourceAnalysis.colorGroupCount} source color group{inspection.sourceAnalysis.colorGroupCount === 1 ? "" : "s"}</Badge>}
+              <Badge variant="light" color="gray">{inspection.pathCount.toLocaleString()} vector paths</Badge>
+              <Badge variant="light" color="gray">{inspection.activeLayerCount} production layer{inspection.activeLayerCount === 1 ? "" : "s"}</Badge>
+            </Group>
+            <Text size="xs" c="dimmed" mb="xs">Source colors describe the uploaded artwork. Blue, black, red, and yellow below are production instructions—not the artwork's original colors.</Text>
             <Group gap="xs" mb="xs">
               <Badge variant="light" color="gray">{inspection.nodeCount.toLocaleString()} nodes</Badge>
               <Badge variant="light" color="blue">{inspection.engravePathCount} blue / score</Badge>
