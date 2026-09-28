@@ -424,9 +424,18 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter", compress: true });
   await registerFonts(doc);
   const prepared = [];
+  const missingImages = [];
   for (const file of files) {
-    try { prepared.push({ ...file, image: await urlToDataUrl(file.example_url || imageUrls[file.id]) }); }
-    catch { prepared.push({ ...file, image: null }); }
+    try {
+      const source = file.example_url || imageUrls[file.id];
+      if (!source) throw new Error("No image URL was available.");
+      prepared.push({ ...file, image: await urlToDataUrl(source) });
+    } catch {
+      missingImages.push(file.file_name || "Unnamed project photo");
+    }
+  }
+  if (missingImages.length) {
+    throw new Error(`The PDF was not created because ${missingImages.length} project photo${missingImages.length === 1 ? "" : "s"} could not be loaded: ${missingImages.slice(0, 3).join(", ")}${missingImages.length > 3 ? "…" : ""}. Refresh the project and try again.`);
   }
   let logo = null;
   if (internal) {
