@@ -298,28 +298,21 @@ function ProjectStoryBoard({ project, activeUser }) {
     notifications.show({ title: "Story Photo Removed", message: "The photo was removed from this project story.", color: "green" });
   }
 
-  async function exportPdf(mode) {
-    setExporting(mode);
+  async function exportPdf() {
+    setExporting("pdf");
     try {
-      const projectPhotos = isExample
-        ? SSU_EXAMPLE
-        : mode === "customer"
-          ? files.filter((file) => file.customer_visible)
-          : files;
-      const exportFiles = projectPhotos;
+      const exportFiles = files;
       if (!exportFiles.length) {
-        notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
+        notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
       }
       await downloadStoryBoardPdf({
-        project: isExample ? { ...project, project_name: "SSU Two-Container Project", contact_name: "SSU" } : project,
+        project,
         files: exportFiles,
         imageUrls: urls,
-        mode,
-        // Customer exports always use the approved professional storyboard
-        // layout so the PDF and PowerPoint remain visually consistent.
-        template: mode === "customer" ? "canva" : presentationTemplate,
-        overview: storyOverview,
+        mode: "internal",
+        template: isSsuConnexProject(project, false) ? "canva" : presentationTemplate,
+        overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
       });
     } catch (error) {
       notifications.show({ title: "PDF Could Not Be Exported", message: error.message, color: "red" });
@@ -328,28 +321,21 @@ function ProjectStoryBoard({ project, activeUser }) {
     }
   }
 
-  async function exportPowerPoint(mode) {
-    setExporting(`${mode}-pptx`);
+  async function exportPowerPoint() {
+    setExporting("pptx");
     try {
-      const projectPhotos = isExample
-        ? SSU_EXAMPLE
-        : mode === "customer"
-          ? files.filter((file) => file.customer_visible)
-          : files;
-      const exportFiles = projectPhotos;
+      const exportFiles = files;
       if (!exportFiles.length) {
-        notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
+        notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
       }
       await downloadStoryBoardPowerPoint({
-        project: isExample ? { ...project, project_name: "SSU Connex Project", contact_name: "SSU" } : project,
+        project,
         files: exportFiles,
         imageUrls: urls,
-        mode,
-        overview: storyOverview,
-        // Customer exports always use the approved professional storyboard
-        // layout so the PDF and PowerPoint remain visually consistent.
-        template: mode === "customer" ? "canva" : presentationTemplate,
+        mode: "internal",
+        overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
+        template: isSsuConnexProject(project, false) ? "canva" : presentationTemplate,
       });
     } catch (error) {
       notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });
@@ -451,10 +437,8 @@ function ProjectStoryBoard({ project, activeUser }) {
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
           <Select w={245} label="PDF & PowerPoint style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "canva")} allowDeselect={false} />
-          <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal Project Record</Button>
-          <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer Presentation</Button>
-          <Button variant="light" color="blue" leftSection={<IconPresentation size={16} />} loading={exporting === "internal-pptx"} onClick={() => exportPowerPoint("internal")}>Internal PowerPoint</Button>
-          <Button variant="light" color="cyan" leftSection={<IconPresentation size={16} />} loading={exporting === "customer-pptx"} onClick={() => exportPowerPoint("customer")}>Customer PowerPoint</Button>
+          <Button variant="light" color="blue" leftSection={<IconPresentation size={16} />} loading={exporting === "pptx"} onClick={exportPowerPoint}>Download PowerPoint</Button>
+          <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "pdf"} onClick={exportPdf}>Download PDF</Button>
           <SegmentedControl value={view} onChange={setView} data={["Internal Project Story", "Customer Presentation", "SSU Connex Project Story"]} />
         </Group>
       </Group>
