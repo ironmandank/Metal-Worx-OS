@@ -461,7 +461,16 @@ function FieldSchedule({ setPage, setSelectedProject }) {
         color: "green",
         items: projects.filter((project) => project.status === "In Progress").map((project) => toItem(project, "Active", "green")),
       },
-    ];
+    ].map((queue) => ({
+      ...queue,
+      items: [...queue.items].sort((left, right) => {
+        const leftRank = Number(left.project?.work_queue_rank || Number.MAX_SAFE_INTEGER);
+        const rightRank = Number(right.project?.work_queue_rank || Number.MAX_SAFE_INTEGER);
+        const leftDate = new Date(left.project?.due_date || left.project?.target_completion_date || left.project?.planned_start_date || "2999-12-31").getTime();
+        const rightDate = new Date(right.project?.due_date || right.project?.target_completion_date || right.project?.planned_start_date || "2999-12-31").getTime();
+        return leftRank - rightRank || leftDate - rightDate;
+      }),
+    }));
   }, [projects, unscheduledWork]);
 
   const ownerOptions = useMemo(
@@ -803,7 +812,10 @@ function FieldSchedule({ setPage, setSelectedProject }) {
                   {queue.items.map((item) => (
                     <Paper key={item.id} withBorder radius="md" p="sm">
                       <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
-                      <Badge mt={6} size="xs" color={item.color || queue.color}>{item.stage || item.type}</Badge>
+                      <Group gap="xs" mt={6}>
+                        <Badge size="xs" color={item.color || queue.color}>{item.stage || item.type}</Badge>
+                        {item.project && <Badge size="xs" color="dark">Work #{item.project.work_queue_rank || "Unranked"}</Badge>}
+                      </Group>
                       <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                       <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
                       <Button fullWidth size="xs" variant="light" mt="sm" onClick={() => openProject(item.project)}>Open Project</Button>

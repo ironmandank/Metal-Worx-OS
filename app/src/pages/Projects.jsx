@@ -26,6 +26,8 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconArrowUp,
+  IconArrowDown,
   IconClipboardCheck,
   IconCircleCheck,
   IconCalendarEvent,
@@ -258,6 +260,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [savingQuickUpdate, setSavingQuickUpdate] = useState(false);
   const [restoringProjectId, setRestoringProjectId] = useState(null);
   const [completingProjectId, setCompletingProjectId] = useState(null);
+  const [rankingProjectId, setRankingProjectId] = useState(null);
   const [selectedAlertKey, setSelectedAlertKey] = useState(null);
 
   useEffect(() => {
@@ -515,7 +518,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     });
 
     const projectQueue = filteredProjects.filter((project) => !activeStatus(project));
-    return [
+    const queues = [
       {
         key: "requests",
         label: "Requests & Estimates",
@@ -593,7 +596,49 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           .map((project) => queueProject(project, "Active", "green")),
       },
     ];
+    const rankValue = (item) => Number(item.project?.work_queue_rank || Number.MAX_SAFE_INTEGER);
+    const dateValue = (item) => {
+      const value = item.project?.due_date || item.project?.target_completion_date || item.project?.planned_start_date;
+      return value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+    };
+    return queues.map((queue) => ({
+      ...queue,
+      items: [...queue.items].sort((left, right) =>
+        rankValue(left) - rankValue(right) || dateValue(left) - dateValue(right)
+      ),
+    }));
   }, [activeSiteVisits, customers, filteredProjects, linkedQuoteVisits, quotesById]);
+
+  const rankedOutsideProjects = useMemo(() => [...projects].sort((left, right) => {
+    const leftRank = Number(left.work_queue_rank || Number.MAX_SAFE_INTEGER);
+    const rightRank = Number(right.work_queue_rank || Number.MAX_SAFE_INTEGER);
+    const leftDate = new Date(left.due_date || left.target_completion_date || left.planned_start_date || "2999-12-31").getTime();
+    const rightDate = new Date(right.due_date || right.target_completion_date || right.planned_start_date || "2999-12-31").getTime();
+    return leftRank - rightRank || leftDate - rightDate || new Date(left.created_at) - new Date(right.created_at);
+  }), [projects]);
+
+  async function moveProjectInWorkOrder(project, direction) {
+    const currentIndex = rankedOutsideProjects.findIndex((item) => item.id === project.id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= rankedOutsideProjects.length) return;
+    const reordered = [...rankedOutsideProjects];
+    [reordered[currentIndex], reordered[targetIndex]] = [reordered[targetIndex], reordered[currentIndex]];
+    setRankingProjectId(project.id);
+    try {
+      const results = await Promise.all(reordered.map((item, index) =>
+        supabase.from("projects").update({ work_queue_rank: index + 1 }).eq("id", item.id)
+      ));
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+      const ranks = Object.fromEntries(reordered.map((item, index) => [item.id, index + 1]));
+      setProjects((current) => current.map((item) => ({ ...item, work_queue_rank: ranks[item.id] || item.work_queue_rank })));
+      notifications.show({ title: "Work Order Updated", message: `${project.project_name || project.project_number} is now #${targetIndex + 1} in the outside-work sequence.`, color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Work Order Could Not Update", message: error.message, color: "red" });
+    } finally {
+      setRankingProjectId(null);
+    }
+  }
 
   const leadershipSummary = useMemo(() => {
     const now = new Date();
@@ -1535,9 +1580,18 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     {queue.items.map((item) => (
                       <Paper key={item.id} withBorder radius="md" p="sm">
                         <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
-                        <Badge mt={6} size="xs" color={item.color || queue.color}>{item.stage}</Badge>
+                        <Group gap="xs" mt={6}>
+                          <Badge size="xs" color={item.color || queue.color}>{item.stage}</Badge>
+                          {item.kind === "project" && <Badge size="xs" color="dark" variant="filled">Work #{item.project.work_queue_rank || rankedOutsideProjects.findIndex((project) => project.id === item.project.id) + 1}</Badge>}
+                        </Group>
                         <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                         <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
+                        {item.kind === "project" && (
+                          <Group gap={6} mt="xs">
+                            <Button size="compact-xs" variant="default" leftSection={<IconArrowUp size={13} />} loading={rankingProjectId === item.project.id} disabled={rankedOutsideProjects[0]?.id === item.project.id} onClick={() => moveProjectInWorkOrder(item.project, -1)}>Earlier</Button>
+                            <Button size="compact-xs" variant="default" rightSection={<IconArrowDown size={13} />} loading={rankingProjectId === item.project.id} disabled={rankedOutsideProjects.at(-1)?.id === item.project.id} onClick={() => moveProjectInWorkOrder(item.project, 1)}>Later</Button>
+                          </Group>
+                        )}
                         <SimpleGrid cols={item.kind === "project" ? 2 : 1} spacing="xs" mt="sm">
                           <Button
                             fullWidth

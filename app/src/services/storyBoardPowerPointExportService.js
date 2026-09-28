@@ -164,7 +164,38 @@ function addTimeline(pptx, context) {
   });
   slide.addShape("rect", { x: 0.88, y: 5.25, w: 11.58, h: 0.82, fill: { color: COLORS.charcoal }, line: { color: COLORS.charcoal } });
   addText(slide, `${context.prepared.length} project photographs document ${context.stages.length} major phases.`, { x: 1.15, y: 5.47, w: 10.9, h: 0.4, fontSize: 14, color: canva ? COLORS.white : COLORS.gray, bold: canva });
-  addFooter(slide, "Project Timeline", 3, context.totalSlides, canva);
+  addFooter(slide, "Project Timeline", 4, context.totalSlides, canva);
+}
+
+function addScopeOverview(pptx, context) {
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.black };
+  addEyebrow(slide, "Section 02 / Scope & Objectives");
+  addText(slide, "Project scope and major deliverables", { x: 0.62, y: 0.8, w: 8.3, h: 0.65, fontSize: 29, bold: true });
+  slide.addShape("line", { x: 0.62, y: 1.58, w: 12.05, h: 0, line: { color: COLORS.red, width: 1.2 } });
+  addText(slide, "PROJECT SCOPE", { x: 0.68, y: 1.95, w: 2.2, h: 0.2, fontSize: 8, bold: true, charSpacing: 1.4, color: COLORS.red });
+  addText(slide, context.overview, { x: 0.68, y: 2.28, w: 5.45, h: 2.4, fontSize: 15, color: "D4D6D8", valign: "top", fit: "shrink" });
+  addText(slide, "DOCUMENTED DELIVERABLES", { x: 6.75, y: 1.95, w: 3.2, h: 0.2, fontSize: 8, bold: true, charSpacing: 1.4, color: COLORS.red });
+  context.stages.slice(0, 8).forEach((stage, index) => {
+    const y = 2.28 + index * 0.5;
+    addText(slide, String(index + 1).padStart(2, "0"), { x: 6.75, y, w: 0.42, h: 0.26, fontSize: 10, bold: true, color: COLORS.red });
+    addText(slide, stage, { x: 7.28, y, w: 4.65, h: 0.3, fontSize: 13, bold: true, fit: "shrink" });
+    slide.addShape("line", { x: 7.28, y: y + 0.36, w: 4.7, h: 0, line: { color: COLORS.line, width: 0.5 } });
+  });
+  addFooter(slide, "Scope & Objectives", 3, context.totalSlides);
+}
+
+function addBeforeAfter(pptx, context, page) {
+  if (context.prepared.length < 2) return;
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.black };
+  addEyebrow(slide, "Transformation / Comparison");
+  addText(slide, "Before / After", { x: 0.62, y: 0.78, w: 6, h: 0.65, fontSize: 30, bold: true });
+  addText(slide, "BEFORE", { x: 0.62, y: 1.62, w: 1.4, h: 0.22, fontSize: 9, bold: true, color: COLORS.gray });
+  addText(slide, "AFTER", { x: 6.98, y: 1.62, w: 1.4, h: 0.22, fontSize: 9, bold: true, color: COLORS.red });
+  addPhotoFrame(slide, context.prepared[0], 0.62, 1.95, 5.75, 4.45, true, context.template === "canva" ? "cover" : "contain");
+  addPhotoFrame(slide, context.prepared.at(-1), 6.98, 1.95, 5.75, 4.45, true, context.template === "canva" ? "cover" : "contain");
+  addFooter(slide, "Project Transformation", page, context.totalSlides);
 }
 
 function addPhaseDivider(pptx, context, stage, stageIndex, firstFile, page) {
@@ -235,7 +266,7 @@ export async function downloadStoryBoardPowerPoint({ project, files, imageUrls, 
   }
   const stages = [...new Set(prepared.map((file) => file.story_stage || "Project Progress"))];
   const contentPages = stages.reduce((count, stage) => count + Math.ceil(prepared.filter((file) => (file.story_stage || "Project Progress") === stage).length / 4), 0);
-  const totalSlides = 4 + stages.length + contentPages;
+  const totalSlides = 5 + stages.length + contentPages + (prepared.length >= 2 ? 1 : 0);
   const context = { project, prepared, stages, overview, internal, logo, totalSlides, template };
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
@@ -247,8 +278,9 @@ export async function downloadStoryBoardPowerPoint({ project, files, imageUrls, 
   pptx.theme = { headFontFace: "Arial", bodyFontFace: "Arial", lang: "en-US" };
   addCover(pptx, context);
   addExecutiveSummary(pptx, context);
+  addScopeOverview(pptx, context);
   addTimeline(pptx, context);
-  let page = 4;
+  let page = 5;
   stages.forEach((stage, stageIndex) => {
     const stageFiles = prepared.filter((file) => (file.story_stage || "Project Progress") === stage);
     addPhaseDivider(pptx, context, stage, stageIndex, stageFiles[0], page);
@@ -258,6 +290,7 @@ export async function downloadStoryBoardPowerPoint({ project, files, imageUrls, 
       page += 1;
     }
   });
+  addBeforeAfter(pptx, context, page);
   addClosing(pptx, context);
   await pptx.writeFile({ fileName: `${safeName(project.project_number || project.project_name)}-${internal ? "Internal" : "Customer"}-Project-Story.pptx` });
 }

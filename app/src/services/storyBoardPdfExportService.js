@@ -231,6 +231,99 @@ function addTimeline(doc, stages, theme) {
   doc.text("FROM ORIGINAL SCOPE TO A PURPOSE-BUILT FINISHED PROJECT", PAGE.width / 2, 480, { align: "center" });
 }
 
+function addScopeOverview(doc, { overview, stages, theme }) {
+  doc.addPage();
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+  addSectionHeader(doc, "Scope and Objectives", "Project scope and major deliverables", theme);
+  doc.setFont("StorySans", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...theme.accent);
+  doc.text("PROJECT SCOPE", PAGE.left, 134);
+  doc.setFont("StorySans", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(215, 217, 219);
+  doc.text(doc.splitTextToSize(clean(overview), 330).slice(0, 13), PAGE.left, 164, { lineHeightFactor: 1.4 });
+  doc.setFont("StorySans", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...theme.accent);
+  doc.text("DOCUMENTED DELIVERABLES", 430, 134);
+  stages.slice(0, 8).forEach((stage, index) => {
+    const y = 168 + index * 40;
+    doc.setFontSize(10);
+    doc.setTextColor(...theme.accent);
+    doc.text(String(index + 1).padStart(2, "0"), 430, y);
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(clean(stage), 466, y);
+    doc.setDrawColor(...CHARCOAL);
+    doc.line(466, y + 11, 744, y + 11);
+  });
+}
+
+function addBeforeAfter(doc, { prepared, theme }) {
+  if (prepared.length < 2) return;
+  doc.addPage();
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+  addSectionHeader(doc, "Before / After", "Project transformation", theme);
+  doc.setFont("StorySans", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...GRAY);
+  doc.text("BEFORE", PAGE.left, 120);
+  doc.setTextColor(...theme.accent);
+  doc.text("AFTER", 414, 120);
+  addIndustrialImage(doc, prepared[0].image, PAGE.left, 136, 336, 374, true);
+  addIndustrialImage(doc, prepared.at(-1).image, 414, 136, 336, 374, true);
+}
+
+function addPhaseDivider(doc, { stage, stageIndex, firstFile, theme }) {
+  doc.addPage();
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+  if (firstFile?.image) addIndustrialImage(doc, firstFile.image, 400, 0, 392, PAGE.height, false);
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, 414, PAGE.height, "F");
+  doc.setFont("StorySans", "bold");
+  doc.setTextColor(...theme.accent);
+  doc.setFontSize(9);
+  doc.text("PHASE", PAGE.left, 70);
+  doc.setFontSize(70);
+  doc.text(String(stageIndex + 1).padStart(2, "0"), PAGE.left, 177);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(25);
+  doc.text(doc.splitTextToSize(clean(stage), 305), PAGE.left, 245, { lineHeightFactor: 1.05 });
+  doc.setFont("StorySans", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(200, 202, 204);
+  const detail = clean(firstFile?.description || "Project progress documented by the Metal Worx team.");
+  doc.text(doc.splitTextToSize(detail, 305).slice(0, 8), PAGE.left, 330, { lineHeightFactor: 1.4 });
+}
+
+function addClosing(doc, { project, prepared, internal, theme }) {
+  doc.addPage();
+  doc.setFillColor(...BLACK);
+  doc.rect(0, 0, PAGE.width, PAGE.height, "F");
+  doc.setFillColor(...theme.accent);
+  doc.rect(0, 0, 310, PAGE.height, "F");
+  doc.setFont("StorySans", "bold");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(9);
+  doc.text("PROJECT DELIVERED", PAGE.left, 75);
+  doc.setFontSize(31);
+  doc.text(["CUSTOM METAL.", "BUILT TO LAST."], PAGE.left, 145, { lineHeightFactor: 1.05 });
+  doc.setFontSize(15);
+  doc.text(doc.splitTextToSize(clean(project.project_name || "Completed Metal Worx Project"), 220), PAGE.left, 300);
+  doc.setFontSize(9);
+  doc.text(internal ? "VETERAN OWNED / AMERICAN MADE" : "PROJECT COMPLETION RECORD", PAGE.left, 520);
+  const completion = [...prepared].reverse().find((file) => file.story_stage === "Completed Project") || prepared.at(-1);
+  if (completion?.image) addIndustrialImage(doc, completion.image, 344, 52, 402, 452, true);
+  doc.setFont("StorySans", "normal");
+  doc.setTextColor(...GRAY);
+  doc.setFontSize(8);
+  doc.text("METAL WORX, INC. / FAYETTEVILLE, NORTH CAROLINA", 545, 542, { align: "center" });
+}
+
 function addStagePage(doc, { stage, files, pageIndex, pageCount, internal, theme, template }) {
   doc.addPage();
   const dark = ["canva", "industrial", "collage", "photojournal"].includes(template);
@@ -326,14 +419,18 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
   const stages = [...new Set(prepared.map((file) => file.story_stage || "Project Progress"))];
   addCover(doc, { project, overview, internal, logo, cover: prepared.find((file) => file.is_cover_photo) || prepared[0], theme });
   addExecutiveSummary(doc, { project, overview, prepared, stages, internal, theme });
+  addScopeOverview(doc, { overview, stages, theme });
   addTimeline(doc, stages, theme);
-  for (const stage of stages) {
+  stages.forEach((stage, stageIndex) => {
     const stageFiles = prepared.filter((file) => (file.story_stage || "Project Progress") === stage);
+    addPhaseDivider(doc, { stage, stageIndex, firstFile: stageFiles[0], theme });
     const chunks = [];
     const photosPerPage = template === "photojournal" ? 1 : 4;
     for (let index = 0; index < stageFiles.length; index += photosPerPage) chunks.push(stageFiles.slice(index, index + photosPerPage));
     chunks.forEach((chunk, pageIndex) => addStagePage(doc, { stage, files: chunk, pageIndex, pageCount: chunks.length, internal, theme, template }));
-  }
+  });
+  addBeforeAfter(doc, { prepared, theme });
+  addClosing(doc, { project, prepared, internal, theme });
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page);

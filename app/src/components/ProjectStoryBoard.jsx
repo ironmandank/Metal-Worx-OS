@@ -58,7 +58,7 @@ const SSU_EXAMPLE = [
 const SSU_OVERVIEW = "Metal Worx transformed two 40-foot shipping containers with custom-fabricated interior steel lining. The work included fitting and welding the steel floor, installing full-length wall supports, reinforcing the upper structure, and enclosing the end walls to create a durable interior ready for the project's next phase.";
 
 const PRESENTATION_TEMPLATES = [
-  { value: "canva", label: "Canva Industrial Case Study" },
+  { value: "canva", label: "Metal Worx Base Storyboard" },
   { value: "industrial", label: "Industrial Story - Dark" },
   { value: "portfolio", label: "Executive Portfolio - Light" },
   { value: "field", label: "Field Progress - Technical" },
@@ -68,7 +68,7 @@ const PRESENTATION_TEMPLATES = [
 ];
 
 const TEMPLATE_DESCRIPTIONS = {
-  canva: "Premium black, red, and white case-study layouts based on the approved Canva storyboard.",
+  canva: "The approved 19-layout Metal Worx storyboard system for standard projects.",
   industrial: "Black and red feature pages with bold fabrication photography.",
   portfolio: "Clean white executive pages for leadership and customer review.",
   field: "Structured progress pages for milestones, notes, and field records.",
@@ -87,6 +87,20 @@ function safeFileName(value) {
 function isImage(file) {
   return String(file.file_type || "").startsWith("image/")
     || /\.(png|jpe?g|webp|gif|heic)$/i.test(file.file_name || "");
+}
+
+async function downloadApprovedFile(path, fileName) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Approved storyboard file could not be loaded (${response.status}).`);
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
 }
 
 function ProjectStoryBoard({ project, activeUser }) {
@@ -139,6 +153,11 @@ function ProjectStoryBoard({ project, activeUser }) {
   );
 
   const isExample = view === "SSU Connex Project Story";
+  const isSsuConnex = isExample || /\bssu\b.*\bconnex\b|\bconnex\b.*\bssu\b/i.test([
+    project.project_name,
+    project.company_name,
+    project.contact_name,
+  ].filter(Boolean).join(" "));
   const coverFile = visibleFiles.find((file) => file.is_cover_photo) || visibleFiles[0];
   const coverUrl = coverFile ? (coverFile.example_url || urls[coverFile.id]) : null;
   const coverBackground = presentationTemplate === "portfolio"
@@ -277,6 +296,10 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf(mode) {
     setExporting(mode);
     try {
+      if (isSsuConnex && mode === "internal") {
+        await downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pdf", `SSU-Connex-${mode === "internal" ? "Internal" : "Customer"}-Storyboard.pdf`);
+        return;
+      }
       const exportFiles = isExample
         ? SSU_EXAMPLE
         : mode === "customer"
@@ -304,6 +327,10 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint(mode) {
     setExporting(`${mode}-pptx`);
     try {
+      if (isSsuConnex && mode === "internal") {
+        await downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pptx", `SSU-Connex-${mode === "internal" ? "Internal" : "Customer"}-Storyboard.pptx`);
+        return;
+      }
       const exportFiles = isExample
         ? SSU_EXAMPLE
         : mode === "customer"
