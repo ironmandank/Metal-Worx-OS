@@ -742,7 +742,7 @@ function App() {
     }
 
     if (page === "knowledgeCenter") {
-      return <KnowledgeCenter setPage={setPage} />;
+      return <KnowledgeCenter setPage={setPage} activeUser={activeUser} />;
     }
 
     if (page === "employeeLogins") {

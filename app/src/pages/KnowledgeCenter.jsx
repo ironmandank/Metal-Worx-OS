@@ -35,6 +35,7 @@ import {
   IconTool,
   IconUsers,
 } from "@tabler/icons-react";
+import ManualLibrary from "../components/ManualLibrary";
 
 const CATEGORIES = [
   { id: "all", label: "All Guides", icon: IconBook2, color: "red" },
@@ -610,7 +611,7 @@ function ArticleSection({ title, children }) {
   );
 }
 
-function KnowledgeCenter({ setPage }) {
+function KnowledgeCenter({ setPage, activeUser }) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [selectedArticle, setSelectedArticle] = useState(null);
@@ -691,6 +692,8 @@ function KnowledgeCenter({ setPage }) {
         Update work when it actually starts or finishes so every employee sees
         the same current status.
       </Alert>
+
+      <ManualLibrary activeUser={activeUser} />
 
       <SimpleGrid cols={{ base: 2, sm: 3, lg: 4 }} spacing="sm">
         {CATEGORIES.map((item) => {
