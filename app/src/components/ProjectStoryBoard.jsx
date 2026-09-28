@@ -301,7 +301,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf() {
     setExporting("pdf");
     try {
-      const exportFiles = files;
+      const exportFiles = isSsuConnexProject(project, false) ? [...SSU_EXAMPLE, ...files] : files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
@@ -324,7 +324,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint() {
     setExporting("pptx");
     try {
-      const exportFiles = files;
+      const exportFiles = isSsuConnexProject(project, false) ? [...SSU_EXAMPLE, ...files] : files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
