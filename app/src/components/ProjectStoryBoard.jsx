@@ -113,13 +113,37 @@ function safeFileName(value) {
     .slice(0, 150);
 }
 
-function downloadApprovedFile(url, fileName) {
+function byteaToBytes(value) {
+  const hex = String(value || "").replace(/^\\x/, "");
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
+  }
+  return bytes;
+}
+
+async function downloadApprovedFile(projectId, fileType, fileName) {
+  const { data, error } = await supabase
+    .from("project_storyboard_exports")
+    .select("part_index,file_data,mime_type")
+    .eq("project_id", projectId)
+    .eq("file_type", fileType)
+    .order("part_index", { ascending: true });
+
+  if (error) throw error;
+  if (!data?.length) throw new Error(`The approved ${fileType.toUpperCase()} has not been stored for this project.`);
+
+  const blob = new Blob(data.map((part) => byteaToBytes(part.file_data)), {
+    type: data[0].mime_type || "application/octet-stream",
+  });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
   document.body.appendChild(link);
   link.click();
   link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function isImage(file) {
@@ -314,7 +338,7 @@ function ProjectStoryBoard({ project, activeUser }) {
     setExporting("pdf");
     try {
       if (isApprovedSsuStoryboardProject(project)) {
-        downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pdf", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pdf`);
+        await downloadApprovedFile(project.id, "pdf", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pdf`);
         return;
       }
       const exportFiles = files;
@@ -341,7 +365,7 @@ function ProjectStoryBoard({ project, activeUser }) {
     setExporting("pptx");
     try {
       if (isApprovedSsuStoryboardProject(project)) {
-        downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pptx", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pptx`);
+        await downloadApprovedFile(project.id, "pptx", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pptx`);
         return;
       }
       const exportFiles = files;
