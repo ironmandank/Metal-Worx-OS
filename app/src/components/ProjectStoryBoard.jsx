@@ -319,6 +319,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         imageUrls: urls,
         mode,
         overview: storyOverview,
+        template: presentationTemplate,
       });
     } catch (error) {
       notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });
@@ -419,7 +420,7 @@ function ProjectStoryBoard({ project, activeUser }) {
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
-          <Select w={245} label="PDF presentation style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "canva")} allowDeselect={false} />
+          <Select w={245} label="PDF & PowerPoint style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "canva")} allowDeselect={false} />
           <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "internal"} onClick={() => exportPdf("internal")}>Internal Project Record</Button>
           <Button variant="light" color="gray" leftSection={<IconDownload size={16} />} loading={exporting === "customer"} onClick={() => exportPdf("customer")}>Customer Presentation</Button>
           <Button variant="light" color="blue" leftSection={<IconPresentation size={16} />} loading={exporting === "internal-pptx"} onClick={() => exportPowerPoint("internal")}>Internal PowerPoint</Button>
