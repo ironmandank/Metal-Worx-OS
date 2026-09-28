@@ -11,7 +11,6 @@ import {
   Modal,
   Paper,
   Progress,
-  SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
@@ -22,7 +21,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconEye, IconFlag, IconPhoto, IconPresentation, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconFlag, IconPhoto, IconPresentation, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
@@ -137,8 +136,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [stage, setStage] = useState("Concept & Scope");
   const [caption, setCaption] = useState("");
   const [customerVisible, setCustomerVisible] = useState(false);
-  const [view, setView] = useState("Internal Project Story");
-  const [presentationTemplate, setPresentationTemplate] = useState("canva");
+  const presentationTemplate = "canva";
   const [exporting, setExporting] = useState(null);
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [photoDraft, setPhotoDraft] = useState({ description: "", story_stage: STORY_STAGES[0], photo_taken_at: "", customer_visible: false });
@@ -172,12 +170,9 @@ function ProjectStoryBoard({ project, activeUser }) {
     loadStory();
   }, [project?.id]);
 
-  const visibleFiles = useMemo(
-    () => view === "SSU Connex Project Story" ? SSU_EXAMPLE : view === "Customer Presentation" ? files.filter((file) => file.customer_visible) : files,
-    [files, view],
-  );
+  const visibleFiles = useMemo(() => files, [files]);
 
-  const isExample = view === "SSU Connex Project Story";
+  const isExample = false;
   const isSsuConnex = isSsuConnexProject(project, isExample);
   const coverFile = visibleFiles.find((file) => file.is_cover_photo) || visibleFiles[0];
   const coverUrl = coverFile ? (coverFile.example_url || urls[coverFile.id]) : null;
@@ -460,47 +455,16 @@ function ProjectStoryBoard({ project, activeUser }) {
       <Group justify="space-between" align="center" wrap="wrap">
         <div><Title order={3}>Project Story</Title><Text size="sm" c="dimmed">Build a professional visual presentation from the original scope through installation.</Text></div>
         <Group gap="xs">
-          <Select w={245} label="PDF & PowerPoint style" aria-label="Presentation template" data={PRESENTATION_TEMPLATES} value={presentationTemplate} onChange={(value) => setPresentationTemplate(value || "canva")} allowDeselect={false} />
           <Button variant="light" color="blue" leftSection={<IconPresentation size={16} />} loading={exporting === "pptx"} onClick={exportPowerPoint}>Download PowerPoint</Button>
           <Button variant="light" color="red" leftSection={<IconDownload size={16} />} loading={exporting === "pdf"} onClick={exportPdf}>Download PDF</Button>
-          <SegmentedControl value={view} onChange={setView} data={["Internal Project Story", "Customer Presentation", "SSU Connex Project Story"]} />
         </Group>
       </Group>
-
-      <Card withBorder radius="lg" p="lg">
-        <Group justify="space-between" mb="md" align="flex-start">
-          <div><Text fw={900} size="lg">Project Story Template Library</Text><Text size="sm" c="dimmed">Choose a design family for the export. Photo layouts expand automatically as the project grows.</Text></div>
-          <Badge color="red" variant="light">6 design families</Badge>
-        </Group>
-        <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }}>
-          {PRESENTATION_TEMPLATES.map((item) => (
-            <Paper
-              key={item.value}
-              withBorder
-              radius="md"
-              p="md"
-              role="button"
-              tabIndex={0}
-              onClick={() => setPresentationTemplate(item.value)}
-              onKeyDown={(event) => { if (["Enter", " "].includes(event.key)) setPresentationTemplate(item.value); }}
-              style={{ cursor: "pointer", borderColor: presentationTemplate === item.value ? "var(--mantine-color-red-7)" : undefined, borderWidth: presentationTemplate === item.value ? 2 : 1 }}
-            >
-              <Group justify="space-between" gap="xs"><Text fw={900} size="sm">{item.label}</Text>{presentationTemplate === item.value && <Badge size="xs" color="red">Selected</Badge>}</Group>
-              <Text size="xs" c="dimmed" mt={6}>{TEMPLATE_DESCRIPTIONS[item.value]}</Text>
-            </Paper>
-          ))}
-        </SimpleGrid>
-      </Card>
 
       {isExample && (
         <Alert color="red" icon={<IconStar size={18} />} title="SSU Connex Story Board - Two-Container Project">
           <Text size="sm">{SSU_OVERVIEW}</Text>
           <Text size="sm" fw={900} mt="xs">Custom Metal. Built to Last. · Veteran Owned · American Made · Built Strong. Finished Right.</Text>
         </Alert>
-      )}
-
-      {view === "Customer Presentation" && !files.some((file) => file.customer_visible) && (
-        <Alert color="blue" icon={<IconEye size={18} />}>No photographs have been approved for the customer story yet.</Alert>
       )}
 
       <Stack gap="md">
@@ -520,7 +484,7 @@ function ProjectStoryBoard({ project, activeUser }) {
                       <Stack gap={6} mt="sm">
                         <Group justify="space-between" gap="xs" align="flex-start"><Text fw={800} size="sm" style={{ flex: 1 }}>{file.description || file.file_name}</Text>{file.is_cover_photo && <Badge color="yellow" leftSection={<IconStar size={12} />}>Cover</Badge>}</Group>
                         <Text size="xs" c="dimmed">{isExample ? "SSU Two-Container Project · Customer-facing example" : `${new Date(file.photo_taken_at || file.created_at).toLocaleString()} · ${file.uploaded_by || "Metal Worx"}`}</Text>
-                        {view === "Internal Project Story" && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6}>
+                        {!isExample && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={6}>
                           <Button fullWidth size="xs" variant="light" color="blue" leftSection={<IconEdit size={14} />} onClick={() => openPhotoEditor(file)}>Edit Photo Details</Button>
                           <Button fullWidth size="xs" variant="light" color={file.customer_visible ? "green" : "gray"} onClick={() => updatePhoto(file, { customer_visible: !file.customer_visible })}>{file.customer_visible ? "Customer Visible" : "Internal Only"}</Button>
                           <Button fullWidth size="xs" variant="light" color="yellow" leftSection={<IconFlag size={14} />} onClick={() => updatePhoto(file, { is_cover_photo: true })}>Set as Cover Photo</Button>
