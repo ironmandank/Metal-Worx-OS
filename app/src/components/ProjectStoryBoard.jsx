@@ -77,6 +77,31 @@ const TEMPLATE_DESCRIPTIONS = {
   photojournal: "Full-width photography with concise milestone storytelling.",
 };
 
+const APPROVED_STORYBOARD_VERSION = "20260928-2";
+
+function isSsuConnexProject(project, isExample) {
+  if (isExample) return true;
+  const projectText = [
+    project?.project_number,
+    project?.project_name,
+    project?.name,
+    project?.title,
+    project?.company_name,
+    project?.customer_name,
+    project?.contact_name,
+    project?.project_description,
+    project?.description,
+    project?.scope_of_work,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  // SSU records have not always used the word "Connex" in their title. Some
+  // existing records are named "Two Containers" or only identify SSU as the
+  // customer, so treat those as the approved SSU storyboard as well.
+  return /\bssu\b/.test(projectText)
+    || /\bconnex(?:es)?\b/.test(projectText)
+    || (/\bcontainers?\b/.test(projectText) && /\b(two|2|40(?:-foot|\s*ft)?)\b/.test(projectText));
+}
+
 function safeFileName(value) {
   return String(value || "progress-photo")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -90,7 +115,8 @@ function isImage(file) {
 }
 
 async function downloadApprovedFile(path, fileName) {
-  const response = await fetch(path);
+  const separator = path.includes("?") ? "&" : "?";
+  const response = await fetch(`${path}${separator}v=${APPROVED_STORYBOARD_VERSION}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Approved storyboard file could not be loaded (${response.status}).`);
   const blob = await response.blob();
   const href = URL.createObjectURL(blob);
@@ -153,11 +179,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   );
 
   const isExample = view === "SSU Connex Project Story";
-  const isSsuConnex = isExample || /\bssu\b.*\bconnex\b|\bconnex\b.*\bssu\b/i.test([
-    project.project_name,
-    project.company_name,
-    project.contact_name,
-  ].filter(Boolean).join(" "));
+  const isSsuConnex = isSsuConnexProject(project, isExample);
   const coverFile = visibleFiles.find((file) => file.is_cover_photo) || visibleFiles[0];
   const coverUrl = coverFile ? (coverFile.example_url || urls[coverFile.id]) : null;
   const coverBackground = presentationTemplate === "portfolio"
