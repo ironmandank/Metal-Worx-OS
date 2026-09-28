@@ -42,6 +42,7 @@ import {
   canonicalStation,
   bypassProductionStep,
   completeProductionStep,
+  returnLaserWorkToDesign,
   startProductionStep,
 } from "../lib/productionWorkflow";
 import { uploadOrderImages } from "../services/orderImageService";
@@ -786,6 +787,27 @@ function DepartmentQueue({
     }
   }
 
+  async function returnToDesign(workOrder) {
+    const reason = window.prompt("Why is this artwork being returned to Design?");
+    if (!reason?.trim()) return;
+    if (!window.confirm("Return this artwork to Design? It will be removed from the Laser Queue and reopened in the Design Queue.")) return;
+    try {
+      await returnLaserWorkToDesign(workOrder.id, activeUser, reason.trim());
+      notifications.show({
+        title: "Returned to Design",
+        message: `${workOrder.work_order_number} was removed from Laser and reopened in the Design Queue.`,
+        color: "orange",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Could Not Return Artwork",
+        message: error?.message || "The artwork could not be returned to Design.",
+        color: "red",
+      });
+    }
+  }
+
   const readyOrders = useMemo(() => {
     const ready = workOrders.filter((workOrder) => workOrder.status === "Ready");
     return department === "Design"
@@ -1042,6 +1064,11 @@ function DepartmentQueue({
             {isAdministrator && (
               <Button fullWidth size="xs" variant="subtle" color="orange" leftSection={<IconFlag size={15} />} onClick={() => togglePriority(workOrder)}>
                 {workOrder.priority === "High" ? "Normal Priority" : "Mark High Priority"}
+              </Button>
+            )}
+            {isAdministrator && department === "Laser" && (
+              <Button fullWidth size="xs" variant="light" color="orange" leftSection={<IconRoute size={15} />} onClick={() => returnToDesign(workOrder)}>
+                Return to Design
               </Button>
             )}
             <Button
