@@ -114,6 +114,15 @@ function safeFileName(value) {
     .slice(0, 150);
 }
 
+function downloadApprovedFile(url, fileName) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function isImage(file) {
   return String(file.file_type || "").startsWith("image/")
     || /\.(png|jpe?g|webp|gif|heic)$/i.test(file.file_name || "");
@@ -308,7 +317,11 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf() {
     setExporting("pdf");
     try {
-      const exportFiles = isApprovedSsuStoryboardProject(project) ? [...SSU_EXAMPLE, ...files] : files;
+      if (isApprovedSsuStoryboardProject(project)) {
+        downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pdf", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pdf`);
+        return;
+      }
+      const exportFiles = files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
@@ -318,7 +331,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         files: exportFiles,
         imageUrls: urls,
         mode: "internal",
-        template: isApprovedSsuStoryboardProject(project) ? "canva" : presentationTemplate,
+        template: presentationTemplate,
         overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
       });
     } catch (error) {
@@ -331,7 +344,11 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint() {
     setExporting("pptx");
     try {
-      const exportFiles = isApprovedSsuStoryboardProject(project) ? [...SSU_EXAMPLE, ...files] : files;
+      if (isApprovedSsuStoryboardProject(project)) {
+        downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pptx", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pptx`);
+        return;
+      }
+      const exportFiles = files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
@@ -342,7 +359,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         imageUrls: urls,
         mode: "internal",
         overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
-        template: isApprovedSsuStoryboardProject(project) ? "canva" : presentationTemplate,
+        template: presentationTemplate,
       });
     } catch (error) {
       notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });
