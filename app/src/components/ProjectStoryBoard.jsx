@@ -100,6 +100,13 @@ function isSsuConnexProject(project, isExample) {
     || (/\bcontainers?\b/.test(projectText) && /\b(two|2|40(?:-foot|\s*ft)?)\b/.test(projectText));
 }
 
+function isApprovedSsuStoryboardProject(project) {
+  const projectNumber = String(project?.project_number || "").trim().toUpperCase();
+  const projectName = String(project?.project_name || "").toLowerCase();
+  return projectNumber === "PRJ-000002"
+    || (/\bssu\b/.test(projectName) && /\b(two|2)\s+containers?\b/.test(projectName));
+}
+
 function safeFileName(value) {
   return String(value || "progress-photo")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -301,7 +308,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf() {
     setExporting("pdf");
     try {
-      const exportFiles = isSsuConnexProject(project, false) ? [...SSU_EXAMPLE, ...files] : files;
+      const exportFiles = isApprovedSsuStoryboardProject(project) ? [...SSU_EXAMPLE, ...files] : files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
@@ -311,7 +318,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         files: exportFiles,
         imageUrls: urls,
         mode: "internal",
-        template: isSsuConnexProject(project, false) ? "canva" : presentationTemplate,
+        template: isApprovedSsuStoryboardProject(project) ? "canva" : presentationTemplate,
         overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
       });
     } catch (error) {
@@ -324,7 +331,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint() {
     setExporting("pptx");
     try {
-      const exportFiles = isSsuConnexProject(project, false) ? [...SSU_EXAMPLE, ...files] : files;
+      const exportFiles = isApprovedSsuStoryboardProject(project) ? [...SSU_EXAMPLE, ...files] : files;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: "Add a project photo before exporting.", color: "orange" });
         return;
@@ -335,7 +342,7 @@ function ProjectStoryBoard({ project, activeUser }) {
         imageUrls: urls,
         mode: "internal",
         overview: project.project_description || project.description || project.scope_of_work || "Project progress will be documented from the original scope through final completion.",
-        template: isSsuConnexProject(project, false) ? "canva" : presentationTemplate,
+        template: isApprovedSsuStoryboardProject(project) ? "canva" : presentationTemplate,
       });
     } catch (error) {
       notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });
