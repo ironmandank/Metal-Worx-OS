@@ -21,7 +21,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconFlag, IconPhoto, IconPresentation, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowRight, IconArrowUp, IconCamera, IconDownload, IconEdit, IconFlag, IconInfoCircle, IconPhoto, IconPresentation, IconStar, IconTrash, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
 import { downloadStoryBoardPdf } from "../services/storyBoardPdfExportService";
@@ -38,6 +38,23 @@ const STORY_STAGES = [
   "Installation",
   "Completed Project",
 ];
+
+const IMAGE_NEEDS = {
+  "Concept & Scope": "Original condition, arrival, or overall project photo",
+  "Measurements / Site Visit": "Site conditions, measurements, or work-area photo",
+  "Design & Drawings": "Approved drawing, sketch, rendering, or marked-up plan",
+  Materials: "Raw materials, components, or staged material photo",
+  Fabrication: "Cutting, welding, forming, or fabrication progress photo",
+  "Test Fit": "Test-fit, alignment, or quality-check photo",
+  "Paint / Powder Coat": "Surface preparation, paint, or powder-coat photo",
+  Installation: "Delivery, installation, or field-work photo",
+  "Completed Project": "Wide finished-project photo and final detail photo",
+};
+
+const OFFICIAL_STORYBOARD_CATEGORIES = {
+  pptx: "Official Storyboard PowerPoint",
+  pdf: "Official Storyboard PDF",
+};
 
 const SSU_EXAMPLE = [
   { id: "ssu-9336", file_name: "IMG_9336.jpeg", story_stage: "Concept & Scope", description: "Connex Arrival - The 40-foot container arrives at Metal Worx in its original exterior condition, ready for the planned interior steel conversion.", example_url: "/storyboard-examples/ssu/IMG_9336.svg", is_cover_photo: true },
@@ -146,6 +163,24 @@ async function downloadApprovedFile(projectId, fileType, fileName) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadProjectFile(file, fileName) {
+  const { data, error } = await supabase.storage
+    .from("project-files")
+    .createSignedUrl(file.storage_path, 120);
+  if (error) throw error;
+  const response = await fetch(data.signedUrl);
+  if (!response.ok) throw new Error("The uploaded storyboard could not be downloaded.");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName || file.file_name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function isImage(file) {
   return String(file.file_type || "").startsWith("image/")
     || /\.(png|jpe?g|webp|gif|heic)$/i.test(file.file_name || "");
@@ -165,6 +200,9 @@ function ProjectStoryBoard({ project, activeUser }) {
   const [editingPhoto, setEditingPhoto] = useState(null);
   const [photoDraft, setPhotoDraft] = useState({ description: "", story_stage: STORY_STAGES[0], photo_taken_at: "", customer_visible: false });
   const [savingPhoto, setSavingPhoto] = useState(false);
+  const [officialStoryboards, setOfficialStoryboards] = useState({ pptx: null, pdf: null });
+  const [storyboardUpload, setStoryboardUpload] = useState({ pptx: null, pdf: null });
+  const [uploadingStoryboard, setUploadingStoryboard] = useState(null);
 
   async function loadStory() {
     if (!project?.id) return;
@@ -180,7 +218,12 @@ function ProjectStoryBoard({ project, activeUser }) {
       setLoading(false);
       return;
     }
-    const images = (data || []).filter(isImage);
+    const projectFiles = data || [];
+    setOfficialStoryboards({
+      pptx: projectFiles.find((file) => file.category === OFFICIAL_STORYBOARD_CATEGORIES.pptx) || null,
+      pdf: projectFiles.find((file) => file.category === OFFICIAL_STORYBOARD_CATEGORIES.pdf) || null,
+    });
+    const images = projectFiles.filter(isImage);
     const signed = await Promise.all(images.map(async (file) => {
       if (file.story_asset_url) return [file.id, file.story_asset_url];
       const result = await supabase.storage.from("project-files").createSignedUrl(file.storage_path, 3600);
@@ -334,9 +377,99 @@ function ProjectStoryBoard({ project, activeUser }) {
     notifications.show({ title: "Story Photo Removed", message: "The photo was removed from this project story.", color: "green" });
   }
 
+  async function replaceOfficialStoryboard(fileType) {
+    const file = storyboardUpload[fileType];
+    if (!file || uploadingStoryboard) return;
+    const expectedExtension = fileType === "pptx" ? ".pptx" : ".pdf";
+    if (!file.name.toLowerCase().endsWith(expectedExtension)) {
+      notifications.show({
+        title: "Incorrect File Type",
+        message: `Choose a ${expectedExtension.toUpperCase()} file for this upload.`,
+        color: "orange",
+      });
+      return;
+    }
+
+    setUploadingStoryboard(fileType);
+    const activeCategory = OFFICIAL_STORYBOARD_CATEGORIES[fileType];
+    const recoveryCategory = `Storyboard Recovery ${fileType.toUpperCase()}`;
+    const storagePath = `${project.id}/storyboard/${fileType}-${Date.now()}-${safeFileName(file.name)}`;
+    try {
+      const uploadResult = await supabase.storage.from("project-files").upload(storagePath, file, {
+        upsert: false,
+        contentType: file.type || (fileType === "pptx"
+          ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          : "application/pdf"),
+      });
+      if (uploadResult.error) throw uploadResult.error;
+
+      const { data: recoveryFiles, error: recoveryError } = await supabase
+        .from("project_files")
+        .select("id,storage_path")
+        .eq("project_id", project.id)
+        .eq("category", recoveryCategory);
+      if (recoveryError) throw recoveryError;
+      if (recoveryFiles?.length) {
+        const recoveryPaths = recoveryFiles.map((item) => item.storage_path).filter(Boolean);
+        if (recoveryPaths.length) await supabase.storage.from("project-files").remove(recoveryPaths);
+        const { error: deleteRecoveryError } = await supabase
+          .from("project_files")
+          .delete()
+          .in("id", recoveryFiles.map((item) => item.id));
+        if (deleteRecoveryError) throw deleteRecoveryError;
+      }
+
+      const existingOfficial = officialStoryboards[fileType];
+      if (existingOfficial?.id) {
+        const { error: archiveError } = await supabase
+          .from("project_files")
+          .update({ category: recoveryCategory })
+          .eq("id", existingOfficial.id);
+        if (archiveError) throw archiveError;
+      }
+
+      const { error: insertError } = await supabase.from("project_files").insert({
+        project_id: project.id,
+        file_name: file.name,
+        storage_path: storagePath,
+        file_type: file.type || null,
+        file_size: file.size,
+        category: activeCategory,
+        description: `Official ${fileType.toUpperCase()} storyboard uploaded from the project Storyboard workspace.`,
+        uploaded_by: activeUser || null,
+        customer_visible: false,
+      });
+      if (insertError) throw insertError;
+
+      setStoryboardUpload((current) => ({ ...current, [fileType]: null }));
+      await loadStory();
+      notifications.show({
+        title: `${fileType.toUpperCase()} Storyboard Updated`,
+        message: "This is now the official downloadable version. The previous file was retained privately as the recovery copy.",
+        color: "green",
+      });
+    } catch (error) {
+      await supabase.storage.from("project-files").remove([storagePath]).catch(() => null);
+      notifications.show({
+        title: "Storyboard Could Not Be Updated",
+        message: error?.message || "Please try the upload again.",
+        color: "red",
+      });
+    } finally {
+      setUploadingStoryboard(null);
+    }
+  }
+
   async function exportPdf() {
     setExporting("pdf");
     try {
+      if (officialStoryboards.pdf) {
+        await downloadProjectFile(
+          officialStoryboards.pdf,
+          `${safeFileName(project.project_number || project.project_name)}-Project-Story.pdf`,
+        );
+        return;
+      }
       if (isApprovedSsuStoryboardProject(project)) {
         await downloadApprovedFile(project.id, "pdf", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pdf`);
         return;
@@ -364,6 +497,13 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint() {
     setExporting("pptx");
     try {
+      if (officialStoryboards.pptx) {
+        await downloadProjectFile(
+          officialStoryboards.pptx,
+          `${safeFileName(project.project_number || project.project_name)}-Project-Story.pptx`,
+        );
+        return;
+      }
       if (isApprovedSsuStoryboardProject(project)) {
         await downloadApprovedFile(project.id, "pptx", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pptx`);
         return;
@@ -485,6 +625,38 @@ function ProjectStoryBoard({ project, activeUser }) {
         </Group>
       </Group>
 
+      <Card withBorder radius="lg" p="lg">
+        <Stack gap="md">
+          <div>
+            <Text fw={900} size="lg">Official Storyboard Files</Text>
+            <Text size="sm" c="dimmed">
+              Edit the PowerPoint on your computer, then upload the finished PowerPoint and matching PDF here. Only the newest files appear in the download buttons above.
+            </Text>
+          </div>
+          <Alert color="blue" icon={<IconInfoCircle size={18} />}>
+            Uploading a finished file makes it the official project version. The app will not rebuild or change that file. One previous version is kept privately for recovery.
+          </Alert>
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+            <Paper withBorder radius="md" p="md">
+              <Stack gap="sm">
+                <Group justify="space-between"><Text fw={800}>PowerPoint</Text><Badge color={officialStoryboards.pptx ? "green" : "gray"}>{officialStoryboards.pptx ? "Official file uploaded" : "Using app version"}</Badge></Group>
+                {officialStoryboards.pptx && <Text size="xs" c="dimmed" lineClamp={1}>{officialStoryboards.pptx.file_name}</Text>}
+                <FileInput value={storyboardUpload.pptx} onChange={(file) => setStoryboardUpload((current) => ({ ...current, pptx: file }))} accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" placeholder="Choose updated PowerPoint" leftSection={<IconPresentation size={16} />} clearable />
+                <Button color="blue" disabled={!storyboardUpload.pptx} loading={uploadingStoryboard === "pptx"} onClick={() => replaceOfficialStoryboard("pptx")}>{officialStoryboards.pptx ? "Replace Official PowerPoint" : "Upload Official PowerPoint"}</Button>
+              </Stack>
+            </Paper>
+            <Paper withBorder radius="md" p="md">
+              <Stack gap="sm">
+                <Group justify="space-between"><Text fw={800}>PDF</Text><Badge color={officialStoryboards.pdf ? "green" : "gray"}>{officialStoryboards.pdf ? "Official file uploaded" : "Using app version"}</Badge></Group>
+                {officialStoryboards.pdf && <Text size="xs" c="dimmed" lineClamp={1}>{officialStoryboards.pdf.file_name}</Text>}
+                <FileInput value={storyboardUpload.pdf} onChange={(file) => setStoryboardUpload((current) => ({ ...current, pdf: file }))} accept=".pdf,application/pdf" placeholder="Choose matching PDF" leftSection={<IconDownload size={16} />} clearable />
+                <Button color="red" disabled={!storyboardUpload.pdf} loading={uploadingStoryboard === "pdf"} onClick={() => replaceOfficialStoryboard("pdf")}>{officialStoryboards.pdf ? "Replace Official PDF" : "Upload Official PDF"}</Button>
+              </Stack>
+            </Paper>
+          </SimpleGrid>
+        </Stack>
+      </Card>
+
       {isExample && (
         <Alert color="red" icon={<IconStar size={18} />} title="SSU Connex Story Board - Two-Container Project">
           <Text size="sm">{SSU_OVERVIEW}</Text>
@@ -520,6 +692,11 @@ function ProjectStoryBoard({ project, activeUser }) {
                     </Card>
                   ))}
                 </SimpleGrid>
+              )}
+              {stageFiles.length === 0 && (
+                <Alert mt="md" color="orange" icon={<IconPhoto size={18} />} title="Image needed for this section">
+                  {IMAGE_NEEDS[storyStage]}
+                </Alert>
               )}
             </Card>
           );
