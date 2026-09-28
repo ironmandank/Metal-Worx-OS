@@ -77,6 +77,7 @@ function DepartmentQueue({
   const [activityLoading, setActivityLoading] = useState(false);
   const [detailTarget, setDetailTarget] = useState(null);
   const [editDesignTarget, setEditDesignTarget] = useState(null);
+  const [additionalDesignPhotos, setAdditionalDesignPhotos] = useState([]);
   const [designDraft, setDesignDraft] = useState({
     workType: "New Design Required",
     fileName: "",
@@ -365,7 +366,41 @@ function DepartmentQueue({
       phone: detail?.customer?.phone || "",
       email: detail?.customer?.email || "",
     });
+    setAdditionalDesignPhotos([]);
     setEditDesignTarget(workOrder);
+  }
+
+  async function uploadAdditionalDesignPhotos() {
+    if (!editDesignTarget || additionalDesignPhotos.length === 0 || savingAction) return;
+    const detail = jobDetails[editDesignTarget.production_job_id];
+    if (!detail?.order?.id) {
+      notifications.show({
+        title: "Photos Could Not Be Added",
+        message: "This design job is not linked to a customer order.",
+        color: "red",
+      });
+      return;
+    }
+
+    setSavingAction(true);
+    try {
+      await uploadOrderImages(detail.order.id, additionalDesignPhotos, "Design Reference");
+      notifications.show({
+        title: "Design Photos Added",
+        message: `${additionalDesignPhotos.length} photo${additionalDesignPhotos.length === 1 ? " was" : "s were"} added to this design job. Existing images were kept.`,
+        color: "green",
+      });
+      setAdditionalDesignPhotos([]);
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Photos Could Not Be Added",
+        message: error?.message || "Please try the upload again.",
+        color: "red",
+      });
+    } finally {
+      setSavingAction(false);
+    }
   }
 
   async function saveDesignJob() {
@@ -1398,7 +1433,10 @@ function DepartmentQueue({
 
       <Modal
         opened={Boolean(editDesignTarget)}
-        onClose={() => setEditDesignTarget(null)}
+        onClose={() => {
+          setEditDesignTarget(null);
+          setAdditionalDesignPhotos([]);
+        }}
         title="Edit Design Job"
         centered
         size="lg"
@@ -1517,8 +1555,45 @@ function DepartmentQueue({
               />
             </Stack>
           </Paper>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <div>
+                <Text fw={800}>Add More Design Photos</Text>
+                <Text size="sm" c="dimmed">
+                  Add reference photos, sketches, or artwork to this design job. Existing images stay in place.
+                </Text>
+              </div>
+              <FileButton
+                multiple
+                accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                onChange={(files) => setAdditionalDesignPhotos(files || [])}
+              >
+                {(props) => (
+                  <Button {...props} variant="light" color="blue" leftSection={<IconPhoto size={16} />}>
+                    Choose Photos
+                  </Button>
+                )}
+              </FileButton>
+              {additionalDesignPhotos.length > 0 && (
+                <Text size="sm" fw={700}>
+                  {additionalDesignPhotos.length} photo{additionalDesignPhotos.length === 1 ? "" : "s"} selected
+                </Text>
+              )}
+              <Button
+                color="blue"
+                disabled={additionalDesignPhotos.length === 0}
+                loading={savingAction}
+                onClick={uploadAdditionalDesignPhotos}
+              >
+                Add Photos to This Design Job
+              </Button>
+            </Stack>
+          </Paper>
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setEditDesignTarget(null)}>Cancel</Button>
+            <Button variant="default" onClick={() => {
+              setEditDesignTarget(null);
+              setAdditionalDesignPhotos([]);
+            }}>Cancel</Button>
             <Button color="red" loading={savingAction} onClick={saveDesignJob}>Save Design Job</Button>
           </Group>
         </Stack>
