@@ -317,7 +317,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf() {
     setExporting("pdf");
     try {
-      if (isApprovedSsuStoryboardProject(project)) {
+      if (isApprovedSsuStoryboardProject(project) && !files.length) {
         downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pdf", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pdf`);
         return;
       }
@@ -344,7 +344,7 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint() {
     setExporting("pptx");
     try {
-      if (isApprovedSsuStoryboardProject(project)) {
+      if (isApprovedSsuStoryboardProject(project) && !files.length) {
         downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pptx", `${safeFileName(project.project_number || project.project_name)}-Internal-Project-Story.pptx`);
         return;
       }
