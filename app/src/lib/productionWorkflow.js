@@ -80,6 +80,16 @@ export async function bypassProductionStep(workOrderId, actor = "", reason = "")
   return data;
 }
 
+export async function returnLaserWorkToDesign(workOrderId, actor = "", reason = "") {
+  const { data, error } = await supabase.rpc("mw_return_laser_to_design", {
+    p_laser_work_order_id: Number(workOrderId),
+    p_actor: String(actor || "").trim() || null,
+    p_reason: String(reason || "").trim() || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function releaseProject(projectId, actor = "") {
   const { data, error } = await supabase.rpc("mw_release_project_to_production", {
     p_project_id: Number(projectId),
