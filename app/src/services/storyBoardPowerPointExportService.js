@@ -269,14 +269,20 @@ function addClosing(pptx, context) {
 export async function downloadStoryBoardPowerPoint({ project, files, imageUrls, mode = "internal", overview = "", template = "canva" }) {
   const internal = mode === "internal";
   const prepared = [];
+  const missingImages = [];
   for (const file of files) {
     try {
-      const data = await urlToDataUrl(file.example_url || imageUrls[file.id]);
+      const source = file.example_url || imageUrls[file.id];
+      if (!source) throw new Error("No image URL was available.");
+      const data = await urlToDataUrl(source);
       const dimensions = await imageDimensions(data);
       prepared.push({ ...file, data, ...dimensions });
     } catch {
-      prepared.push({ ...file, data: null, width: 1, height: 1 });
+      missingImages.push(file.file_name || "Unnamed project photo");
     }
+  }
+  if (missingImages.length) {
+    throw new Error(`The PowerPoint was not created because ${missingImages.length} project photo${missingImages.length === 1 ? "" : "s"} could not be loaded: ${missingImages.slice(0, 3).join(", ")}${missingImages.length > 3 ? "…" : ""}. Refresh the project and try again.`);
   }
   let logo = null;
   if (internal) {
