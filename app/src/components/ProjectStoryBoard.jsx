@@ -336,7 +336,9 @@ function ProjectStoryBoard({ project, activeUser }) {
         files: exportFiles,
         imageUrls: urls,
         mode,
-        template: presentationTemplate,
+        // Customer exports always use the approved professional storyboard
+        // layout so the PDF and PowerPoint remain visually consistent.
+        template: mode === "customer" ? "canva" : presentationTemplate,
         overview: storyOverview,
       });
     } catch (error) {
@@ -368,7 +370,9 @@ function ProjectStoryBoard({ project, activeUser }) {
         imageUrls: urls,
         mode,
         overview: storyOverview,
-        template: presentationTemplate,
+        // Customer exports always use the approved professional storyboard
+        // layout so the PDF and PowerPoint remain visually consistent.
+        template: mode === "customer" ? "canva" : presentationTemplate,
       });
     } catch (error) {
       notifications.show({ title: "PowerPoint Could Not Be Exported", message: error.message, color: "red" });

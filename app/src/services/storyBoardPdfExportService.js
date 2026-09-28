@@ -18,6 +18,14 @@ function safeName(value) {
   return clean(value || "Project-Story").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "Project-Story";
 }
 
+function concise(value, maxLength = 420) {
+  const text = clean(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  const shortened = text.slice(0, maxLength - 1);
+  const lastSpace = shortened.lastIndexOf(" ");
+  return `${shortened.slice(0, Math.max(lastSpace, maxLength - 24)).trim()}…`;
+}
+
 async function urlToDataUrl(url) {
   if (String(url || "").startsWith("data:")) return url;
   const response = await fetch(url);
@@ -96,13 +104,13 @@ function addSectionHeader(doc, title, eyebrow, theme, light = false) {
 function drawCaption(doc, file, x, y, width, internal, dark = false) {
   const caption = clean(file.description || file.file_name || "Project progress");
   doc.setFont("StorySans", "bold");
-  doc.setFontSize(9.5);
+  doc.setFontSize(10.5);
   doc.setTextColor(...(dark ? [255, 255, 255] : BLACK));
   const lines = doc.splitTextToSize(caption, width);
   doc.text(lines.slice(0, 3), x, y, { lineHeightFactor: 1.25 });
   if (internal) {
     doc.setFont("StorySans", "normal");
-    doc.setFontSize(7);
+    doc.setFontSize(8);
     doc.setTextColor(...(dark ? [170, 174, 178] : GRAY));
     doc.text(clean(file.file_name || "Progress photo"), x, y + Math.min(lines.length, 3) * 12 + 8);
   }
@@ -138,7 +146,7 @@ function addCover(doc, { project, overview, internal, logo, cover, theme }) {
     doc.setFont("StorySans", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(224, 225, 226);
-    doc.text(doc.splitTextToSize(clean(overview), 335).slice(0, 7), PAGE.left, 354, { lineHeightFactor: 1.45 });
+    doc.text(doc.splitTextToSize(concise(overview, 460), 335).slice(0, 7), PAGE.left, 354, { lineHeightFactor: 1.45 });
   }
   doc.setFont("StorySans", "bold");
   doc.setFontSize(10);
@@ -162,7 +170,7 @@ function addExecutiveSummary(doc, { project, overview, prepared, stages, interna
   doc.setFont("StorySans", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(...GRAY);
-  doc.text(doc.splitTextToSize(clean(overview || "Project progress is being documented from the original scope through final completion."), 348).slice(0, 10), PAGE.left, 180, { lineHeightFactor: 1.45 });
+  doc.text(doc.splitTextToSize(concise(overview || "Project progress is being documented from the original scope through final completion.", 620), 348).slice(0, 10), PAGE.left, 180, { lineHeightFactor: 1.45 });
   const completion = Math.min(100, Math.round((stages.length / 9) * 100));
   const stats = [["DOCUMENTED PHASES", `${stages.length}`], ["PROGRESS PHOTOS", `${prepared.length}`], ["CURRENT PHASE", clean(stages.at(-1) || "Planning")], ["STORY COMPLETION", `${completion}%`]];
   stats.forEach(([label, value], index) => {
@@ -243,7 +251,7 @@ function addScopeOverview(doc, { overview, stages, theme }) {
   doc.setFont("StorySans", "normal");
   doc.setFontSize(11);
   doc.setTextColor(215, 217, 219);
-  doc.text(doc.splitTextToSize(clean(overview), 330).slice(0, 13), PAGE.left, 164, { lineHeightFactor: 1.4 });
+  doc.text(doc.splitTextToSize(concise(overview, 760), 330).slice(0, 13), PAGE.left, 164, { lineHeightFactor: 1.4 });
   doc.setFont("StorySans", "bold");
   doc.setFontSize(8);
   doc.setTextColor(...theme.accent);
@@ -296,7 +304,7 @@ function addPhaseDivider(doc, { stage, stageIndex, firstFile, theme }) {
   doc.setFont("StorySans", "normal");
   doc.setFontSize(10);
   doc.setTextColor(200, 202, 204);
-  const detail = clean(firstFile?.description || "Project progress documented by the Metal Worx team.");
+  const detail = concise(firstFile?.description || "Project progress documented through each major phase.", 480);
   doc.text(doc.splitTextToSize(detail, 305).slice(0, 8), PAGE.left, 330, { lineHeightFactor: 1.4 });
 }
 
@@ -311,7 +319,7 @@ function addClosing(doc, { project, prepared, internal, theme }) {
   doc.setFontSize(9);
   doc.text("PROJECT DELIVERED", PAGE.left, 75);
   doc.setFontSize(31);
-  doc.text(["CUSTOM METAL.", "BUILT TO LAST."], PAGE.left, 145, { lineHeightFactor: 1.05 });
+  doc.text(internal ? ["CUSTOM METAL.", "BUILT TO LAST."] : ["PROJECT COMPLETE.", "BUILT TO LAST."], PAGE.left, 145, { lineHeightFactor: 1.05 });
   doc.setFontSize(15);
   doc.text(doc.splitTextToSize(clean(project.project_name || "Completed Metal Worx Project"), 220), PAGE.left, 300);
   doc.setFontSize(9);
@@ -321,7 +329,7 @@ function addClosing(doc, { project, prepared, internal, theme }) {
   doc.setFont("StorySans", "normal");
   doc.setTextColor(...GRAY);
   doc.setFontSize(8);
-  doc.text("METAL WORX, INC. / FAYETTEVILLE, NORTH CAROLINA", 545, 542, { align: "center" });
+  doc.text(internal ? "METAL WORX, INC. / FAYETTEVILLE, NORTH CAROLINA" : "PROJECT COMPLETION PRESENTATION", 545, 542, { align: "center" });
 }
 
 function addStagePage(doc, { stage, files, pageIndex, pageCount, internal, theme, template }) {
@@ -435,7 +443,7 @@ export async function downloadStoryBoardPdf({ project, files, imageUrls, mode = 
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page);
     doc.setFont("StorySans", "normal");
-    doc.setFontSize(7.2);
+    doc.setFontSize(8);
     doc.setTextColor(page === 1 ? 175 : 105, page === 1 ? 175 : 105, page === 1 ? 175 : 105);
     doc.text(internal ? "Metal Worx Inc. | Fayetteville, NC | Veteran Owned" : clean(project.project_name || "Project Progress"), PAGE.left, 592);
     doc.text(`Page ${page} of ${pages}`, PAGE.width - PAGE.right, 592, { align: "right" });

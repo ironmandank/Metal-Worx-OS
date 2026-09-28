@@ -18,6 +18,14 @@ function safeName(value) {
   return clean(value || "Project-Story").replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "") || "Project-Story";
 }
 
+function concise(value, maxLength = 230) {
+  const text = clean(value).replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  const shortened = text.slice(0, maxLength - 1);
+  const lastSpace = shortened.lastIndexOf(" ");
+  return `${shortened.slice(0, Math.max(lastSpace, maxLength - 24)).trim()}…`;
+}
+
 async function urlToDataUrl(url) {
   if (String(url || "").startsWith("data:")) return url;
   const response = await fetch(url);
@@ -67,12 +75,12 @@ function addText(slide, text, options = {}) {
   });
 }
 
-function addFooter(slide, title, page, total, light = false) {
+function addFooter(slide, title, page, total, light = false, internal = true) {
   const footerColor = light ? "666A6F" : COLORS.gray;
   slide.addShape("line", { x: 0.52, y: 7.08, w: 12.3, h: 0, line: { color: COLORS.red, width: 1 } });
-  addText(slide, "METAL WORX, INC.", { x: 0.52, y: 7.14, w: 2.4, h: 0.16, fontSize: 7, bold: true, charSpacing: 1.1, color: footerColor });
-  addText(slide, title.toUpperCase(), { x: 4.55, y: 7.14, w: 4.3, h: 0.16, fontSize: 7, bold: true, align: "center", charSpacing: 1, color: footerColor });
-  addText(slide, `${String(page).padStart(2, "0")} / ${String(total).padStart(2, "0")}`, { x: 11.6, y: 7.14, w: 1.2, h: 0.16, fontSize: 7, bold: true, align: "right", color: footerColor });
+  addText(slide, internal ? "METAL WORX, INC." : "PROJECT PROGRESS", { x: 0.52, y: 7.12, w: 2.4, h: 0.22, fontSize: 7.5, bold: true, charSpacing: 0.9, color: footerColor });
+  addText(slide, title.toUpperCase(), { x: 4.55, y: 7.12, w: 4.3, h: 0.22, fontSize: 7.5, bold: true, align: "center", charSpacing: 0.8, color: footerColor });
+  addText(slide, `${String(page).padStart(2, "0")} / ${String(total).padStart(2, "0")}`, { x: 11.6, y: 7.12, w: 1.2, h: 0.22, fontSize: 7.5, bold: true, align: "right", color: footerColor });
 }
 
 function addEyebrow(slide, text, x = 0.62, y = 0.4, w = 5.5) {
@@ -112,11 +120,13 @@ function addCover(pptx, context) {
   else addText(slide, "PROJECT STORYBOARD", { x: 0.65, y: 0.55, w: 3.3, h: 0.3, fontSize: 10, bold: true, charSpacing: 2, color: COLORS.gray });
   slide.addShape("line", { x: 0.65, y: 1.35, w: 6.25, h: 0, line: { color: COLORS.red, width: 1.5 } });
   addText(slide, context.project.project_name || "Custom Metal Project", { x: 0.65, y: 1.58, w: 6.25, h: 1.42, fontSize: 36, bold: true, breakLine: true, valign: "top", fit: "shrink" });
-  addText(slide, "PROJECT STORYBOARD / CASE STUDY", { x: 0.67, y: 3.17, w: 5.2, h: 0.28, fontSize: 10, bold: true, charSpacing: 2.3, color: COLORS.gray });
-  addText(slide, context.project.project_number || context.project.contact_name || "Metal Worx Fabrication Project", { x: 0.67, y: 3.6, w: 5.7, h: 0.42, fontSize: 16, bold: true, color: COLORS.red });
+  addText(slide, context.internal ? "PROJECT STORYBOARD / CASE STUDY" : "PROJECT PROGRESS PRESENTATION", { x: 0.67, y: 3.17, w: 5.8, h: 0.3, fontSize: 10, bold: true, charSpacing: 1.8, color: COLORS.gray });
+  addText(slide, context.project.project_number || context.project.contact_name || (context.internal ? "Metal Worx Fabrication Project" : "Custom Fabrication Project"), { x: 0.67, y: 3.6, w: 5.7, h: 0.42, fontSize: 16, bold: true, color: COLORS.red });
   addText(slide, "Fayetteville, North Carolina", { x: 0.67, y: 4.14, w: 4, h: 0.28, fontSize: 10, color: COLORS.gray });
-  addText(slide, "VETERAN OWNED  /  AMERICAN MADE", { x: 0.67, y: 6.82, w: 3.9, h: 0.22, fontSize: 8, bold: true, charSpacing: 1.2, color: COLORS.gray });
-  addText(slide, "BUILT STRONG. FINISHED RIGHT.", { x: 4.4, y: 6.82, w: 2.7, h: 0.22, fontSize: 8, bold: true, align: "right" });
+  if (context.internal) {
+    addText(slide, "VETERAN OWNED  /  AMERICAN MADE", { x: 0.67, y: 6.82, w: 3.9, h: 0.24, fontSize: 8, bold: true, charSpacing: 1.1, color: COLORS.gray });
+    addText(slide, "BUILT STRONG. FINISHED RIGHT.", { x: 4.4, y: 6.82, w: 2.7, h: 0.24, fontSize: 8, bold: true, align: "right" });
+  }
 }
 
 function addExecutiveSummary(pptx, context) {
@@ -127,7 +137,7 @@ function addExecutiveSummary(pptx, context) {
   addText(slide, context.project.project_name || "Project Executive Summary", { x: 0.62, y: 0.8, w: 7.1, h: 0.95, fontSize: 29, bold: true, fit: "shrink", color: canva ? COLORS.black : COLORS.white });
   slide.addShape("line", { x: 0.62, y: 1.9, w: 7, h: 0, line: { color: COLORS.red, width: 1.2 } });
   addText(slide, "PROJECT OVERVIEW", { x: 0.65, y: 2.15, w: 2.1, h: 0.2, fontSize: 8, bold: true, charSpacing: 1.5, color: COLORS.red });
-  addText(slide, context.overview, { x: 0.65, y: 2.45, w: 6.85, h: 1.2, fontSize: 14, color: canva ? "3D4044" : "D6D7D8", valign: "top", breakLine: true, fit: "shrink" });
+  addText(slide, concise(context.overview, 380), { x: 0.65, y: 2.45, w: 6.85, h: 1.2, fontSize: 14, color: canva ? "3D4044" : "D6D7D8", valign: "top", breakLine: true, fit: "shrink" });
   const featured = context.prepared.find((file) => file.is_cover_photo) || context.prepared.at(-1);
   addPhotoFrame(slide, featured, 0.65, 4.15, 6.85, 2.22, true, canva ? "cover" : "contain");
   slide.addShape("rect", { x: 8.05, y: 0, w: 5.28, h: 7.5, fill: { color: COLORS.charcoal }, line: { color: COLORS.charcoal } });
@@ -145,7 +155,7 @@ function addExecutiveSummary(pptx, context) {
     addText(slide, value, { x: 8.55, y: y + 0.23, w: 3.9, h: 0.35, fontSize: 12, bold: true, fit: "shrink" });
     slide.addShape("line", { x: 8.55, y: y + 0.7, w: 3.72, h: 0, line: { color: COLORS.line, width: 0.7 } });
   });
-  addFooter(slide, "Executive Summary", 2, context.totalSlides, canva);
+  addFooter(slide, "Executive Summary", 2, context.totalSlides, canva, context.internal);
 }
 
 function addTimeline(pptx, context) {
@@ -164,7 +174,7 @@ function addTimeline(pptx, context) {
   });
   slide.addShape("rect", { x: 0.88, y: 5.25, w: 11.58, h: 0.82, fill: { color: COLORS.charcoal }, line: { color: COLORS.charcoal } });
   addText(slide, `${context.prepared.length} project photographs document ${context.stages.length} major phases.`, { x: 1.15, y: 5.47, w: 10.9, h: 0.4, fontSize: 14, color: canva ? COLORS.white : COLORS.gray, bold: canva });
-  addFooter(slide, "Project Timeline", 4, context.totalSlides, canva);
+  addFooter(slide, "Project Timeline", 4, context.totalSlides, canva, context.internal);
 }
 
 function addScopeOverview(pptx, context) {
@@ -174,7 +184,7 @@ function addScopeOverview(pptx, context) {
   addText(slide, "Project scope and major deliverables", { x: 0.62, y: 0.8, w: 8.3, h: 0.65, fontSize: 29, bold: true });
   slide.addShape("line", { x: 0.62, y: 1.58, w: 12.05, h: 0, line: { color: COLORS.red, width: 1.2 } });
   addText(slide, "PROJECT SCOPE", { x: 0.68, y: 1.95, w: 2.2, h: 0.2, fontSize: 8, bold: true, charSpacing: 1.4, color: COLORS.red });
-  addText(slide, context.overview, { x: 0.68, y: 2.28, w: 5.45, h: 2.4, fontSize: 15, color: "D4D6D8", valign: "top", fit: "shrink" });
+  addText(slide, concise(context.overview, 520), { x: 0.68, y: 2.28, w: 5.45, h: 2.4, fontSize: 15, color: "D4D6D8", valign: "top", fit: "shrink" });
   addText(slide, "DOCUMENTED DELIVERABLES", { x: 6.75, y: 1.95, w: 3.2, h: 0.2, fontSize: 8, bold: true, charSpacing: 1.4, color: COLORS.red });
   context.stages.slice(0, 8).forEach((stage, index) => {
     const y = 2.28 + index * 0.5;
@@ -182,7 +192,7 @@ function addScopeOverview(pptx, context) {
     addText(slide, stage, { x: 7.28, y, w: 4.65, h: 0.3, fontSize: 13, bold: true, fit: "shrink" });
     slide.addShape("line", { x: 7.28, y: y + 0.36, w: 4.7, h: 0, line: { color: COLORS.line, width: 0.5 } });
   });
-  addFooter(slide, "Scope & Objectives", 3, context.totalSlides);
+  addFooter(slide, "Scope & Objectives", 3, context.totalSlides, false, context.internal);
 }
 
 function addBeforeAfter(pptx, context, page) {
@@ -195,7 +205,7 @@ function addBeforeAfter(pptx, context, page) {
   addText(slide, "AFTER", { x: 6.98, y: 1.62, w: 1.4, h: 0.22, fontSize: 9, bold: true, color: COLORS.red });
   addPhotoFrame(slide, context.prepared[0], 0.62, 1.95, 5.75, 4.45, true, context.template === "canva" ? "cover" : "contain");
   addPhotoFrame(slide, context.prepared.at(-1), 6.98, 1.95, 5.75, 4.45, true, context.template === "canva" ? "cover" : "contain");
-  addFooter(slide, "Project Transformation", page, context.totalSlides);
+  addFooter(slide, "Project Transformation", page, context.totalSlides, false, context.internal);
 }
 
 function addPhaseDivider(pptx, context, stage, stageIndex, firstFile, page) {
@@ -206,8 +216,8 @@ function addPhaseDivider(pptx, context, stage, stageIndex, firstFile, page) {
   addText(slide, "PHASE", { x: 0.62, y: 0.65, w: 1.4, h: 0.25, fontSize: 10, bold: true, charSpacing: 2, color: COLORS.red });
   addText(slide, String(stageIndex + 1).padStart(2, "0"), { x: 0.58, y: 1.2, w: 2.3, h: 1.55, fontSize: 78, bold: true, color: COLORS.red });
   addText(slide, stage, { x: 0.67, y: 3.0, w: 5.45, h: 1.1, fontSize: 27, bold: true, fit: "shrink" });
-  addText(slide, firstFile ? captionBody(firstFile) : "Project progress documented by the Metal Worx team.", { x: 0.67, y: 4.35, w: 5.25, h: 1.05, fontSize: 13, color: "CDCFD1", valign: "top", fit: "shrink" });
-  addFooter(slide, `Phase ${stageIndex + 1} / ${stage}`, page, context.totalSlides);
+  addText(slide, firstFile ? concise(captionBody(firstFile)) : "Project progress documented through each major phase.", { x: 0.67, y: 4.35, w: 5.25, h: 1.05, fontSize: 13, color: "CDCFD1", valign: "top", fit: "shrink" });
+  addFooter(slide, `Phase ${stageIndex + 1} / ${stage}`, page, context.totalSlides, false, context.internal);
 }
 
 function addPhotoSpread(pptx, context, stage, files, page) {
@@ -219,20 +229,20 @@ function addPhotoSpread(pptx, context, stage, files, page) {
   slide.addShape("line", { x: 0.58, y: 1.37, w: 12.15, h: 0, line: { color: COLORS.red, width: 1.3 } });
   if (files.length === 1) {
     addPhotoFrame(slide, files[0], 0.58, 1.65, 8.05, 4.95, true, canva ? "cover" : "contain");
-    addText(slide, captionBody(files[0]), { x: 9.05, y: 2.0, w: 3.55, h: 2.25, fontSize: 15, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
+    addText(slide, concise(captionBody(files[0])), { x: 9.05, y: 2.0, w: 3.55, h: 2.25, fontSize: 15, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
     addText(slide, context.internal ? files[0].file_name : "Project milestone", { x: 9.05, y: 5.55, w: 3.55, h: 0.28, fontSize: 8, color: COLORS.gray });
   } else if (files.length === 2) {
     addPhotoFrame(slide, files[0], 0.58, 1.65, 7.45, 4.95, true, canva ? "cover" : "contain");
     addPhotoFrame(slide, files[1], 8.35, 1.65, 4.38, 2.95, false, canva ? "cover" : "contain");
-    addText(slide, captionBody(files[0]), { x: 8.35, y: 4.92, w: 4.35, h: 1.1, fontSize: 12, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
+    addText(slide, concise(captionBody(files[0]), 170), { x: 8.35, y: 4.92, w: 4.35, h: 1.1, fontSize: 12, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
   } else {
     addPhotoFrame(slide, files[0], 0.58, 1.65, 7.1, 4.95, true, canva ? "cover" : "contain");
     addPhotoFrame(slide, files[1], 8.0, 1.65, 4.72, 2.32, false, canva ? "cover" : "contain");
     addPhotoFrame(slide, files[2], 8.0, 4.25, 2.24, 2.35, false, canva ? "cover" : "contain");
     if (files[3]) addPhotoFrame(slide, files[3], 10.48, 4.25, 2.24, 2.35, false, canva ? "cover" : "contain");
-    else addText(slide, captionBody(files[0]), { x: 10.42, y: 4.25, w: 2.3, h: 2.2, fontSize: 11, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
+    else addText(slide, concise(captionBody(files[0]), 180), { x: 10.42, y: 4.25, w: 2.3, h: 2.2, fontSize: 11, bold: true, color: canva ? COLORS.white : COLORS.black, valign: "top", fit: "shrink" });
   }
-  addFooter(slide, stage, page, context.totalSlides, !canva);
+  addFooter(slide, stage, page, context.totalSlides, !canva, context.internal);
 }
 
 function addClosing(pptx, context) {
@@ -240,12 +250,12 @@ function addClosing(pptx, context) {
   slide.background = { color: COLORS.black };
   slide.addShape("rect", { x: 0, y: 0, w: 5.3, h: 7.5, fill: { color: COLORS.red }, line: { color: COLORS.red } });
   addText(slide, "PROJECT DELIVERED", { x: 0.65, y: 0.65, w: 3.6, h: 0.28, fontSize: 9, bold: true, charSpacing: 2 });
-  addText(slide, "Custom Metal.\nBuilt to Last.", { x: 0.65, y: 1.35, w: 3.9, h: 1.75, fontSize: 34, bold: true, breakLine: true, valign: "top" });
+  addText(slide, context.internal ? "Custom Metal.\nBuilt to Last." : "Project Complete.\nBuilt to Last.", { x: 0.65, y: 1.35, w: 3.9, h: 1.75, fontSize: 34, bold: true, breakLine: true, valign: "top" });
   addText(slide, context.project.project_name || "Completed Metal Worx Project", { x: 0.65, y: 3.55, w: 3.85, h: 0.95, fontSize: 17, bold: true, fit: "shrink" });
-  addText(slide, "Veteran Owned  /  American Made\nBuilt Strong. Finished Right.", { x: 0.65, y: 5.65, w: 3.9, h: 0.7, fontSize: 10, bold: true, breakLine: true });
+  addText(slide, context.internal ? "Veteran Owned  /  American Made\nBuilt Strong. Finished Right." : "Project completion record", { x: 0.65, y: 5.65, w: 3.9, h: 0.7, fontSize: 10, bold: true, breakLine: true });
   const completion = [...context.prepared].reverse().find((file) => file.story_stage === "Completed Project") || context.prepared.at(-1);
   if (completion) addPhotoFrame(slide, completion, 5.72, 0.62, 6.95, 5.85, true, context.template === "canva" ? "cover" : "contain");
-  addText(slide, "METAL WORX, INC.  /  FAYETTEVILLE, NORTH CAROLINA", { x: 5.75, y: 6.78, w: 6.9, h: 0.24, fontSize: 8, bold: true, charSpacing: 1.2, color: COLORS.gray, align: "center" });
+  addText(slide, context.internal ? "METAL WORX, INC.  /  FAYETTEVILLE, NORTH CAROLINA" : "PROJECT COMPLETION PRESENTATION", { x: 5.75, y: 6.76, w: 6.9, h: 0.28, fontSize: 8, bold: true, charSpacing: 1, color: COLORS.gray, align: "center" });
 }
 
 export async function downloadStoryBoardPowerPoint({ project, files, imageUrls, mode = "internal", overview = "", template = "canva" }) {
