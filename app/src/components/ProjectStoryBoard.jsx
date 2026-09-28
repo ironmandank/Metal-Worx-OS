@@ -158,6 +158,7 @@ function ProjectStoryBoard({ project, activeUser }) {
     }
     const images = (data || []).filter(isImage);
     const signed = await Promise.all(images.map(async (file) => {
+      if (file.story_asset_url) return [file.id, file.story_asset_url];
       const result = await supabase.storage.from("project-files").createSignedUrl(file.storage_path, 3600);
       return [file.id, result.data?.signedUrl || null];
     }));
