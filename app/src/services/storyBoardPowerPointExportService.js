@@ -11,7 +11,15 @@ const COLORS = {
 };
 
 function clean(value) {
-  return String(value || "").replace(/[–—]/g, "-").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+  return String(value || "")
+    .replace(/[–—]/g, "-")
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\bMetal\s+Wrox\b/gi, "Metal Worx")
+    .replace(/\bLafayetteville\b/gi, "Fayetteville")
+    .replace(/\bSSCU\b/g, "SSU")
+    .replace(/\bA38\b/g, "A36")
+    .replace(/\bSumary\b/gi, "Summary");
 }
 
 function safeName(value) {

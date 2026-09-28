@@ -77,8 +77,6 @@ const TEMPLATE_DESCRIPTIONS = {
   photojournal: "Full-width photography with concise milestone storytelling.",
 };
 
-const APPROVED_STORYBOARD_VERSION = "20260928-2";
-
 function isSsuConnexProject(project, isExample) {
   if (isExample) return true;
   const projectText = [
@@ -112,21 +110,6 @@ function safeFileName(value) {
 function isImage(file) {
   return String(file.file_type || "").startsWith("image/")
     || /\.(png|jpe?g|webp|gif|heic)$/i.test(file.file_name || "");
-}
-
-async function downloadApprovedFile(path, fileName) {
-  const separator = path.includes("?") ? "&" : "?";
-  const response = await fetch(`${path}${separator}v=${APPROVED_STORYBOARD_VERSION}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Approved storyboard file could not be loaded (${response.status}).`);
-  const blob = await response.blob();
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
 }
 
 function ProjectStoryBoard({ project, activeUser }) {
@@ -318,15 +301,12 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPdf(mode) {
     setExporting(mode);
     try {
-      if (isSsuConnex && mode === "internal") {
-        await downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pdf", `SSU-Connex-${mode === "internal" ? "Internal" : "Customer"}-Storyboard.pdf`);
-        return;
-      }
-      const exportFiles = isExample
+      const projectPhotos = isExample
         ? SSU_EXAMPLE
         : mode === "customer"
           ? files.filter((file) => file.customer_visible)
           : files;
+      const exportFiles = projectPhotos;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
         return;
@@ -351,15 +331,12 @@ function ProjectStoryBoard({ project, activeUser }) {
   async function exportPowerPoint(mode) {
     setExporting(`${mode}-pptx`);
     try {
-      if (isSsuConnex && mode === "internal") {
-        await downloadApprovedFile("/storyboard-templates/SSU-Connex-Storyboard.pptx", `SSU-Connex-${mode === "internal" ? "Internal" : "Customer"}-Storyboard.pptx`);
-        return;
-      }
-      const exportFiles = isExample
+      const projectPhotos = isExample
         ? SSU_EXAMPLE
         : mode === "customer"
           ? files.filter((file) => file.customer_visible)
           : files;
+      const exportFiles = projectPhotos;
       if (!exportFiles.length) {
         notifications.show({ title: "No Photos to Export", message: mode === "customer" ? "Mark at least one photo customer-visible before exporting." : "Add a project photo before exporting.", color: "orange" });
         return;
