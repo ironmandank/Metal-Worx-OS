@@ -117,13 +117,26 @@ function InventoryCountMode({ setPage, activeUser }) {
     const entered = crateEntry.trim();
     if (!entered) throw new Error("Enter the new crate or box, such as CR-01 Animals.");
     const normalized = entered.toLowerCase();
-    const existing = bins.find((bin) => [bin.code, bin.name, `${bin.code} ${bin.name}`, `${bin.code} · ${bin.name}`].some((value) => String(value || "").trim().toLowerCase() === normalized));
-    if (existing) return existing;
-    if (!primaryLocation?.id) throw new Error("A primary inventory location is required before a new crate can be created.");
     const parts = entered.split(/\s+/);
     const code = String(parts.shift() || "").trim().toUpperCase();
     const name = parts.join(" ").trim() || code;
     if (!code) throw new Error("Enter a crate code, such as CR-01 Animals.");
+    const existing = bins.find((bin) => String(bin.code || "").trim().toLowerCase() === code.toLowerCase())
+      || bins.find((bin) => [bin.name, `${bin.code} ${bin.name}`, `${bin.code} · ${bin.name}`].some((value) => String(value || "").trim().toLowerCase() === normalized));
+    if (existing) {
+      if (name !== code && name.trim().toLowerCase() !== String(existing.name || "").trim().toLowerCase()) {
+        const { data, error } = await supabase.from("inventory_bins").update({
+          name,
+          description: `Renamed and reused during ${activeSession?.name || "fresh inventory count"}.`,
+          updated_at: new Date().toISOString(),
+        }).eq("id", existing.id).select("id,name,code,location_id,is_active,inventory_locations(id,name,code)").single();
+        if (error) throw error;
+        setBins((current) => current.map((bin) => bin.id === data.id ? data : bin));
+        return data;
+      }
+      return existing;
+    }
+    if (!primaryLocation?.id) throw new Error("A primary inventory location is required before a new crate can be created.");
     const { data, error } = await supabase.from("inventory_bins").insert({
       location_id: primaryLocation.id,
       code,
@@ -183,8 +196,8 @@ function InventoryCountMode({ setPage, activeUser }) {
         </Stack></MWPanel>
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
           {!selectedItem ? <Stack align="center" py={70}><ThemeIcon size={64} radius="xl" color="gray" variant="light"><IconClipboardCheck size={30}/></ThemeIcon><Text c="dimmed">Choose an item to unlock the count form.</Text></Stack> : <Stack gap="lg">
-            <Autocomplete label="New Crate or Box" description="Type the new crate directly. If it does not exist, it will be created when you save." placeholder="Example: CR-01 Animals" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
-            <Text size="xs" c="dimmed">Use a consistent format: crate code first, then the category name—for example, <b>CR-01 Animals</b>.</Text>
+            <Autocomplete label="Crate Code and Updated Name" description="Select an old crate or type its code with the new name. Existing crate codes will be updated instead of duplicated." placeholder="Example: CR-23 Army Airforce" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
+            <Text size="xs" c="dimmed">Use the existing crate code followed by its new contents—for example, <b>CR-23 Army Airforce</b>. A brand-new code will create a new crate.</Text>
             <NumberInput label="Physical Quantity" description="Enter the quantity you can physically verify now." placeholder="Enter count" value={countedQuantity} onChange={setCountedQuantity} min={0} decimalScale={4} required size="lg"/>
             <Textarea label="Notes or Condition" placeholder="Optional: damage, missing parts, dimensions, condition, or anything that needs attention" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} minRows={3}/>
             <InventoryImageCapture value={imageFile} onChange={setImageFile} label="Replace or Add Item Photo" description="Optional. The existing photo stays unless you add a better identifying photo."/>
