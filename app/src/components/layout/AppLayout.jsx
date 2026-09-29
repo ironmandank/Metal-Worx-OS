@@ -267,7 +267,7 @@ const NAV_GROUPS = [
       },
       {
         page: "inventoryCount",
-        label: "Inventory Count Mode",
+        label: "Fresh Inventory Count",
         writeRestricted: true,
         icon: IconShieldCheck,
       },

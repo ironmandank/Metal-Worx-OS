@@ -15,6 +15,7 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconAlertTriangle,
+  IconArchive,
   IconBox,
   IconBuildingStore,
   IconCash,
@@ -1400,6 +1401,18 @@ function InventoryDashboard({
   );
 
   const quickActions = [
+    {
+      key: "fresh-inventory-count",
+      label: "Start Fresh Inventory Count",
+      description:
+        "Archive the current inventory, then verify each item and crate manually.",
+      icon: IconArchive,
+      color: "red",
+      onClick: () =>
+        setPage?.(
+          "inventoryCount"
+        ),
+    },
     {
       key: "add-showroom-item",
       label: "Add Showroom Item",
