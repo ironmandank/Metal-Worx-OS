@@ -1,6 +1,6 @@
 import { Alert, Autocomplete, Badge, Button, Group, Loader, Modal, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay } from "@tabler/icons-react";
+import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay, IconPlus } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import InventoryImageCapture from "../components/inventory/InventoryImageCapture";
@@ -193,6 +193,11 @@ function InventoryCountMode({ setPage, activeUser }) {
     finally { setSaving(false); }
   }
 
+  function openNewInventoryItem() {
+    window.sessionStorage.setItem("mw.inventoryItemReturnPage", "inventoryCount");
+    setPage("newInventoryItem");
+  }
+
   if (loading) return <Stack gap="xl"><MWPageHeader title="Fresh Inventory Count" subtitle="Loading inventory and backup status." setPage={setPage} showBack backPage="inventoryDashboard" backLabel="Inventory" showDashboard={false}/><MWPanel><Group justify="center" py={90}><Loader color="red"/><Text c="dimmed">Loading inventory…</Text></Group></MWPanel></Stack>;
 
   return <Stack gap="xl">
@@ -207,6 +212,7 @@ function InventoryCountMode({ setPage, activeUser }) {
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
         <MWPanel title="1. Choose the Item" subtitle="Search by item name, number, or SKU—no scanner required." icon={IconPackage}><Stack gap="lg">
           <Select searchable clearable size="lg" label="Inventory Item" placeholder="Search for an item" data={itemOptions} value={selectedItemId} onChange={selectItem}/>
+          <Button variant="light" color="red" leftSection={<IconPlus size={18}/>} onClick={openNewInventoryItem}>Add New Inventory Item</Button>
           {!selectedItem ? <Paper p="xl" withBorder><Stack align="center" py={35}><ThemeIcon size={70} radius="xl" color="red" variant="light"><IconPackage size={34}/></ThemeIcon><Title order={3}>Choose an item to begin</Title><Text c="dimmed" ta="center">Verified items show a check mark and can be reopened if a correction is needed.</Text></Stack></Paper> : <Paper p="lg" withBorder><Group wrap="nowrap" align="flex-start">{selectedItem.primary_image_url ? <img src={selectedItem.primary_image_url} alt={selectedItem.image_alt_text || selectedItem.name} style={{ width: 110, height: 90, objectFit: "contain", borderRadius: 10, background: "white" }}/> : <ThemeIcon size={70} radius="lg" color="gray" variant="light"><IconPhoto size={32}/></ThemeIcon>}<Stack gap={4}><Title order={3}>{selectedItem.name}</Title><Text c="dimmed">{selectedItem.item_number || selectedItem.sku || "No item number"}</Text><Text size="sm">Previously recorded total: <b>{formatNumber(recordedTotal)}</b></Text>{countedItemIds.has(getItemId(selectedItem)) && <Badge color="green" w="fit-content">Already verified — editing</Badge>}</Stack></Group></Paper>}
         </Stack></MWPanel>
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
