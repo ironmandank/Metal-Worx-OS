@@ -21,6 +21,7 @@ function InventoryCountMode({ setPage, activeUser }) {
   const [counts, setCounts] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState("");
   const [balances, setBalances] = useState([]);
+  const [standardizedName, setStandardizedName] = useState("");
   const [crateEntry, setCrateEntry] = useState("");
   const [countedQuantity, setCountedQuantity] = useState("");
   const [notes, setNotes] = useState("");
@@ -70,13 +71,14 @@ function InventoryCountMode({ setPage, activeUser }) {
   const crateSuggestions = bins.map((bin) => `${bin.code} ${bin.name}`.trim());
 
   async function selectItem(value) {
-    setSelectedItemId(value || ""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
+    setSelectedItemId(value || ""); setStandardizedName(""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
     if (!value) { setBalances([]); return; }
     try {
       const { data, error } = await supabase.from("inventory_bin_balances").select("*").eq("inventory_item_id", value);
       if (error) throw error;
       const loaded = data || [];
       const item = items.find((candidate) => getItemId(candidate) === value);
+      setStandardizedName(item?.name || "");
       const prior = counts.find((count) => count.inventory_item_id === value);
       setBalances(loaded);
       const startingBinId = prior?.bin_id || item?.default_bin_id || loaded[0]?.bin_id || "";
@@ -153,15 +155,27 @@ function InventoryCountMode({ setPage, activeUser }) {
   }
 
   async function saveCount() {
-    if (!activeSession || !selectedItem || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving) return;
+    const updatedName = standardizedName.trim();
+    if (!activeSession || !selectedItem || !updatedName || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving) return;
     setSaving(true);
     try {
       const resolvedCrate = await resolveCrate();
+      let itemForSave = selectedItem;
+      if (updatedName !== selectedItem.name) {
+        const { data: renamedItem, error: renameError } = await supabase.from("inventory_items").update({
+          name: updatedName,
+          image_alt_text: selectedItem.primary_image_url ? updatedName : selectedItem.image_alt_text,
+          updated_at: new Date().toISOString(),
+        }).eq("id", getItemId(selectedItem)).select("id,name,item_number,sku,primary_image_url,primary_image_path,image_alt_text,default_bin_id,is_active").single();
+        if (renameError) throw renameError;
+        itemForSave = { ...selectedItem, ...renamedItem };
+        setItems((current) => current.map((item) => getItemId(item) === getItemId(selectedItem) ? { ...item, ...renamedItem } : item));
+      }
       const { data, error } = await supabase.rpc("mw_save_inventory_reset_count", { p_session_id: activeSession.id, p_inventory_item_id: getItemId(selectedItem), p_bin_id: resolvedCrate.id, p_quantity: numberValue(countedQuantity), p_notes: notes.trim() || null, p_counted_by: displayUser(activeUser) });
       if (error) throw error;
-      await uploadReplacementImage(selectedItem);
-      notifications.show({ title: countedItemIds.has(getItemId(selectedItem)) ? "Count Updated" : "Item Verified", message: `${selectedItem.name} is now recorded in ${resolvedCrate.code || resolvedCrate.name} with a quantity of ${formatNumber(data?.quantity_after ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
-      setSelectedItemId(""); setBalances([]); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
+      await uploadReplacementImage(itemForSave);
+      notifications.show({ title: countedItemIds.has(getItemId(selectedItem)) ? "Count Updated" : "Item Verified", message: `${updatedName} is now recorded in ${resolvedCrate.code || resolvedCrate.name} with a quantity of ${formatNumber(data?.quantity_after ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
+      setSelectedItemId(""); setBalances([]); setStandardizedName(""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
     } catch (error) { notifications.show({ title: "Count Could Not Be Saved", message: error.message, color: "red" }); }
     finally { setSaving(false); }
   }
@@ -196,13 +210,14 @@ function InventoryCountMode({ setPage, activeUser }) {
         </Stack></MWPanel>
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
           {!selectedItem ? <Stack align="center" py={70}><ThemeIcon size={64} radius="xl" color="gray" variant="light"><IconClipboardCheck size={30}/></ThemeIcon><Text c="dimmed">Choose an item to unlock the count form.</Text></Stack> : <Stack gap="lg">
+            <TextInput label="Standardized Item Name" description="Keep the current name or edit it to your preferred standard. This renames the selected item and keeps its existing image and item number." placeholder="Enter the standardized item name" value={standardizedName} onChange={(event) => setStandardizedName(event.currentTarget.value)} required size="lg"/>
             <Autocomplete label="Crate Code and Updated Name" description="Select an old crate or type its code with the new name. Existing crate codes will be updated instead of duplicated." placeholder="Example: CR-23 Army Airforce" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
             <Text size="xs" c="dimmed">Use the existing crate code followed by its new contents—for example, <b>CR-23 Army Airforce</b>. A brand-new code will create a new crate.</Text>
             <NumberInput label="Physical Quantity" description="Enter the quantity you can physically verify now." placeholder="Enter count" value={countedQuantity} onChange={setCountedQuantity} min={0} decimalScale={4} required size="lg"/>
             <Textarea label="Notes or Condition" placeholder="Optional: damage, missing parts, dimensions, condition, or anything that needs attention" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} minRows={3}/>
             <InventoryImageCapture value={imageFile} onChange={setImageFile} label="Replace or Add Item Photo" description="Optional. The existing photo stays unless you add a better identifying photo."/>
-            <Alert color="blue" icon={<IconArchive size={20}/>}>Saving assigns this existing item to the selected crate, records its physical quantity, and keeps its current image unless you upload a replacement. The pre-reset information remains in the dated backup.</Alert>
-            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save & Verify Item</Button>
+            <Alert color="blue" icon={<IconArchive size={20}/>}>Saving updates the selected item's name if you changed it, assigns that same item to the selected crate, records its physical quantity, and keeps its current image unless you upload a replacement. The pre-reset information remains in the dated backup.</Alert>
+            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!standardizedName.trim() || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save & Verify Item</Button>
           </Stack>}
         </MWPanel>
       </SimpleGrid>
