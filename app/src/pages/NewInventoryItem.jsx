@@ -291,6 +291,12 @@ function NewInventoryItem({
   setPage,
   setSelectedInventoryItem,
 }) {
+  const [returnPage] = useState(() => {
+    const savedReturnPage = window.sessionStorage.getItem("mw.inventoryItemReturnPage");
+    window.sessionStorage.removeItem("mw.inventoryItemReturnPage");
+    return savedReturnPage || "inventoryItems";
+  });
+  const returnLabel = returnPage === "inventoryCount" ? "Fresh Inventory Count" : "Inventory Items";
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -1222,7 +1228,7 @@ function NewInventoryItem({
           icon: <IconPlus size={18} />,
         });
       } else {
-        setPage?.("inventoryItems");
+        setPage?.(returnPage);
       }
     } catch (error) {
       console.error(
@@ -1265,8 +1271,8 @@ function NewInventoryItem({
           subtitle="Loading categories, units, and Metal Worx storage positions."
           setPage={setPage}
           showBack
-          backPage="inventoryItems"
-          backLabel="Inventory Items"
+          backPage={returnPage}
+          backLabel={returnLabel}
           showDashboard
         />
 
@@ -1299,8 +1305,8 @@ function NewInventoryItem({
         subtitle="Create a showroom item, consumable, reusable component, or optionally tracked shop material."
         setPage={setPage}
         showBack
-        backPage="inventoryItems"
-        backLabel="Inventory Items"
+        backPage={returnPage}
+        backLabel={returnLabel}
         showDashboard
       />
 
@@ -2312,11 +2318,7 @@ function NewInventoryItem({
                   fullWidth
                   variant="default"
                   size="md"
-                  onClick={() =>
-                    setPage?.(
-                      "inventoryItems"
-                    )
-                  }
+                  onClick={() => setPage?.(returnPage)}
                   disabled={saving}
                 >
                   Cancel
