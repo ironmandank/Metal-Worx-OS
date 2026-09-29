@@ -65,8 +65,11 @@ function InventoryCountMode({ setPage, activeUser }) {
   const activeSession = sessions.find((session) => session.status === "In Progress") || null;
   const selectedItem = items.find((item) => getItemId(item) === selectedItemId) || null;
   const countedItemIds = useMemo(() => new Set(counts.map((count) => count.inventory_item_id)), [counts]);
-  const progress = activeSession?.snapshot_item_count ? Math.min(100, counts.length / activeSession.snapshot_item_count * 100) : 0;
+  const verifiedItemCount = countedItemIds.size;
+  const progress = activeSession?.snapshot_item_count ? Math.min(100, verifiedItemCount / activeSession.snapshot_item_count * 100) : 0;
   const recordedTotal = balances.reduce((total, balance) => total + numberValue(balance.quantity_on_hand), 0);
+  const selectedAllocations = counts.filter((count) => count.inventory_item_id === selectedItemId);
+  const allocatedTotal = selectedAllocations.reduce((total, count) => total + numberValue(count.quantity), 0);
   const itemOptions = items.map((item) => ({ value: getItemId(item), label: `${countedItemIds.has(getItemId(item)) ? "✓ " : ""}${item.name} · ${item.item_number || item.sku || "No item number"}` }));
   const crateSuggestions = bins.map((bin) => `${bin.code} ${bin.name}`.trim());
 
@@ -79,12 +82,10 @@ function InventoryCountMode({ setPage, activeUser }) {
       const loaded = data || [];
       const item = items.find((candidate) => getItemId(candidate) === value);
       setStandardizedName(item?.name || "");
-      const prior = counts.find((count) => count.inventory_item_id === value);
       setBalances(loaded);
-      const startingBinId = prior?.bin_id || item?.default_bin_id || loaded[0]?.bin_id || "";
+      const startingBinId = item?.default_bin_id || loaded[0]?.bin_id || "";
       const startingBin = bins.find((candidate) => candidate.id === startingBinId);
       setCrateEntry(startingBin ? `${startingBin.code} ${startingBin.name}`.trim() : "");
-      if (prior) { setCountedQuantity(numberValue(prior.quantity)); setNotes(prior.notes || ""); }
     } catch (error) { notifications.show({ title: "Item Could Not Be Opened", message: error.message, color: "red" }); }
   }
 
@@ -174,8 +175,8 @@ function InventoryCountMode({ setPage, activeUser }) {
       const { data, error } = await supabase.rpc("mw_save_inventory_reset_count", { p_session_id: activeSession.id, p_inventory_item_id: getItemId(selectedItem), p_bin_id: resolvedCrate.id, p_quantity: numberValue(countedQuantity), p_notes: notes.trim() || null, p_counted_by: displayUser(activeUser) });
       if (error) throw error;
       await uploadReplacementImage(itemForSave);
-      notifications.show({ title: countedItemIds.has(getItemId(selectedItem)) ? "Count Updated" : "Item Verified", message: `${updatedName} is now recorded in ${resolvedCrate.code || resolvedCrate.name} with a quantity of ${formatNumber(data?.quantity_after ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
-      setSelectedItemId(""); setBalances([]); setStandardizedName(""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
+      notifications.show({ title: "Crate Allocation Saved", message: `${formatNumber(data?.quantity_after ?? countedQuantity)} ${updatedName} saved in ${resolvedCrate.code || resolvedCrate.name}. Total across crates: ${formatNumber(data?.item_total ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
+      setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
     } catch (error) { notifications.show({ title: "Count Could Not Be Saved", message: error.message, color: "red" }); }
     finally { setSaving(false); }
   }
@@ -201,8 +202,8 @@ function InventoryCountMode({ setPage, activeUser }) {
       <Button size="lg" color="red" leftSection={<IconPlayerPlay size={20}/>} onClick={() => setStartOpen(true)}>Archive Current Inventory & Start Fresh</Button>
       {sessions.length > 0 && <Stack gap="xs"><Text fw={800}>Previous inventory resets</Text>{sessions.map((session) => <Paper key={session.id} withBorder p="md"><Group justify="space-between"><div><Text fw={800}>{session.name}</Text><Text size="sm" c="dimmed">Backup created {new Date(session.created_at).toLocaleString()} · {session.snapshot_item_count} items</Text></div><Badge color={session.status === "Completed" ? "green" : "gray"}>{session.status}</Badge></Group></Paper>)}</Stack>}
     </Stack></MWPanel> : <>
-      <MWKpiStrip items={[{ label: "Verified", value: counts.length, description: `of ${activeSession.snapshot_item_count} archived items`, icon: IconClipboardCheck, color: "green" }, { label: "Remaining", value: Math.max(0, activeSession.snapshot_item_count - counts.length), description: "Items left to check", icon: IconPackage, color: "orange" }, { label: "Backup", value: "Saved", description: new Date(activeSession.created_at).toLocaleDateString(), icon: IconArchive, color: "blue" }, { label: "Current Step", value: selectedItem ? "Enter Details" : "Choose Item", description: selectedItem?.name || "Ready for next item", icon: IconBox, color: "red" }]} columns={{ base: 1, sm: 2, xl: 4 }} compact/>
-      <MWPanel title={activeSession.name} subtitle="Progress is saved after every item." icon={IconClipboardCheck} color="green" rightSection={<Button variant="light" color="green" size="xs" onClick={() => setCompleteOpen(true)}>Finish Reset</Button>}><Stack gap="xs"><Group justify="space-between"><Text size="sm" fw={800}>{counts.length} items verified</Text><Text size="sm" c="dimmed">{Math.round(progress)}%</Text></Group><Progress value={progress} color="green" size="lg" radius="xl"/></Stack></MWPanel>
+      <MWKpiStrip items={[{ label: "Verified", value: verifiedItemCount, description: `of ${activeSession.snapshot_item_count} archived items`, icon: IconClipboardCheck, color: "green" }, { label: "Remaining", value: Math.max(0, activeSession.snapshot_item_count - verifiedItemCount), description: "Items left to check", icon: IconPackage, color: "orange" }, { label: "Backup", value: "Saved", description: new Date(activeSession.created_at).toLocaleDateString(), icon: IconArchive, color: "blue" }, { label: "Current Step", value: selectedItem ? "Enter Details" : "Choose Item", description: selectedItem?.name || "Ready for next item", icon: IconBox, color: "red" }]} columns={{ base: 1, sm: 2, xl: 4 }} compact/>
+      <MWPanel title={activeSession.name} subtitle="Progress is saved after every item." icon={IconClipboardCheck} color="green" rightSection={<Button variant="light" color="green" size="xs" onClick={() => setCompleteOpen(true)}>Finish Reset</Button>}><Stack gap="xs"><Group justify="space-between"><Text size="sm" fw={800}>{verifiedItemCount} items verified</Text><Text size="sm" c="dimmed">{Math.round(progress)}%</Text></Group><Progress value={progress} color="green" size="lg" radius="xl"/></Stack></MWPanel>
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xl">
         <MWPanel title="1. Choose the Item" subtitle="Search by item name, number, or SKU—no scanner required." icon={IconPackage}><Stack gap="lg">
           <Select searchable clearable size="lg" label="Inventory Item" placeholder="Search for an item" data={itemOptions} value={selectedItemId} onChange={selectItem}/>
@@ -211,20 +212,22 @@ function InventoryCountMode({ setPage, activeUser }) {
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
           {!selectedItem ? <Stack align="center" py={70}><ThemeIcon size={64} radius="xl" color="gray" variant="light"><IconClipboardCheck size={30}/></ThemeIcon><Text c="dimmed">Choose an item to unlock the count form.</Text></Stack> : <Stack gap="lg">
             <TextInput label="Standardized Item Name" description="Keep the current name or edit it to your preferred standard. This renames the selected item and keeps its existing image and item number." placeholder="Enter the standardized item name" value={standardizedName} onChange={(event) => setStandardizedName(event.currentTarget.value)} required size="lg"/>
+            {selectedAllocations.length > 0 && <Paper withBorder p="md"><Stack gap="xs"><Group justify="space-between"><Text fw={800}>Saved Crate Breakdown</Text><Badge color="green">Total {formatNumber(allocatedTotal)}</Badge></Group>{selectedAllocations.map((allocation) => { const bin = bins.find((candidate) => candidate.id === allocation.bin_id); return <Group key={allocation.id} justify="space-between"><Text size="sm">{bin ? `${bin.code} ${bin.name}`.trim() : "Crate"}</Text><Badge variant="light">Qty {formatNumber(allocation.quantity)}</Badge></Group>; })}</Stack></Paper>}
             <Autocomplete label="Crate Code and Updated Name" description="Select an old crate or type its code with the new name. Existing crate codes will be updated instead of duplicated." placeholder="Example: CR-23 Army Airforce" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
             <Text size="xs" c="dimmed">Use the existing crate code followed by its new contents—for example, <b>CR-23 Army Airforce</b>. A brand-new code will create a new crate.</Text>
             <NumberInput label="Physical Quantity" description="Enter the quantity you can physically verify now." placeholder="Enter count" value={countedQuantity} onChange={setCountedQuantity} min={0} decimalScale={4} required size="lg"/>
             <Textarea label="Notes or Condition" placeholder="Optional: damage, missing parts, dimensions, condition, or anything that needs attention" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} minRows={3}/>
             <InventoryImageCapture value={imageFile} onChange={setImageFile} label="Replace or Add Item Photo" description="Optional. The existing photo stays unless you add a better identifying photo."/>
-            <Alert color="blue" icon={<IconArchive size={20}/>}>Saving updates the selected item's name if you changed it, assigns that same item to the selected crate, records its physical quantity, and keeps its current image unless you upload a replacement. The pre-reset information remains in the dated backup.</Alert>
-            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!standardizedName.trim() || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save & Verify Item</Button>
+            <Alert color="blue" icon={<IconArchive size={20}/>}>Save one crate at a time. The item stays open so you can enter another crate and quantity. Selecting a crate already listed above updates that crate's quantity instead of duplicating it.</Alert>
+            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!standardizedName.trim() || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save This Crate</Button>
+            <Button variant="light" color="gray" onClick={() => selectItem(null)}>Done With This Item — Choose Next</Button>
           </Stack>}
         </MWPanel>
       </SimpleGrid>
       {counts.length > 0 && <MWPanel title="Recently Verified" subtitle="The latest items saved in this reset." icon={IconCheck} color="green"><Stack gap="xs">{counts.slice(0, 8).map((count) => { const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id); const bin = bins.find((candidate) => candidate.id === count.bin_id); return <Paper key={count.id} withBorder p="sm"><Group justify="space-between"><div><Text fw={800}>{item?.name || "Inventory item"}</Text><Text size="xs" c="dimmed">{bin?.code || bin?.name || "Storage position"} · {new Date(count.counted_at).toLocaleString()}</Text></div><Badge color="green">Qty {formatNumber(count.quantity)}</Badge></Group></Paper>; })}</Stack></MWPanel>}
     </>}
     <Modal opened={startOpen} onClose={() => setStartOpen(false)} title="Archive Current Inventory & Start Fresh" centered><Stack><Alert color="blue" icon={<IconArchive size={20}/>}>This keeps every item and image. It creates a permanent dated backup, then clears quantities and crate assignments so you can begin fresh. Nothing will be deleted.</Alert><TextInput label="Reset Name" value={sessionName} onChange={(event) => setSessionName(event.currentTarget.value)} required/><Button color="red" loading={saving} disabled={!sessionName.trim()} onClick={startReset}>Create Backup, Clear Counts & Begin</Button><Button variant="subtle" color="gray" onClick={() => setStartOpen(false)}>Cancel</Button></Stack></Modal>
-    <Modal opened={completeOpen} onClose={() => setCompleteOpen(false)} title="Finish This Inventory Reset?" centered><Stack><Alert color={counts.length < (activeSession?.snapshot_item_count || 0) ? "orange" : "green"} icon={<IconClipboardCheck size={20}/>}>{counts.length} of {activeSession?.snapshot_item_count || 0} archived items have been verified. Finishing closes this reset, but its backup and count history remain available.</Alert><Button color="green" loading={saving} onClick={completeReset}>Finish Inventory Reset</Button><Button variant="subtle" color="gray" onClick={() => setCompleteOpen(false)}>Keep Counting</Button></Stack></Modal>
+    <Modal opened={completeOpen} onClose={() => setCompleteOpen(false)} title="Finish This Inventory Reset?" centered><Stack><Alert color={verifiedItemCount < (activeSession?.snapshot_item_count || 0) ? "orange" : "green"} icon={<IconClipboardCheck size={20}/>}>{verifiedItemCount} of {activeSession?.snapshot_item_count || 0} archived items have been verified. Finishing closes this reset, but its backup and count history remain available.</Alert><Button color="green" loading={saving} onClick={completeReset}>Finish Inventory Reset</Button><Button variant="subtle" color="gray" onClick={() => setCompleteOpen(false)}>Keep Counting</Button></Stack></Modal>
   </Stack>;
 }
 
