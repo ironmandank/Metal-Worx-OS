@@ -1,6 +1,6 @@
-import { Alert, Badge, Button, Group, Loader, Modal, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title } from "@mantine/core";
+import { Alert, Autocomplete, Badge, Button, Group, Loader, Modal, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay, IconPlus } from "@tabler/icons-react";
+import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import InventoryImageCapture from "../components/inventory/InventoryImageCapture";
@@ -16,11 +16,12 @@ const displayUser = (user) => typeof user === "string" ? user : user?.full_name 
 function InventoryCountMode({ setPage, activeUser }) {
   const [items, setItems] = useState([]);
   const [bins, setBins] = useState([]);
+  const [primaryLocation, setPrimaryLocation] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [counts, setCounts] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState("");
   const [balances, setBalances] = useState([]);
-  const [binId, setBinId] = useState("");
+  const [crateEntry, setCrateEntry] = useState("");
   const [countedQuantity, setCountedQuantity] = useState("");
   const [notes, setNotes] = useState("");
   const [imageFile, setImageFile] = useState(null);
@@ -33,16 +34,19 @@ function InventoryCountMode({ setPage, activeUser }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemResult, binResult, sessionResult] = await Promise.all([
+      const [itemResult, binResult, locationResult, sessionResult] = await Promise.all([
         supabase.from("inventory_item_availability").select("*").eq("is_active", true).order("name"),
         supabase.from("inventory_bins").select("id,name,code,location_id,is_active,inventory_locations(id,name,code)").eq("is_active", true).order("code"),
+        supabase.from("inventory_locations").select("id,name,code,is_primary,is_active").eq("is_active", true).order("is_primary", { ascending: false }).order("name").limit(1).maybeSingle(),
         supabase.from("inventory_reset_sessions").select("id,name,status,snapshot_item_count,snapshot_position_count,started_by,created_at,completed_at").order("created_at", { ascending: false }).limit(10),
       ]);
       if (itemResult.error) throw itemResult.error;
       if (binResult.error) throw binResult.error;
+      if (locationResult.error) throw locationResult.error;
       if (sessionResult.error) throw sessionResult.error;
       setItems(itemResult.data || []);
       setBins(binResult.data || []);
+      setPrimaryLocation(locationResult.data || null);
       setSessions(sessionResult.data || []);
       const active = (sessionResult.data || []).find((session) => session.status === "In Progress");
       if (active) {
@@ -59,15 +63,14 @@ function InventoryCountMode({ setPage, activeUser }) {
 
   const activeSession = sessions.find((session) => session.status === "In Progress") || null;
   const selectedItem = items.find((item) => getItemId(item) === selectedItemId) || null;
-  const selectedBin = bins.find((bin) => bin.id === binId) || null;
   const countedItemIds = useMemo(() => new Set(counts.map((count) => count.inventory_item_id)), [counts]);
   const progress = activeSession?.snapshot_item_count ? Math.min(100, counts.length / activeSession.snapshot_item_count * 100) : 0;
   const recordedTotal = balances.reduce((total, balance) => total + numberValue(balance.quantity_on_hand), 0);
   const itemOptions = items.map((item) => ({ value: getItemId(item), label: `${countedItemIds.has(getItemId(item)) ? "✓ " : ""}${item.name} · ${item.item_number || item.sku || "No item number"}` }));
-  const binOptions = bins.map((bin) => ({ value: bin.id, label: [bin.code, bin.name, bin.inventory_locations?.name].filter(Boolean).join(" · ") }));
+  const crateSuggestions = bins.map((bin) => `${bin.code} ${bin.name}`.trim());
 
   async function selectItem(value) {
-    setSelectedItemId(value || ""); setBinId(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
+    setSelectedItemId(value || ""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
     if (!value) { setBalances([]); return; }
     try {
       const { data, error } = await supabase.from("inventory_bin_balances").select("*").eq("inventory_item_id", value);
@@ -76,7 +79,9 @@ function InventoryCountMode({ setPage, activeUser }) {
       const item = items.find((candidate) => getItemId(candidate) === value);
       const prior = counts.find((count) => count.inventory_item_id === value);
       setBalances(loaded);
-      setBinId(prior?.bin_id || item?.default_bin_id || loaded[0]?.bin_id || "");
+      const startingBinId = prior?.bin_id || item?.default_bin_id || loaded[0]?.bin_id || "";
+      const startingBin = bins.find((candidate) => candidate.id === startingBinId);
+      setCrateEntry(startingBin ? `${startingBin.code} ${startingBin.name}`.trim() : "");
       if (prior) { setCountedQuantity(numberValue(prior.quantity)); setNotes(prior.notes || ""); }
     } catch (error) { notifications.show({ title: "Item Could Not Be Opened", message: error.message, color: "red" }); }
   }
@@ -108,15 +113,42 @@ function InventoryCountMode({ setPage, activeUser }) {
     if (update.error) throw update.error;
   }
 
+  async function resolveCrate() {
+    const entered = crateEntry.trim();
+    if (!entered) throw new Error("Enter the new crate or box, such as CR-01 Animals.");
+    const normalized = entered.toLowerCase();
+    const existing = bins.find((bin) => [bin.code, bin.name, `${bin.code} ${bin.name}`, `${bin.code} · ${bin.name}`].some((value) => String(value || "").trim().toLowerCase() === normalized));
+    if (existing) return existing;
+    if (!primaryLocation?.id) throw new Error("A primary inventory location is required before a new crate can be created.");
+    const parts = entered.split(/\s+/);
+    const code = String(parts.shift() || "").trim().toUpperCase();
+    const name = parts.join(" ").trim() || code;
+    if (!code) throw new Error("Enter a crate code, such as CR-01 Animals.");
+    const { data, error } = await supabase.from("inventory_bins").insert({
+      location_id: primaryLocation.id,
+      code,
+      name,
+      zone: "Inventory Reset",
+      description: `Created during ${activeSession?.name || "fresh inventory count"}.`,
+      barcode_value: `MW-BIN-${code}`,
+      qr_code_value: `MW-BIN-${code}`,
+      is_active: true,
+    }).select("id,name,code,location_id,is_active,inventory_locations(id,name,code)").single();
+    if (error) throw error;
+    setBins((current) => [...current, data]);
+    return data;
+  }
+
   async function saveCount() {
-    if (!activeSession || !selectedItem || !binId || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving) return;
+    if (!activeSession || !selectedItem || !crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving) return;
     setSaving(true);
     try {
-      const { data, error } = await supabase.rpc("mw_save_inventory_reset_count", { p_session_id: activeSession.id, p_inventory_item_id: getItemId(selectedItem), p_bin_id: binId, p_quantity: numberValue(countedQuantity), p_notes: notes.trim() || null, p_counted_by: displayUser(activeUser) });
+      const resolvedCrate = await resolveCrate();
+      const { data, error } = await supabase.rpc("mw_save_inventory_reset_count", { p_session_id: activeSession.id, p_inventory_item_id: getItemId(selectedItem), p_bin_id: resolvedCrate.id, p_quantity: numberValue(countedQuantity), p_notes: notes.trim() || null, p_counted_by: displayUser(activeUser) });
       if (error) throw error;
       await uploadReplacementImage(selectedItem);
-      notifications.show({ title: countedItemIds.has(getItemId(selectedItem)) ? "Count Updated" : "Item Verified", message: `${selectedItem.name} is now recorded in ${selectedBin?.code || selectedBin?.name} with a quantity of ${formatNumber(data?.quantity_after ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
-      setSelectedItemId(""); setBalances([]); setBinId(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
+      notifications.show({ title: countedItemIds.has(getItemId(selectedItem)) ? "Count Updated" : "Item Verified", message: `${selectedItem.name} is now recorded in ${resolvedCrate.code || resolvedCrate.name} with a quantity of ${formatNumber(data?.quantity_after ?? countedQuantity)}.`, color: "green", icon: <IconCheck size={18}/> });
+      setSelectedItemId(""); setBalances([]); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null); await loadData();
     } catch (error) { notifications.show({ title: "Count Could Not Be Saved", message: error.message, color: "red" }); }
     finally { setSaving(false); }
   }
@@ -151,13 +183,13 @@ function InventoryCountMode({ setPage, activeUser }) {
         </Stack></MWPanel>
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
           {!selectedItem ? <Stack align="center" py={70}><ThemeIcon size={64} radius="xl" color="gray" variant="light"><IconClipboardCheck size={30}/></ThemeIcon><Text c="dimmed">Choose an item to unlock the count form.</Text></Stack> : <Stack gap="lg">
-            <Select label="Crate, Box, or Storage Position" placeholder="Choose the item's new location" data={binOptions} value={binId} onChange={(value) => setBinId(value || "")} searchable required leftSection={<IconMapPin size={18}/>}/>
-            <Button variant="subtle" color="gray" leftSection={<IconPlus size={17}/>} onClick={() => setPage?.("inventoryStorage")}>Add or Manage Crates and Boxes</Button>
+            <Autocomplete label="New Crate or Box" description="Type the new crate directly. If it does not exist, it will be created when you save." placeholder="Example: CR-01 Animals" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
+            <Text size="xs" c="dimmed">Use a consistent format: crate code first, then the category name—for example, <b>CR-01 Animals</b>.</Text>
             <NumberInput label="Physical Quantity" description="Enter the quantity you can physically verify now." placeholder="Enter count" value={countedQuantity} onChange={setCountedQuantity} min={0} decimalScale={4} required size="lg"/>
             <Textarea label="Notes or Condition" placeholder="Optional: damage, missing parts, dimensions, condition, or anything that needs attention" value={notes} onChange={(event) => setNotes(event.currentTarget.value)} minRows={3}/>
             <InventoryImageCapture value={imageFile} onChange={setImageFile} label="Replace or Add Item Photo" description="Optional. The existing photo stays unless you add a better identifying photo."/>
             <Alert color="blue" icon={<IconArchive size={20}/>}>Saving assigns this existing item to the selected crate, records its physical quantity, and keeps its current image unless you upload a replacement. The pre-reset information remains in the dated backup.</Alert>
-            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!binId || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save & Verify Item</Button>
+            <Button size="lg" color="green" leftSection={saving ? <Loader size={18} color="white"/> : <IconCheck size={20}/>} disabled={!crateEntry.trim() || countedQuantity === "" || numberValue(countedQuantity) < 0 || saving} onClick={saveCount}>Save & Verify Item</Button>
           </Stack>}
         </MWPanel>
       </SimpleGrid>
