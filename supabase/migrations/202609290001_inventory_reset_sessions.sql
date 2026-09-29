@@ -154,7 +154,8 @@ begin
     last_counted_quantity = 0,
     last_counted_at = now(),
     last_movement_at = now(),
-    updated_at = now();
+    updated_at = now()
+  where id is not null;
 
   update public.inventory_items
   set default_bin_id = null, updated_at = now()
