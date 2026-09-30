@@ -16,6 +16,7 @@ import {
   ScrollArea,
   Select,
   Stack,
+  Table,
   Text,
   TextInput,
   Textarea,
@@ -30,11 +31,13 @@ import {
   IconArrowDown,
   IconClipboardCheck,
   IconCircleCheck,
+  IconCash,
   IconCalendarEvent,
   IconChevronLeft,
   IconChevronRight,
   IconMapPin,
   IconMail,
+  IconFileInvoice,
   IconNotes,
   IconPackage,
   IconPhone,
@@ -662,6 +665,45 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     };
   }, [projects, trackingByProject]);
 
+  const billingRows = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    const allQuotes = Object.values(quotesById);
+
+    return [...projects, ...completedProjects]
+      .map((project) => {
+        const customer = customers[project.customer_id];
+        const projectQuotes = allQuotes.filter((quote) => quote.project_id === project.id);
+        const quoteDocuments = projectQuotes.filter((quote) => quote.document_type !== "Invoice");
+        const invoices = projectQuotes.filter((quote) => quote.document_type === "Invoice");
+        const approvedQuote = quoteDocuments.find((quote) => quote.status === "Approved") || quoteDocuments[0] || null;
+        const latestInvoice = invoices[0] || null;
+        const contractTotal = Number(project.contract_total || approvedQuote?.total_amount || project.quote_total || 0);
+        const amountPaid = Number(project.amount_paid || 0);
+        const balanceDue = Number.isFinite(Number(project.balance_due))
+          ? Math.max(Number(project.balance_due || 0), 0)
+          : Math.max(contractTotal - amountPaid, 0);
+        const identity = getProjectIdentity(project, customer);
+        const haystack = [identity, project.project_number, project.contact_name, customer?.company_name, approvedQuote?.quote_number, latestInvoice?.quote_number]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return { project, customer, identity, approvedQuote, invoices, latestInvoice, contractTotal, amountPaid, balanceDue, haystack };
+      })
+      .filter((row) => !normalizedSearch || row.haystack.includes(normalizedSearch))
+      .sort((left, right) => {
+        if (left.balanceDue !== right.balanceDue) return right.balanceDue - left.balanceDue;
+        return left.identity.localeCompare(right.identity);
+      });
+  }, [completedProjects, customers, projects, quotesById, search]);
+
+  const billingSummary = useMemo(() => billingRows.reduce((summary, row) => ({
+    contract: summary.contract + row.contractTotal,
+    paid: summary.paid + row.amountPaid,
+    due: summary.due + row.balanceDue,
+    invoices: summary.invoices + row.invoices.length,
+  }), { contract: 0, paid: 0, due: 0, invoices: 0 }), [billingRows]);
+
   const projectAlertGroups = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1151,6 +1193,24 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     setPage("projectDetails");
   }
 
+  function openProjectBilling(project) {
+    setSelectedProject({ ...project, initialTab: "workflow" });
+    setPage("projectDetails");
+  }
+
+  function openBillingDocument(row) {
+    const document = row.latestInvoice || row.approvedQuote;
+    if (!document) {
+      setSelectedProject(row.project);
+      setSelectedQuote(null);
+      setPage("quoteCenter");
+      return;
+    }
+    setSelectedProject(row.project);
+    setSelectedQuote(document);
+    setPage("quoteBuilder");
+  }
+
   function openProjectChecklist(project) {
     setSelectedProject({ ...project, initialTab: "tracking" });
     setPage("projectDetails");
@@ -1369,6 +1429,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           }}
           data={[
             { label: "Workflow Queue", value: "board" },
+            { label: "Project Billing", value: "billing" },
             { label: "Project List", value: "list" },
             { label: "Calendar", value: "calendar" },
             { label: `Completed (${completedProjects.length})`, value: "completed" },
@@ -1382,6 +1443,82 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           <Paper p="md" withBorder><Text size="xs" c="dimmed" fw={800} tt="uppercase">Outstanding Balance</Text><Text fz={28} fw={900}>{money(leadershipSummary.balance)}</Text></Paper>
         </SimpleGrid>
       </MWPanel>
+
+      {workspaceView === "billing" && (
+        <MWPanel
+          title="Project Billing"
+          subtitle="All outside-project quotes, invoices, payments, and remaining balances in one place."
+          icon={IconCash}
+          rightSection={<Button size="xs" color="red" leftSection={<IconFileInvoice size={15} />} onClick={() => setPage("quoteCenter")}>New Quote</Button>}
+        >
+          <Group mb="md" wrap="wrap">
+            <TextInput
+              style={{ flex: 1, minWidth: 280 }}
+              placeholder="Search project, customer, quote, or invoice number..."
+              leftSection={<IconSearch size={17} />}
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+            <Button variant="light" color="gray" leftSection={refreshing ? <Loader size={16} /> : <IconRefresh size={17} />} disabled={refreshing} onClick={() => loadProjects(false)}>Refresh</Button>
+          </Group>
+
+          <SimpleGrid cols={{ base: 2, lg: 4 }} spacing="sm" mb="lg">
+            <Paper p="md" withBorder radius="md"><Text size="xs" c="dimmed" fw={800} tt="uppercase">Project Value</Text><Text fz={24} fw={900}>{money(billingSummary.contract)}</Text></Paper>
+            <Paper p="md" withBorder radius="md"><Text size="xs" c="dimmed" fw={800} tt="uppercase">Payments Received</Text><Text fz={24} fw={900} c="green">{money(billingSummary.paid)}</Text></Paper>
+            <Paper p="md" withBorder radius="md"><Text size="xs" c="dimmed" fw={800} tt="uppercase">Remaining Balance</Text><Text fz={24} fw={900} c={billingSummary.due > 0 ? "red" : "green"}>{money(billingSummary.due)}</Text></Paper>
+            <Paper p="md" withBorder radius="md"><Text size="xs" c="dimmed" fw={800} tt="uppercase">Invoices</Text><Text fz={24} fw={900}>{billingSummary.invoices}</Text></Paper>
+          </SimpleGrid>
+
+          <ScrollArea type="auto">
+            <Table striped highlightOnHover withTableBorder withColumnBorders miw={1120} verticalSpacing="sm">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Project / Customer</Table.Th>
+                  <Table.Th>Approved Quote</Table.Th>
+                  <Table.Th>Invoice</Table.Th>
+                  <Table.Th ta="right">Contract</Table.Th>
+                  <Table.Th ta="right">Paid</Table.Th>
+                  <Table.Th ta="right">Balance Due</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {billingRows.map((row) => (
+                  <Table.Tr key={row.project.id}>
+                    <Table.Td>
+                      <Text fw={900} size="sm">{row.identity}</Text>
+                      <Text size="xs" c="dimmed">{row.project.project_number || "Project number pending"}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text fw={800} size="sm">{row.approvedQuote?.quote_number || "No quote connected"}</Text>
+                      <Badge size="xs" color={row.approvedQuote?.status === "Approved" ? "green" : row.approvedQuote ? "orange" : "gray"} variant="light">{row.approvedQuote?.status || "Not Started"}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text fw={800} size="sm">{row.latestInvoice?.quote_number || "Not created"}</Text>
+                      <Text size="xs" c="dimmed">{row.invoices.length ? `${row.invoices.length} invoice${row.invoices.length === 1 ? "" : "s"}` : "Create after approval"}</Text>
+                    </Table.Td>
+                    <Table.Td ta="right" fw={800}>{money(row.contractTotal)}</Table.Td>
+                    <Table.Td ta="right" fw={800} c="green">{money(row.amountPaid)}</Table.Td>
+                    <Table.Td ta="right" fw={900} c={row.balanceDue > 0 ? "red" : "green"}>{money(row.balanceDue)}</Table.Td>
+                    <Table.Td>
+                      <Badge color={row.project.status === "Completed" ? "green" : row.balanceDue > 0 ? "orange" : "blue"}>{row.project.status === "Completed" ? "Completed" : row.balanceDue > 0 ? "Payment Due" : "Current"}</Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={6} wrap="nowrap">
+                        <Button size="compact-xs" color="red" variant="light" onClick={() => openProjectBilling(row.project)}>Open Billing</Button>
+                        <Button size="compact-xs" variant="default" onClick={() => openBillingDocument(row)}>{row.latestInvoice ? "Open Invoice" : row.approvedQuote ? "Open Quote" : "Start Quote"}</Button>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </ScrollArea>
+          {!billingRows.length && <Alert color="blue" mt="md">No projects match this billing search.</Alert>}
+          <Text size="xs" c="dimmed" mt="md">Approved quotes remain unchanged. Invoices and payments stay linked to the project so the financial history is preserved.</Text>
+        </MWPanel>
+      )}
 
       <MWPanel
         title="Outside Project Alerts"
