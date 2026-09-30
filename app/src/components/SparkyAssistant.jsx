@@ -121,6 +121,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState([STARTER_MESSAGE]);
+  const [pendingAction, setPendingAction] = useState(null);
   const viewport = useRef(null);
 
   const prompts = useMemo(() => PAGE_PROMPTS[currentPage] || DEFAULT_PROMPTS, [currentPage]);
@@ -152,6 +153,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
       if (error) throw error;
       if (!data?.answer) throw new Error(data?.error || "Sparky could not prepare an answer.");
       setMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+      setPendingAction(data.proposed_action || null);
     } catch (error) {
       const messageText = error?.context?.body?.error || error.message || "Sparky is temporarily unavailable.";
       setMessages((current) => [...current, { role: "assistant", content: `I couldn’t complete that request. ${messageText}` }]);
@@ -164,6 +166,31 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
   function clearConversation() {
     setMessages([STARTER_MESSAGE]);
     setQuestion("");
+    setPendingAction(null);
+  }
+
+  async function confirmPendingAction() {
+    if (!pendingAction || sending) return;
+    setSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sparky-assistant", {
+        body: { action: pendingAction, confirmed: true, page: currentPage },
+      });
+      if (error) throw error;
+      if (!data?.answer) throw new Error(data?.error || "Sparky could not complete the action.");
+      setMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+      setPendingAction(null);
+      notifications.show({ title: "Sparky Completed the Action", message: data.answer, color: "green" });
+    } catch (error) {
+      let messageText = error?.message || "Sparky could not complete the action.";
+      if (error?.context?.clone) {
+        try { messageText = (await error.context.clone().json())?.error || messageText; } catch { /* Response was not JSON. */ }
+      }
+      setMessages((current) => [...current, { role: "assistant", content: `I couldn’t complete that action. ${messageText}` }]);
+      notifications.show({ title: "Sparky Could Not Complete It", message: messageText, color: "red" });
+    } finally {
+      setSending(false);
+    }
   }
 
   function openAction() {
@@ -209,7 +236,8 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
         <Paper radius={0} p="md" style={{ borderTop: "1px solid rgba(255,255,255,0.09)", background: "#101215" }}>
           <Stack gap="sm">
             {messages.length === 1 && <Group gap="xs">{prompts.map((prompt) => <Button key={prompt} size="compact-xs" variant="light" color="gray" onClick={() => askSparky(prompt)}>{prompt}</Button>)}</Group>}
-            {action && messages.length > 1 && (() => { const ActionIconComponent = action.icon; return <Button variant="light" color="red" leftSection={<ActionIconComponent size={17}/>} onClick={openAction}>{action.label}</Button>; })()}
+            {pendingAction && <Paper p="sm" radius="md" style={{ border: "1px solid #9f2028", background: "#22090c" }}><Stack gap="xs"><Text size="xs" fw={900} c="red.3">CONFIRM SHOP RECORD CHANGE</Text><Text size="sm">{pendingAction.label}</Text><Group grow><Button variant="default" onClick={() => setPendingAction(null)} disabled={sending}>Cancel</Button><Button color="red" leftSection={<IconBolt size={16}/>} onClick={confirmPendingAction} loading={sending}>Confirm Move</Button></Group></Stack></Paper>}
+            {!pendingAction && action && messages.length > 1 && (() => { const ActionIconComponent = action.icon; return <Button variant="light" color="red" leftSection={<ActionIconComponent size={17}/>} onClick={openAction}>{action.label}</Button>; })()}
             <Textarea value={question} onChange={(event) => setQuestion(event.currentTarget.value)} placeholder="Ask about a job, item, crate, manual, or today's priorities…" minRows={2} maxRows={5} autosize disabled={sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); askSparky(); } }}/>
             <Group justify="space-between">
               <Button size="xs" variant="subtle" color="gray" leftSection={<IconTrash size={15}/>} onClick={clearConversation} disabled={sending || messages.length === 1}>Clear</Button>

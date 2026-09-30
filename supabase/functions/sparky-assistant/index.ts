@@ -2,7 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 
 type ChatMessage = { role?: string; content?: string };
-type RequestBody = { question?: string; page?: string; history?: ChatMessage[] };
+type SparkyAction = { type?: string; work_order_id?: number };
+type RequestBody = { question?: string; page?: string; history?: ChatMessage[]; action?: SparkyAction; confirmed?: boolean };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,15 @@ function json(body: Record<string, unknown>, status = 200) {
 
 function cleanText(value: unknown, limit = 2000) {
   return typeof value === "string" ? value.trim().slice(0, limit) : "";
+}
+
+function normalized(value: unknown) {
+  return cleanText(value, 180).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function designToLaserTarget(question: string) {
+  const match = question.match(/move\s+(.+?)\s+from\s+(?:the\s+)?design(?:\s+queue)?\s+to\s+(?:the\s+)?laser(?:\s+queue)?/i);
+  return match ? cleanText(match[1], 120) : "";
 }
 
 function searchTerm(question: string) {
@@ -90,7 +100,7 @@ Deno.serve(async (request: Request) => {
     const body = await request.json() as RequestBody;
     const question = cleanText(body.question);
     const page = cleanText(body.page, 80) || "unknown";
-    if (!question) return json({ error: "Ask Sparky a question first." }, 400);
+    if (!question && !body.action) return json({ error: "Ask Sparky a question first." }, 400);
 
     const callerClient = createClient(supabaseUrl, publishableKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
     const adminClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -100,6 +110,65 @@ Deno.serve(async (request: Request) => {
     const { data: employee, error: employeeError } = await adminClient.from("employee_profiles").select("id,display_name,department,role_title,access_level,is_active").eq("auth_user_id", user.id).eq("is_active", true).maybeSingle();
     if (employeeError) throw employeeError;
     if (!employee) return json({ error: "An active Metal Worx employee profile is required." }, 403);
+
+    if (body.confirmed && body.action?.type === "move_design_to_laser") {
+      if (!String(employee.access_level || "").toLowerCase().includes("admin")) return json({ error: "Administrator access is required to release artwork to Laser." }, 403);
+      const workOrderId = Number(body.action.work_order_id);
+      if (!Number.isInteger(workOrderId) || workOrderId <= 0) return json({ error: "The Design work order is invalid. Ask Sparky to find it again." }, 400);
+      const { data: result, error: actionError } = await callerClient.rpc("mw_sparky_move_design_to_laser", {
+        p_design_work_order_id: workOrderId,
+        p_actor: employee.display_name,
+        p_confirmation: "CONFIRM DESIGN TO LASER",
+      });
+      if (actionError) return json({ error: actionError.message }, 409);
+      return json({
+        answer: `Done. The Design work was completed and released to ${result?.next_department || "Laser"}. The linked order, production job, progress, and activity history were updated under ${employee.display_name}.`,
+        action_executed: true,
+        result,
+      });
+    }
+
+    const requestedCustomer = designToLaserTarget(question);
+    if (requestedCustomer) {
+      const { data: customers, error: customerError } = await adminClient.from("customers").select("id,first_name,last_name,company_name").eq("is_active", true).limit(500);
+      if (customerError) throw customerError;
+      const target = normalized(requestedCustomer);
+      const matches = (customers || []).filter((customer) => normalized(`${customer.first_name || ""} ${customer.last_name || ""} ${customer.company_name || ""}`).includes(target));
+      if (!matches.length) return json({ answer: `I could not find an active customer matching “${requestedCustomer}.” Try the customer’s full name or order number.` });
+      const customerIds = matches.map((customer) => customer.id);
+      const { data: orders, error: orderError } = await adminClient.from("customer_orders").select("id,order_number,status,design_status,customer_id").in("customer_id", customerIds).is("archived_at", null);
+      if (orderError) throw orderError;
+      const orderIds = (orders || []).map((order) => order.id);
+      if (!orderIds.length) return json({ answer: `I found ${requestedCustomer}, but no active customer order is available to move.` });
+      const { data: jobs, error: jobError } = await adminClient.from("production_jobs").select("id,production_job_number,customer_order_id,current_department,status").in("customer_order_id", orderIds).eq("is_active", true);
+      if (jobError) throw jobError;
+      const jobIds = (jobs || []).map((job) => job.id);
+      const { data: workOrders, error: workError } = jobIds.length
+        ? await adminClient.from("work_orders").select("id,work_order_number,production_job_id,status,department,step_name").in("production_job_id", jobIds).eq("is_active", true).eq("department", "Design").in("status", ["Ready", "In Progress"])
+        : { data: [], error: null };
+      if (workError) throw workError;
+      const candidates = (workOrders || []).map((workOrder) => {
+        const job = (jobs || []).find((item) => item.id === workOrder.production_job_id);
+        const order = (orders || []).find((item) => item.id === job?.customer_order_id);
+        const customer = matches.find((item) => item.id === order?.customer_id);
+        return { workOrder, job, order, customer };
+      });
+      if (!candidates.length) return json({ answer: `I found ${requestedCustomer}, but there is no Design work currently eligible to release to Laser.` });
+      if (candidates.length > 1) return json({ answer: `I found ${candidates.length} eligible Design jobs for ${requestedCustomer}. Tell me the order number so I do not move the wrong artwork.` });
+      const candidate = candidates[0];
+      const customerName = [candidate.customer?.first_name, candidate.customer?.last_name].filter(Boolean).join(" ") || candidate.customer?.company_name || requestedCustomer;
+      return json({
+        answer: `I found ${customerName}: order ${candidate.order?.order_number}, Design work order ${candidate.workOrder.work_order_number}. It is currently ${candidate.workOrder.status}. Confirming will record customer approval and the production check, complete Design, release Laser, update progress, and add an audit-history entry.`,
+        proposed_action: {
+          type: "move_design_to_laser",
+          work_order_id: candidate.workOrder.id,
+          label: `Confirm ${customerName} — Design to Laser`,
+          order_number: candidate.order?.order_number,
+          work_order_number: candidate.workOrder.work_order_number,
+          requires_admin: true,
+        },
+      });
+    }
 
     const term = searchTerm(question);
     const areas = requestedAreas(question, page);
