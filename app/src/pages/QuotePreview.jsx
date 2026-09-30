@@ -122,8 +122,12 @@ function getProjectItem(project, quote) {
   );
 }
 
+function normalizeQuoteText(value) {
+  return String(value || "").replace(/\\n/g, "\n");
+}
+
 function splitLines(value) {
-  return String(value || "")
+  return normalizeQuoteText(value)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -246,11 +250,12 @@ function wordBulletBlock(value) {
 }
 
 function QuoteTextSection({ title, value, className = "" }) {
-  if (!String(value || "").trim()) return null;
+  const displayValue = normalizeQuoteText(value);
+  if (!displayValue.trim()) return null;
   return (
     <section className={`quote-section quote-text-section ${className}`.trim()}>
       <h2>{title}</h2>
-      <div className="quote-text">{value}</div>
+      <div className="quote-text">{displayValue}</div>
     </section>
   );
 }
@@ -302,7 +307,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         return;
       }
 
-      const activeQuote = quoteResult.data;
+      const activeQuote = Object.fromEntries(
+        Object.entries(quoteResult.data).map(([key, value]) => [
+          key,
+          typeof value === "string" ? normalizeQuoteText(value) : value,
+        ]),
+      );
       setQuote(activeQuote);
 
       const [itemResult, imageResult, materialResult] = await Promise.all([
@@ -332,7 +342,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       if (imageResult.error) throw imageResult.error;
       if (materialResult.error) throw materialResult.error;
 
-      setItems(itemResult.data || []);
+      setItems((itemResult.data || []).map((item) => ({
+        ...item,
+        title: normalizeQuoteText(item.title),
+        description: normalizeQuoteText(item.description),
+      })));
       setQuoteImages(imageResult.data || []);
       setMaterialRequests(materialResult.data || []);
     } catch (error) {
