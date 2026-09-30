@@ -39,7 +39,8 @@ function designToLaserTarget(question: string) {
 }
 
 function wantsQuoteDraft(question: string) {
-  return /\b(?:create|make|start|build|prepare|draft|put together|write up)\b[\s\S]{0,45}\b(?:quote|estimate)\b|\b(?:quote|estimate)\b[\s\S]{0,45}\b(?:create|make|start|build|prepare|draft)\b/i.test(question);
+  return /\b(?:create|make|start|build|prepare|draft|put together|write up)\b[\s\S]{0,45}\b(?:quote|estimate)\b|\b(?:quote|estimate)\b[\s\S]{0,45}\b(?:create|make|start|build|prepare|draft)\b/i.test(question)
+    || /(?:^|\n)\s*customer\s*:.+(?:\n|$)[\s\S]*(?:^|\n)\s*(?:quote|quote title|project)\s*:.+(?:\n|$)[\s\S]*(?:^|\n)\s*items?\s*:/i.test(question);
 }
 
 function labeledValue(text: string, labels: string[]) {
@@ -59,6 +60,7 @@ function parseQuoteItems(text: string): QuoteItem[] {
     const line = rawLine.trim().replace(/^[-•*]\s*/, "");
     if (!line || /^(?:customer|company|quote title|project|scope|tax|phone|email)\s*:/i.test(line)) continue;
     const labeled = line.match(/^item\s*:\s*(.+)$/i)?.[1] || line;
+    if (/^tax(?:es)?\b/i.test(labeled)) continue;
     const pipe = labeled.split("|").map((part) => part.trim());
     if (pipe.length >= 2) {
       const quantity = Number(pipe[1].replace(/[^0-9.]/g, "")) || 1;
@@ -66,7 +68,20 @@ function parseQuoteItems(text: string): QuoteItem[] {
       continue;
     }
     const match = labeled.match(/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(.+?)\s+(?:@|at)\s*\$?([\d,]+(?:\.\d{1,2})?)(?:\s*(?:each|ea))?$/i);
-    if (match) items.push({ title: cleanText(match[2], 180), quantity: Number(match[1] || 1), unit_price: parseMoney(match[3]) });
+    if (match) {
+      items.push({ title: cleanText(match[2], 180), quantity: Number(match[1] || 1), unit_price: parseMoney(match[3]) });
+      continue;
+    }
+    const perUnit = labeled.match(/^(.+?)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+per\s+([a-z]+)(?:\s*\(\$?([\d,]+(?:\.\d{1,2})?)\))?$/i);
+    if (perUnit) {
+      const unitPrice = parseMoney(perUnit[2]);
+      const statedTotal = parseMoney(perUnit[4] || "0");
+      const calculatedQuantity = unitPrice > 0 && statedTotal > 0 ? statedTotal / unitPrice : 1;
+      items.push({ title: cleanText(perUnit[1], 180), quantity: calculatedQuantity, unit_price: unitPrice, description: `${unitPrice.toFixed(2)} per ${perUnit[3].toLowerCase()}` });
+      continue;
+    }
+    const simpleTotal = labeled.match(/^(.+?)\s+\$?([\d,]+(?:\.\d{1,2})?)$/i);
+    if (simpleTotal) items.push({ title: cleanText(simpleTotal[1], 180), quantity: 1, unit_price: parseMoney(simpleTotal[2]) });
   }
   return items.slice(0, 20).filter((item) => item.title);
 }
@@ -76,7 +91,7 @@ function parseQuoteDraft(text: string) {
   const forMatch = text.match(/\b(?:quote|estimate)\s+(?:for|to)\s+([^,\n.]+?)(?=\s+(?:for|to|including|with)\s+|[,\n.]|$)/i);
   const customerName = cleanText(customerLabel || forMatch?.[1], 180);
   const scope = labeledValue(text, ["scope", "scope of work", "work"]);
-  const titleLabel = labeledValue(text, ["quote title", "project", "project name", "title"]);
+  const titleLabel = labeledValue(text, ["quote title", "quote", "project", "project name", "title"]);
   const quoteTitle = cleanText(titleLabel || scope || (customerName ? `${customerName} Quote` : ""), 180);
   const items = parseQuoteItems(text);
   const taxTreatment = /\b(?:tax exempt|no tax|exclude tax|tax added later)\b/i.test(text) ? "added_later" : "included";
@@ -214,7 +229,9 @@ Deno.serve(async (request: Request) => {
     }
 
     if (wantsQuoteDraft(question)) {
-      const conversationText = [...(body.history || []).filter((message) => message.role === "user").slice(-4).map((message) => cleanText(message.content)), question].filter(Boolean).join("\n");
+      const structuredQuestion = /(?:^|\n)\s*customer\s*:/i.test(question) && /(?:^|\n)\s*items?\s*:/i.test(question);
+      const historyQuestions = (body.history || []).filter((message) => message.role === "user").slice(-4).map((message) => cleanText(message.content)).filter(Boolean);
+      const conversationText = structuredQuestion ? question : [...historyQuestions, ...(!historyQuestions.includes(question) ? [question] : [])].join("\n");
       const draft = parseQuoteDraft(conversationText);
       const missing = [];
       if (!draft.customerName) missing.push("customer or company name");
