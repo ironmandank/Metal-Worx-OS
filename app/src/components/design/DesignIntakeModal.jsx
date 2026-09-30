@@ -6,7 +6,9 @@ import {
   Checkbox,
   FileButton,
   Group,
+  Image,
   Modal,
+  Paper,
   Select,
   SimpleGrid,
   Stack,
@@ -16,7 +18,7 @@ import {
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUpload } from "@tabler/icons-react";
+import { IconExternalLink, IconInfoCircle, IconTrash, IconUpload } from "@tabler/icons-react";
 
 import { supabase } from "../../lib/supabase";
 import { releaseCustomerOrder } from "../../lib/productionWorkflow";
@@ -49,6 +51,50 @@ function dateValue(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString().slice(0, 10);
+}
+
+function PendingReferenceImage({ file, onRemove }) {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file);
+    setPreviewUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+
+  return (
+    <Paper withBorder radius="md" p="xs">
+      {previewUrl && (
+        <a href={previewUrl} target="_blank" rel="noreferrer" aria-label={`Open ${file.name}`}>
+          <Image src={previewUrl} alt={file.name} h={140} fit="contain" radius="sm" />
+        </a>
+      )}
+      <Text size="xs" fw={700} mt="xs" lineClamp={2}>{file.name}</Text>
+      <Group grow gap={6} mt="xs">
+        <Button
+          component="a"
+          href={previewUrl}
+          target="_blank"
+          rel="noreferrer"
+          size="compact-xs"
+          variant="light"
+          leftSection={<IconExternalLink size={13} />}
+          disabled={!previewUrl}
+        >
+          Open
+        </Button>
+        <Button
+          size="compact-xs"
+          variant="light"
+          color="red"
+          leftSection={<IconTrash size={13} />}
+          onClick={onRemove}
+        >
+          Remove
+        </Button>
+      </Group>
+    </Paper>
+  );
 }
 
 function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
@@ -337,16 +383,15 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             )}
           </Group>
           {files.length > 0 && (
-            <Stack gap={4}>
+            <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
               {files.map((file, index) => (
-                <Group key={`${file.name}-${file.lastModified}-${index}`} justify="space-between" gap="sm" wrap="nowrap">
-                  <Text size="xs" c="dimmed" truncate>{file.name}</Text>
-                  <Button size="compact-xs" variant="subtle" color="red" onClick={() => removeReferenceImage(index)}>
-                    Remove
-                  </Button>
-                </Group>
+                <PendingReferenceImage
+                  key={`${file.name}-${file.lastModified}-${index}`}
+                  file={file}
+                  onRemove={() => removeReferenceImage(index)}
+                />
               ))}
-            </Stack>
+            </SimpleGrid>
           )}
         </Stack>
 

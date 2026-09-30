@@ -24,7 +24,9 @@ import {
   IconAlertTriangle,
   IconClock,
   IconChevronRight,
+  IconDownload,
   IconEdit,
+  IconExternalLink,
   IconFlag,
   IconInfoCircle,
   IconHistory,
@@ -53,6 +55,77 @@ import {
   getDesignPriority,
   sortDesignQueue,
 } from "../lib/designPriority";
+
+function referenceImageLabel(image, index) {
+  return image?.caption || image?.image_type || `Reference image ${index + 1}`;
+}
+
+async function downloadReferenceImage(image, index) {
+  const fileName = referenceImageLabel(image, index);
+  try {
+    const response = await fetch(image.image_url);
+    if (!response.ok) throw new Error(`Download failed (${response.status})`);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    window.open(image.image_url, "_blank", "noopener,noreferrer");
+    notifications.show({
+      title: "Opened Image",
+      message: "The browser opened the image in a new tab so you can save it from there.",
+      color: "blue",
+    });
+  }
+}
+
+function DesignImageGallery({ images, imageHeight = 100 }) {
+  if (!images?.length) {
+    return <Text size="sm" c="dimmed">No artwork or reference images have been added.</Text>;
+  }
+
+  return (
+    <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
+      {images.map((image, index) => {
+        const label = referenceImageLabel(image, index);
+        return (
+          <Card key={image.id || `${image.image_url}-${index}`} withBorder radius="md" p="xs">
+            <a href={image.image_url} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}>
+              <Image src={image.image_url} alt={label} h={imageHeight} fit="contain" radius="sm" />
+            </a>
+            <Text size="xs" fw={700} mt="xs" lineClamp={2}>{label}</Text>
+            <Group grow gap={6} mt="xs">
+              <Button
+                component="a"
+                href={image.image_url}
+                target="_blank"
+                rel="noreferrer"
+                size="compact-xs"
+                variant="light"
+                leftSection={<IconExternalLink size={13} />}
+              >
+                Open
+              </Button>
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="gray"
+                leftSection={<IconDownload size={13} />}
+                onClick={() => downloadReferenceImage(image, index)}
+              >
+                Download
+              </Button>
+            </Group>
+          </Card>
+        );
+      })}
+    </SimpleGrid>
+  );
+}
 
 function DepartmentQueue({
   department,
@@ -1035,37 +1108,9 @@ function DepartmentQueue({
             <div>
               <Group gap="xs" mb="xs">
                 <IconPhoto size={16} />
-                <Text size="sm" fw={800}>Artwork & Reference Files</Text>
+                <Text size="sm" fw={800}>Artwork & Reference Files ({images.length})</Text>
               </Group>
-              <SimpleGrid cols={3} spacing="xs">
-                {images.slice(0, 2).map((image) => (
-                  <Card
-                    key={image.id}
-                    component="a"
-                    href={image.image_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    withBorder
-                    radius="md"
-                    p={4}
-                  >
-                    <Image
-                      src={image.image_url}
-                      alt={image.caption || image.image_type || "Order reference"}
-                      h={58}
-                      fit="contain"
-                      radius="sm"
-                    />
-                    <Text size="xs" fw={700} mt={4} lineClamp={1}>
-                      {image.caption || image.image_type || "Reference"}
-                    </Text>
-                  </Card>
-                ))}
-              </SimpleGrid>
-                {images.length > 2 && <Paper withBorder radius="md" p="xs" style={{ display:"grid", placeItems:"center", minHeight:82 }}><Text size="sm" fw={900}>+{images.length - 2}<br/><Text component="span" size="xs" c="dimmed">more</Text></Text></Paper>}
-              {images.length > 2 && (
-                <Text size="xs" c="dimmed" mt={4}>Open Job to view every attachment.</Text>
-              )}
+              <DesignImageGallery images={images} imageHeight={82} />
             </div>
           )}
 
@@ -1553,6 +1598,20 @@ function DepartmentQueue({
                   setDesignDraft((current) => ({ ...current, feePaid: checked }));
                 }}
               />
+            </Stack>
+          </Paper>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <div>
+                <Text fw={800}>Current Design Images</Text>
+                <Text size="sm" c="dimmed" mb="sm">
+                  Every image attached to this job is shown below. Open or download any file before adding more.
+                </Text>
+                <DesignImageGallery
+                  images={jobDetails[editDesignTarget?.production_job_id]?.images || []}
+                  imageHeight={120}
+                />
+              </div>
             </Stack>
           </Paper>
           <Paper withBorder radius="md" p="md">

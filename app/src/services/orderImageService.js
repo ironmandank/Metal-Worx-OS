@@ -1,6 +1,16 @@
 import { supabase } from "../lib/supabase";
 
 export async function uploadOrderImages(orderId, files, imageType = "Reference Image") {
+  const { data: lastImage, error: orderError } = await supabase
+    .from("customer_order_reference_images")
+    .select("sort_order")
+    .eq("customer_order_id", orderId)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (orderError) throw orderError;
+
+  const startingSortOrder = Number(lastImage?.sort_order) || 0;
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     const extension = file.name.split(".").pop();
@@ -20,7 +30,7 @@ export async function uploadOrderImages(orderId, files, imageType = "Reference I
         caption: file.name,
         image_type: imageType,
         show_on_work_order: true,
-        sort_order: index + 1,
+        sort_order: startingSortOrder + index + 1,
       });
     if (imageError) throw imageError;
   }
