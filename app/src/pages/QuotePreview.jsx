@@ -436,7 +436,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const quoteDate =
     quote?.quote_date || quote?.created_at || new Date().toISOString();
   const documentType = quote?.document_type === "Invoice" ? "Invoice" : "Quote";
-  const documentHeading = documentType === "Invoice" ? "PROJECT INVOICE" : "PROJECT QUOTATION";
+  const documentSubtitle = documentType === "Invoice" ? "Project Invoice" : "Project Quote";
   const documentNumberLabel = documentType === "Invoice" ? "Invoice No." : "Quote No.";
   const projectLocation =
     quote?.job_site_address ||
@@ -1622,14 +1622,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
           <section className="quote-title-grid">
             <div className="quote-title-block">
-              <div className="eyebrow">{documentHeading}</div>
               <h1>{projectItem}</h1>
-              <p>
-                {selectedProject?.project_type ||
-                  selectedProject?.project_category ||
-                  quote.quote_type ||
-                  "Custom Metal Fabrication"}
-              </p>
+              <p>{documentSubtitle}</p>
             </div>
             <div className="quote-meta">
               <div className="quote-meta-row">

@@ -148,16 +148,13 @@ export async function buildQuotePdf(model) {
   doc.setCharSpace(0);
   doc.setFont("QuoteSans", "bold");
   doc.setTextColor(...COLORS.black);
-  doc.setFontSize(8);
   const documentType = model.documentType === "Invoice" ? "Invoice" : "Quote";
-  doc.text(documentType === "Invoice" ? "PROJECT INVOICE" : "PROJECT QUOTATION", PAGE.width / 2, y, { align: "center" });
-  y += 14;
   doc.setFontSize(15);
   doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center" });
   y += 15;
   doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8.5);
-  doc.text(String(model.quoteType || "Custom Metal Fabrication"), PAGE.width / 2, y, { align: "center" });
+  doc.text(documentType === "Invoice" ? "Project Invoice" : "Project Quote", PAGE.width / 2, y, { align: "center" });
   y += 14;
 
   const metaRows = [
