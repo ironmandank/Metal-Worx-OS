@@ -1,0 +1,25 @@
+name: Publish Sparky visibility fix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/codex-sparky-visibility.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply tested fix
+        run: |
+          git config user.name "Metal Worx OS Publisher"
+          git config user.email "actions@users.noreply.github.com"
+          base64 --decode sparky-visibility-fix.patch.b64 | git apply
+          git add app/src/components/SparkyAssistant.jsx
+          git commit -m "Keep Sparky fully visible above app chrome"
+          git rm sparky-visibility-fix.patch.b64 .github/workflows/codex-sparky-visibility.yml
+          git commit -m "Remove temporary Sparky publishing files"
+          git push origin HEAD:main
