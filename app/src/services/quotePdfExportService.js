@@ -198,7 +198,7 @@ export async function buildQuotePdf(model) {
     money(row.amount),
   ]);
   pricingBody.push(["", "", "Contract Subtotal", money(model.contractSubtotal)]);
-  pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
+  if (model.showTax) pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
   pricingBody.push(["", "", "PROJECT TOTAL", money(model.grandTotal)]);
   doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8);

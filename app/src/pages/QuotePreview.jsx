@@ -406,7 +406,8 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
   const contractSubtotal =
     materialSubtotal + baseSubtotal + selectedOptionsTotal;
-  const taxTreatment = quote?.tax_treatment || "included";
+  const taxTreatment = quote?.tax_treatment || "none";
+  const showTax = taxTreatment === "included" || taxTreatment === "plus";
   const taxAmount = taxTreatment === "included"
     ? contractSubtotal * Number(quote?.tax_rate || 0)
     : 0;
@@ -416,14 +417,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const taxLabel = taxTreatment === "plus" ? "Taxes & Fees" : "Sales Tax";
   const taxDisplay = taxTreatment === "plus"
     ? "Plus applicable"
-    : taxTreatment === "exempt"
-      ? "Tax exempt"
-      : money(taxAmount);
+    : money(taxAmount);
   const taxNotice = taxTreatment === "plus"
     ? "Applicable taxes and payment-processing fees are not included in the estimated project price and will be added when invoiced."
-    : taxTreatment === "exempt"
-      ? "This quote is marked tax exempt. Tax-exemption documentation may be required."
-      : "";
+    : "";
 
   const projectPerson = getProjectPerson(selectedProject, customer, quote);
   const projectCompany = getProjectCompany(
@@ -511,6 +508,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         taxDisplay,
         taxAmount,
         taxNotice,
+        showTax,
         grandTotal,
         priceNotes: quote.price_notes,
         schedule: quote.project_schedule,
@@ -640,7 +638,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             })
           ),
           new TableRow({ children: [wordCell("Contract Subtotal", { bold: true, gray: true }), wordCell(""), wordCell(money(contractSubtotal), { bold: true, gray: true, alignment: AlignmentType.RIGHT })] }),
-          new TableRow({ children: [wordCell(taxLabel, { bold: true, gray: true }), wordCell(""), wordCell(taxDisplay, { bold: true, gray: true, alignment: AlignmentType.RIGHT })] }),
+          ...(showTax ? [new TableRow({ children: [wordCell(taxLabel, { bold: true, gray: true }), wordCell(""), wordCell(taxDisplay, { bold: true, gray: true, alignment: AlignmentType.RIGHT })] })] : []),
           new TableRow({ children: [wordCell("TOTAL ESTIMATED PRICE", { bold: true }), wordCell(""), wordCell(money(grandTotal), { bold: true, alignment: AlignmentType.RIGHT })] }),
         ],
       });
@@ -832,7 +830,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       pricingSheet,
       [
         ["Contract Subtotal", contractSubtotal],
-        [taxLabel, taxTreatment === "included" ? taxAmount : taxDisplay],
+      ...(showTax ? [[taxLabel, taxTreatment === "included" ? taxAmount : taxDisplay]] : []),
         ["Total Estimated Price", grandTotal],
       ],
       { origin: -1 },
@@ -1749,10 +1747,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
                   <Table.Td colSpan={2}>Contract Subtotal</Table.Td>
                   <Table.Td>{money(contractSubtotal)}</Table.Td>
                 </Table.Tr>
-                <Table.Tr className="quote-total-row">
+                {showTax && <Table.Tr className="quote-total-row">
                   <Table.Td colSpan={2}>{taxLabel}</Table.Td>
                   <Table.Td>{taxDisplay}</Table.Td>
-                </Table.Tr>
+                </Table.Tr>}
                 <Table.Tr className="quote-grand-row">
                   <Table.Td colSpan={2}>TOTAL ESTIMATED PRICE</Table.Td>
                   <Table.Td>{money(grandTotal)}</Table.Td>

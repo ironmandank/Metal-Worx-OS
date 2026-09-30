@@ -196,7 +196,7 @@ export function emptyOrganizedQuote() {
     price_notes: "",
     valid_until: "",
     tax_rate: 0.07,
-    tax_treatment: "included",
+    tax_treatment: "none",
   };
 }
 

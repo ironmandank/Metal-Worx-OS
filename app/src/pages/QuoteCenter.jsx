@@ -759,7 +759,7 @@ function QuoteCenter({
         (sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0),
         0,
       );
-      const taxTreatment = organizedQuote.tax_treatment || "included";
+      const taxTreatment = organizedQuote.tax_treatment || "none";
       const taxRate = Number(organizedQuote.tax_rate || 0);
       const taxAmount = taxTreatment === "included" ? subtotal * taxRate : 0;
       const payload = {
@@ -1428,8 +1428,8 @@ function QuoteCenter({
                   <TextInput label="Phone" value={organizedQuote.contact_phone} onChange={(event) => updateOrganizedField("contact_phone", event.currentTarget.value)} />
                   <TextInput label="Email" value={organizedQuote.contact_email} onChange={(event) => updateOrganizedField("contact_email", event.currentTarget.value)} />
                   <TextInput label="Project / Billing Address" value={organizedQuote.address} onChange={(event) => updateOrganizedField("address", event.currentTarget.value)} />
-                  <Select label="Sales Tax Treatment" data={[{ value: "included", label: "Include sales tax in total" }, { value: "plus", label: "Plus applicable taxes and fees" }, { value: "exempt", label: "Tax exempt / no sales tax" }]} value={organizedQuote.tax_treatment || "included"} onChange={(value) => updateOrganizedField("tax_treatment", value || "included")} />
-                  {(organizedQuote.tax_treatment || "included") === "included" && <NumberInput label="Sales Tax Rate" suffix="%" min={0} max={100} decimalScale={3} value={Number(organizedQuote.tax_rate || 0) * 100} onChange={(value) => updateOrganizedField("tax_rate", Number(value || 0) / 100)} />}
+                  <Select label="Sales Tax Treatment" data={[{ value: "included", label: "Include sales tax in total" }, { value: "plus", label: "Plus applicable taxes and fees" }, { value: "none", label: "Do not show tax on quote" }]} value={organizedQuote.tax_treatment || "none"} onChange={(value) => updateOrganizedField("tax_treatment", value || "none")} />
+                  {(organizedQuote.tax_treatment || "none") === "included" && <NumberInput label="Sales Tax Rate" suffix="%" min={0} max={100} decimalScale={3} value={Number(organizedQuote.tax_rate || 0) * 100} onChange={(value) => updateOrganizedField("tax_rate", Number(value || 0) / 100)} />}
                 </SimpleGrid>
 
                 <Stack gap="sm">

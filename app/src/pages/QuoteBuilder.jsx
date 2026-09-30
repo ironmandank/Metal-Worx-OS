@@ -371,7 +371,7 @@ function QuoteBuilder({
 
             tax_rate: 0.07,
 
-            tax_treatment: "included",
+            tax_treatment: "none",
 
             down_payment_terms: selectedProject.down_payment_required
               ? "50% deposit required to begin work"
@@ -675,7 +675,7 @@ function QuoteBuilder({
 
     const subtotal = manualSubtotal + materialSubtotal;
 
-    const taxTreatment = quoteData?.tax_treatment || "included";
+    const taxTreatment = quoteData?.tax_treatment || "none";
 
     const taxRate = taxTreatment === "included" ? Number(quoteData?.tax_rate || 0) : 0;
 
@@ -1200,7 +1200,7 @@ function QuoteBuilder({
 
         tax_rate: Number(quote.tax_rate || 0),
 
-        tax_treatment: quote.tax_treatment || "included",
+        tax_treatment: quote.tax_treatment || "none",
 
         status: quote.status || "Draft",
 
@@ -2704,13 +2704,13 @@ function QuoteBuilder({
               data={[
                 { value: "included", label: "Include sales tax in total" },
                 { value: "plus", label: "Plus applicable taxes and fees" },
-                { value: "exempt", label: "Tax exempt / no sales tax" },
+                { value: "none", label: "Do not show tax on quote" },
               ]}
-              value={quote.tax_treatment || "included"}
-              onChange={(value) => updateQuoteField("tax_treatment", value || "included")}
+              value={quote.tax_treatment || "none"}
+              onChange={(value) => updateQuoteField("tax_treatment", value || "none")}
             />
 
-            {(quote.tax_treatment || "included") === "included" && (
+            {(quote.tax_treatment || "none") === "included" && (
               <NumberInput
                 label="Tax Rate"
                 description="Enter 0.07 for 7%"
@@ -2747,9 +2747,9 @@ function QuoteBuilder({
                 <Text fw={700}>
                   {quote.tax_treatment === "plus"
                     ? "Plus taxes & fees"
-                    : quote.tax_treatment === "exempt"
-                      ? "Tax exempt"
-                      : money(liveTotals.tax_amount)}
+                    : quote.tax_treatment === "included"
+                      ? money(liveTotals.tax_amount)
+                      : "Not shown"}
                 </Text>
               </Group>
 
