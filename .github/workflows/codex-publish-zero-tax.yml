@@ -1,0 +1,27 @@
+name: Publish quote zero-tax display fix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/codex-publish-zero-tax.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply tested quote display patch
+        run: |
+          git config user.name "Metal Worx OS Publisher"
+          git config user.email "actions@users.noreply.github.com"
+          base64 --decode metal-worx-tax-row.patch.b64 > metal-worx-tax-row.patch
+          git am metal-worx-tax-row.patch
+          rm metal-worx-tax-row.patch
+          git rm metal-worx-tax-row.patch.b64 .github/workflows/codex-publish-zero-tax.yml
+          git commit -m "Remove temporary quote tax publishing files"
+          git push origin HEAD:main
