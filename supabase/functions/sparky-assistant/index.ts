@@ -2,7 +2,17 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 
 type ChatMessage = { role?: string; content?: string };
-type SparkyAction = { type?: string; work_order_id?: number };
+type QuoteItem = { title?: string; description?: string; quantity?: number; unit_price?: number };
+type SparkyAction = {
+  type?: string;
+  work_order_id?: number;
+  customer_id?: number | null;
+  customer_name?: string;
+  quote_title?: string;
+  scope_of_work?: string;
+  tax_treatment?: string;
+  items?: QuoteItem[];
+};
 type RequestBody = { question?: string; page?: string; history?: ChatMessage[]; action?: SparkyAction; confirmed?: boolean };
 
 const corsHeaders = {
@@ -26,6 +36,51 @@ function normalized(value: unknown) {
 function designToLaserTarget(question: string) {
   const match = question.match(/move\s+(.+?)\s+from\s+(?:the\s+)?design(?:\s+queue)?\s+to\s+(?:the\s+)?laser(?:\s+queue)?/i);
   return match ? cleanText(match[1], 120) : "";
+}
+
+function wantsQuoteDraft(question: string) {
+  return /\b(?:create|make|start|build|prepare|draft|put together|write up)\b[\s\S]{0,45}\b(?:quote|estimate)\b|\b(?:quote|estimate)\b[\s\S]{0,45}\b(?:create|make|start|build|prepare|draft)\b/i.test(question);
+}
+
+function labeledValue(text: string, labels: string[]) {
+  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const match = text.match(new RegExp(`(?:^|\\n)\\s*(?:${escaped})\\s*:\\s*(.+)`, "i"));
+  return cleanText(match?.[1], 500);
+}
+
+function parseMoney(value: string) {
+  const parsed = Number(value.replace(/[$,\s]/g, ""));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function parseQuoteItems(text: string): QuoteItem[] {
+  const items: QuoteItem[] = [];
+  for (const rawLine of text.split(/\n+/)) {
+    const line = rawLine.trim().replace(/^[-•*]\s*/, "");
+    if (!line || /^(?:customer|company|quote title|project|scope|tax|phone|email)\s*:/i.test(line)) continue;
+    const labeled = line.match(/^item\s*:\s*(.+)$/i)?.[1] || line;
+    const pipe = labeled.split("|").map((part) => part.trim());
+    if (pipe.length >= 2) {
+      const quantity = Number(pipe[1].replace(/[^0-9.]/g, "")) || 1;
+      items.push({ title: cleanText(pipe[0], 180), quantity, unit_price: parseMoney(pipe[2] || "0"), description: cleanText(pipe.slice(3).join(" | "), 500) });
+      continue;
+    }
+    const match = labeled.match(/^(?:(\d+(?:\.\d+)?)\s*(?:x|×)\s*)?(.+?)\s+(?:@|at)\s*\$?([\d,]+(?:\.\d{1,2})?)(?:\s*(?:each|ea))?$/i);
+    if (match) items.push({ title: cleanText(match[2], 180), quantity: Number(match[1] || 1), unit_price: parseMoney(match[3]) });
+  }
+  return items.slice(0, 20).filter((item) => item.title);
+}
+
+function parseQuoteDraft(text: string) {
+  const customerLabel = labeledValue(text, ["customer", "company", "customer name"]);
+  const forMatch = text.match(/\b(?:quote|estimate)\s+(?:for|to)\s+([^,\n.]+?)(?=\s+(?:for|to|including|with)\s+|[,\n.]|$)/i);
+  const customerName = cleanText(customerLabel || forMatch?.[1], 180);
+  const scope = labeledValue(text, ["scope", "scope of work", "work"]);
+  const titleLabel = labeledValue(text, ["quote title", "project", "project name", "title"]);
+  const quoteTitle = cleanText(titleLabel || scope || (customerName ? `${customerName} Quote` : ""), 180);
+  const items = parseQuoteItems(text);
+  const taxTreatment = /\b(?:tax exempt|no tax|exclude tax|tax added later)\b/i.test(text) ? "added_later" : "included";
+  return { customerName, quoteTitle, scope, items, taxTreatment };
 }
 
 function searchTerm(question: string) {
@@ -125,6 +180,72 @@ Deno.serve(async (request: Request) => {
         answer: `Done. The Design work was completed and released to ${result?.next_department || "Laser"}. The linked order, production job, progress, and activity history were updated under ${employee.display_name}.`,
         action_executed: true,
         result,
+      });
+    }
+
+    if (body.confirmed && body.action?.type === "create_quote_draft") {
+      if (!String(employee.access_level || "").toLowerCase().includes("admin")) return json({ error: "Administrator access is required to create a quote draft through Sparky." }, 403);
+      const items = Array.isArray(body.action.items) ? body.action.items.slice(0, 20).map((item) => ({
+        title: cleanText(item.title, 180),
+        description: cleanText(item.description, 500),
+        quantity: Number(item.quantity || 1),
+        unit_price: Number(item.unit_price || 0),
+      })).filter((item) => item.title && Number.isFinite(item.quantity) && item.quantity > 0 && Number.isFinite(item.unit_price) && item.unit_price >= 0) : [];
+      const customerName = cleanText(body.action.customer_name, 180);
+      const quoteTitle = cleanText(body.action.quote_title, 180);
+      if (!customerName || !quoteTitle || !items.length) return json({ error: "The quote draft is missing a customer, title, or valid line item. Ask Sparky to prepare it again." }, 400);
+      const { data: result, error: actionError } = await callerClient.rpc("mw_sparky_create_quote_draft", {
+        p_customer_id: Number.isInteger(Number(body.action.customer_id)) && Number(body.action.customer_id) > 0 ? Number(body.action.customer_id) : null,
+        p_customer_name: customerName,
+        p_quote_title: quoteTitle,
+        p_scope_of_work: cleanText(body.action.scope_of_work, 4000),
+        p_items: items,
+        p_tax_treatment: body.action.tax_treatment === "added_later" ? "added_later" : "included",
+        p_actor: employee.display_name,
+        p_confirmation: "CONFIRM CREATE QUOTE DRAFT",
+      });
+      if (actionError) return json({ error: actionError.message }, 409);
+      return json({
+        answer: `Done. ${result?.quote_number || "The quote"} was created as an editable Draft for ${customerName}. Nothing was sent to the customer. Open Quote Center to review wording, measurements, pricing, images, and terms before approval.`,
+        action_executed: true,
+        result,
+        open_page: "quoteCenter",
+      });
+    }
+
+    if (wantsQuoteDraft(question)) {
+      const conversationText = [...(body.history || []).filter((message) => message.role === "user").slice(-4).map((message) => cleanText(message.content)), question].filter(Boolean).join("\n");
+      const draft = parseQuoteDraft(conversationText);
+      const missing = [];
+      if (!draft.customerName) missing.push("customer or company name");
+      if (!draft.quoteTitle) missing.push("quote title or scope");
+      if (!draft.items.length) missing.push("at least one line item");
+      if (missing.length) return json({
+        answer: `I can create that quote as an editable Draft. I still need ${missing.join(", ")}. Send it like this:\n\nCustomer: Jane Smith\nQuote title: Steel entry sign\nScope: Fabricate and powder-coat the approved sign\nItem: Custom steel sign | 1 | $850\nItem: Installation | 1 | $200\n\nUse $0 when pricing still needs to be filled in. I will show the full draft for confirmation before saving it.`,
+      });
+
+      const { data: customers, error: customerError } = await adminClient.from("customers").select("id,first_name,last_name,company_name,phone,email,address,city,state,zip").eq("is_active", true).limit(500);
+      if (customerError) throw customerError;
+      const target = normalized(draft.customerName);
+      const customerMatches = (customers || []).filter((customer) => normalized(`${customer.first_name || ""} ${customer.last_name || ""} ${customer.company_name || ""}`).includes(target));
+      if (customerMatches.length > 1) return json({ answer: `I found ${customerMatches.length} active customer records matching “${draft.customerName}.” Please give me the exact customer or company name so I attach the quote to the right record.` });
+      const customer = customerMatches[0];
+      const subtotal = draft.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0);
+      const taxAmount = draft.taxTreatment === "included" ? subtotal * 0.07 : 0;
+      const itemSummary = draft.items.map((item) => `${item.quantity} × ${item.title} @ $${Number(item.unit_price || 0).toFixed(2)}`).join("\n• ");
+      return json({
+        answer: `I prepared this editable quote draft:\n\nCustomer: ${draft.customerName}${customer ? " (matched to Customer records)" : " (new/unlinked name)"}\nTitle: ${draft.quoteTitle}\nScope: ${draft.scope || "Not entered — add during review"}\nItems:\n• ${itemSummary}\nSubtotal: $${subtotal.toFixed(2)}\n${draft.taxTreatment === "included" ? `NC tax (7%): $${taxAmount.toFixed(2)}\nDraft total: $${(subtotal + taxAmount).toFixed(2)}` : "Tax: Added on final invoice"}\n\nConfirming creates a Draft only. It will not send, approve, or convert the quote.`,
+        proposed_action: {
+          type: "create_quote_draft",
+          label: `Create Draft — ${draft.quoteTitle} for ${draft.customerName}`,
+          customer_id: customer?.id || null,
+          customer_name: draft.customerName,
+          quote_title: draft.quoteTitle,
+          scope_of_work: draft.scope,
+          tax_treatment: draft.taxTreatment,
+          items: draft.items,
+          requires_admin: true,
+        },
       });
     }
 
