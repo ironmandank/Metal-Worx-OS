@@ -207,13 +207,13 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
 
   return <>
     <style>{SPARKY_STYLES}</style>
-    <button type="button" className="sparky-launcher" onClick={() => setOpened(true)} aria-label="Ask Sparky">
+    {!opened && <button type="button" className="sparky-launcher" onClick={() => setOpened(true)} aria-label="Ask Sparky">
       <img src={sparkyImage} alt="Sparky, the Metal Worx shop assistant"/>
       <span>Ask Sparky</span>
       <IconBolt size={19}/>
-    </button>
+    </button>}
 
-    <Drawer opened={opened} onClose={() => setOpened(false)} position="right" size="min(470px, 100vw)" withCloseButton={false} padding={0}>
+    <Drawer opened={opened} onClose={() => setOpened(false)} position="right" size="min(470px, 100vw)" withCloseButton={false} padding={0} zIndex={1200}>
       <Stack h="100dvh" gap={0} bg="#0b0d0f">
         <Paper radius={0} p="md" style={{ borderBottom: "1px solid rgba(255,255,255,0.09)", background: "linear-gradient(135deg, #160809, #171a1d)" }}>
           <Group wrap="nowrap" align="center">
