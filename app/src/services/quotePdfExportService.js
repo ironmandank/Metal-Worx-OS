@@ -6,6 +6,10 @@ import quoteFontBold from "../assets/fonts/DejaVuSans-Quote-Bold.ttf?url";
 const PAGE = { width: 612, height: 792, left: 36, right: 36, top: 82, bottom: 42 };
 const COLORS = { black: [22, 24, 27], gray: [232, 232, 232], red: [156, 0, 15], text: [28, 31, 35] };
 
+function quoteText(value) {
+  return String(value || "").replace(/\\n/g, "\n");
+}
+
 function safeName(value) {
   return String(value || "Metal-Worx-Quote")
     .replace(/[^a-z0-9-_]+/gi, "-")
@@ -13,7 +17,7 @@ function safeName(value) {
 }
 
 function asLines(value) {
-  return String(value || "")
+  return quoteText(value)
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-•]\s*/, "").trim())
     .filter(Boolean);
@@ -81,7 +85,7 @@ export async function buildQuotePdf(model) {
   };
 
   const paragraph = (value, options = {}) => {
-    const text = String(value || "").trim();
+    const text = quoteText(value).trim();
     if (!text) return;
     doc.setFont("QuoteSans", options.bold ? "bold" : "normal");
     doc.setFontSize(options.size || 8.25);
@@ -98,7 +102,7 @@ export async function buildQuotePdf(model) {
   };
 
   const paragraphSection = (title, value, options = {}) => {
-    const text = String(value || "").trim();
+    const text = quoteText(value).trim();
     if (!text) return;
     const lineHeight = options.lineHeight || 10.5;
     const lines = doc.splitTextToSize(text, options.width || contentWidth);
@@ -176,8 +180,8 @@ export async function buildQuotePdf(model) {
   paragraphSection("Project Summary", model.scopeOfWork || "Project scope will be completed as stated in the approved quotation.");
 
   const scopeRows = [
-    ["Specifications", model.specifications],
-    ["Included Services", model.includedServices],
+    ["Specifications", quoteText(model.specifications)],
+    ["Included Services", quoteText(model.includedServices)],
   ].filter((row) => String(row[1] || "").trim());
   if (scopeRows.length) {
     table({
@@ -189,7 +193,7 @@ export async function buildQuotePdf(model) {
 
   const pricingBody = (model.pricingRows || []).map((row) => [
     row.title || "Quoted Work",
-    row.description || "",
+    quoteText(row.description),
     row.basis || "",
     money(row.amount),
   ]);
