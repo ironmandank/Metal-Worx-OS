@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import DepartmentQueue from "./DepartmentQueue";
 import DesignIntakeModal from "../components/design/DesignIntakeModal";
@@ -11,6 +11,12 @@ function DesignQueue({
 }) {
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("mwSparkyOpenDesignIntake") !== "true") return;
+    sessionStorage.removeItem("mwSparkyOpenDesignIntake");
+    setIntakeOpen(true);
+  }, []);
 
   return (
     <>

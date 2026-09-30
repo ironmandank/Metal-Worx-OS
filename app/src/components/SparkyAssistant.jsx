@@ -1,6 +1,6 @@
 import { ActionIcon, Badge, Button, Drawer, Group, Loader, Paper, ScrollArea, Stack, Text, Textarea, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconBolt, IconSend, IconTrash, IconX } from "@tabler/icons-react";
+import { IconBolt, IconClipboardList, IconFileSpreadsheet, IconPhotoPlus, IconSend, IconTrash, IconUsers, IconX } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import sparkyImage from "../assets/sparky-assistant.png";
@@ -21,10 +21,19 @@ const PAGE_PROMPTS = {
 };
 
 const DEFAULT_PROMPTS = [
-  "What needs attention today?",
+  "What do I need to complete?",
   "Where is an inventory item stored?",
   "What job should we work next?",
 ];
+
+function suggestedAction(question) {
+  const value = String(question || "").toLowerCase();
+  if (/quote|estimate|pricing/.test(value)) return { page: "quoteCenter", label: "Open Quote Drafts", icon: IconFileSpreadsheet };
+  if (/artwork|design|photo|image|logo|proof/.test(value)) return { page: "designQueue", label: "Add Artwork & Images", icon: IconPhotoPlus, intake: true };
+  if (/morning huddle|huddle|shop meeting/.test(value)) return { page: "morningHuddleTV", label: "Open Updated Huddle", icon: IconUsers };
+  if (/my task|my work|need to complete|assigned to me|follow[- ]?up/.test(value)) return { page: "dashboard", label: "Open My Tasks", icon: IconClipboardList, anchor: "personal-followups" };
+  return null;
+}
 
 const SPARKY_STYLES = `
   .sparky-launcher {
@@ -76,7 +85,7 @@ function cleanMessage(value) {
   return String(value || "").trim().slice(0, 2000);
 }
 
-export default function SparkyAssistant({ currentPage, activeUser, authenticatedProfile }) {
+export default function SparkyAssistant({ currentPage, activeUser, authenticatedProfile, setPage }) {
   const [opened, setOpened] = useState(false);
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
@@ -84,6 +93,8 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
   const viewport = useRef(null);
 
   const prompts = useMemo(() => PAGE_PROMPTS[currentPage] || DEFAULT_PROMPTS, [currentPage]);
+  const latestQuestion = [...messages].reverse().find((message) => message.role === "user")?.content || "";
+  const action = useMemo(() => suggestedAction(latestQuestion), [latestQuestion]);
 
   useEffect(() => {
     if (!opened) return;
@@ -124,6 +135,14 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
     setQuestion("");
   }
 
+  function openAction() {
+    if (!action || !setPage) return;
+    if (action.intake) sessionStorage.setItem("mwSparkyOpenDesignIntake", "true");
+    setOpened(false);
+    setPage(action.page);
+    if (action.anchor) window.setTimeout(() => document.getElementById(action.anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+  }
+
   return <>
     <style>{SPARKY_STYLES}</style>
     <button type="button" className="sparky-launcher" onClick={() => setOpened(true)} aria-label="Ask Sparky">
@@ -159,6 +178,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
         <Paper radius={0} p="md" style={{ borderTop: "1px solid rgba(255,255,255,0.09)", background: "#101215" }}>
           <Stack gap="sm">
             {messages.length === 1 && <Group gap="xs">{prompts.map((prompt) => <Button key={prompt} size="compact-xs" variant="light" color="gray" onClick={() => askSparky(prompt)}>{prompt}</Button>)}</Group>}
+            {action && messages.length > 1 && (() => { const ActionIconComponent = action.icon; return <Button variant="light" color="red" leftSection={<ActionIconComponent size={17}/>} onClick={openAction}>{action.label}</Button>; })()}
             <Textarea value={question} onChange={(event) => setQuestion(event.currentTarget.value)} placeholder="Ask about a job, item, crate, manual, or today's priorities…" minRows={2} maxRows={5} autosize disabled={sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); askSparky(); } }}/>
             <Group justify="space-between">
               <Button size="xs" variant="subtle" color="gray" leftSection={<IconTrash size={15}/>} onClick={clearConversation} disabled={sending || messages.length === 1}>Clear</Button>
