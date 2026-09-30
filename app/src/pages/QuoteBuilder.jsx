@@ -13,6 +13,7 @@ import {
   Loader,
   Modal,
   NumberInput,
+  Paper,
   Progress,
   ScrollArea,
   Select,
