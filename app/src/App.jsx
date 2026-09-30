@@ -602,7 +602,7 @@ function App() {
       return <JobDetails selectedJob={selectedJob} setPage={setPage} />;
     }
 
-    if (page === "projects") {
+    if (page === "projects" || page === "projectBilling") {
       return (
         <Projects
           setPage={setPage}
@@ -610,6 +610,7 @@ function App() {
           setSelectedQuote={setSelectedQuote}
           activeUser={activeUser}
           accessLevel={authenticatedProfile?.access_level}
+          initialWorkspaceView={page === "projectBilling" ? "billing" : "board"}
         />
       );
     }

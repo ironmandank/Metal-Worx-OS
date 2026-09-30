@@ -9,6 +9,7 @@ import {
   IconBriefcase,
   IconBuildingFactory2,
   IconCalendarEvent,
+  IconCash,
   IconChartBar,
   IconChevronLeft,
   IconChevronRight,
@@ -190,6 +191,13 @@ const NAV_GROUPS = [
         description: "All outside jobs organized by current stage",
         step: "OVERVIEW",
         icon: IconLayoutDashboard,
+      },
+      {
+        page: "projectBilling",
+        label: "Project Billing",
+        description: "Project totals, payments, balances, and billing status",
+        step: "BILLING",
+        icon: IconCash,
       },
       {
         page: "quoteCenter",

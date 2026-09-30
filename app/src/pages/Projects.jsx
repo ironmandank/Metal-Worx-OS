@@ -225,7 +225,7 @@ function getCalendarEntryType(entry) {
   return getCalendarType(entry.project || {});
 }
 
-function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel }) {
+function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel, initialWorkspaceView = "board" }) {
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
   const [archivedProjects, setArchivedProjects] = useState([]);
@@ -233,7 +233,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [quotesById, setQuotesById] = useState({});
   const [approvalsByQuote, setApprovalsByQuote] = useState({});
   const [viewMode, setViewMode] = useState("active");
-  const [workspaceView, setWorkspaceView] = useState("board");
+  const [workspaceView, setWorkspaceView] = useState(initialWorkspaceView);
   const [activeWorkspace, setActiveWorkspace] = useState(() => {
     const savedWorkspace = window.localStorage.getItem("mw-outside-workspace");
     return OUTSIDE_WORKSPACES.some((workspace) => workspace.key === savedWorkspace)
