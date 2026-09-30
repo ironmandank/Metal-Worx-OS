@@ -9,6 +9,7 @@ import {
   Group,
   Loader,
   Modal,
+  NumberInput,
   Paper,
   Progress,
   SegmentedControl,
@@ -265,6 +266,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [completingProjectId, setCompletingProjectId] = useState(null);
   const [rankingProjectId, setRankingProjectId] = useState(null);
   const [selectedAlertKey, setSelectedAlertKey] = useState(null);
+  const [billingDrafts, setBillingDrafts] = useState({});
+  const [savingBillingProjectId, setSavingBillingProjectId] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -703,6 +706,53 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     due: summary.due + row.balanceDue,
     invoices: summary.invoices + row.invoices.length,
   }), { contract: 0, paid: 0, due: 0, invoices: 0 }), [billingRows]);
+
+  function billingDraft(row) {
+    return billingDrafts[row.project.id] || {
+      status: row.project.status || "New",
+      contract_total: row.contractTotal,
+      amount_paid: row.amountPaid,
+      balance_due: row.balanceDue,
+    };
+  }
+
+  function updateBillingDraft(row, field, value) {
+    setBillingDrafts((current) => {
+      const next = { ...billingDraft(row), ...(current[row.project.id] || {}), [field]: value };
+      if (field === "contract_total" || field === "amount_paid") {
+        next.balance_due = Math.max(Number(next.contract_total || 0) - Number(next.amount_paid || 0), 0);
+      }
+      return { ...current, [row.project.id]: next };
+    });
+  }
+
+  async function saveBillingProject(row) {
+    const draft = billingDraft(row);
+    const updates = {
+      status: draft.status,
+      contract_total: Number(draft.contract_total || 0),
+      amount_paid: Number(draft.amount_paid || 0),
+      balance_due: Number(draft.balance_due || 0),
+      updated_at: new Date().toISOString(),
+    };
+
+    setSavingBillingProjectId(row.project.id);
+    const { error } = await supabase.from("projects").update(updates).eq("id", row.project.id);
+    setSavingBillingProjectId(null);
+
+    if (error) {
+      notifications.show({ title: "Billing Update Failed", message: error.message, color: "red" });
+      return;
+    }
+
+    setBillingDrafts((current) => {
+      const next = { ...current };
+      delete next[row.project.id];
+      return next;
+    });
+    notifications.show({ title: "Project Updated", message: `${row.identity} now reflects the revised status and amounts.`, color: "green" });
+    await loadProjects(false);
+  }
 
   const projectAlertGroups = useMemo(() => {
     const today = new Date();
@@ -1498,17 +1548,61 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                       <Text fw={800} size="sm">{row.latestInvoice?.quote_number || "Not created"}</Text>
                       <Text size="xs" c="dimmed">{row.invoices.length ? `${row.invoices.length} invoice${row.invoices.length === 1 ? "" : "s"}` : "Create after approval"}</Text>
                     </Table.Td>
-                    <Table.Td ta="right" fw={800}>{money(row.contractTotal)}</Table.Td>
-                    <Table.Td ta="right" fw={800} c="green">{money(row.amountPaid)}</Table.Td>
-                    <Table.Td ta="right" fw={900} c={row.balanceDue > 0 ? "red" : "green"}>{money(row.balanceDue)}</Table.Td>
                     <Table.Td>
-                      <Badge color={row.project.status === "Completed" ? "green" : row.balanceDue > 0 ? "orange" : "blue"}>{row.project.status === "Completed" ? "Completed" : row.balanceDue > 0 ? "Payment Due" : "Current"}</Badge>
+                      <NumberInput
+                        aria-label={`Contract total for ${row.identity}`}
+                        prefix="$"
+                        decimalScale={2}
+                        min={0}
+                        hideControls
+                        value={billingDraft(row).contract_total}
+                        onChange={(value) => updateBillingDraft(row, "contract_total", value)}
+                        styles={{ input: { minWidth: 115, textAlign: "right", fontWeight: 800 } }}
+                      />
                     </Table.Td>
                     <Table.Td>
-                      <Group gap={6} wrap="nowrap">
-                        <Button size="compact-xs" color="red" variant="light" onClick={() => openProjectBilling(row.project)}>Open Billing</Button>
-                        <Button size="compact-xs" variant="default" onClick={() => openBillingDocument(row)}>{row.latestInvoice ? "Open Invoice" : row.approvedQuote ? "Open Quote" : "Start Quote"}</Button>
-                      </Group>
+                      <NumberInput
+                        aria-label={`Amount paid for ${row.identity}`}
+                        prefix="$"
+                        decimalScale={2}
+                        min={0}
+                        hideControls
+                        value={billingDraft(row).amount_paid}
+                        onChange={(value) => updateBillingDraft(row, "amount_paid", value)}
+                        styles={{ input: { minWidth: 115, textAlign: "right", fontWeight: 800, color: "var(--mantine-color-green-6)" } }}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <NumberInput
+                        aria-label={`Balance due for ${row.identity}`}
+                        prefix="$"
+                        decimalScale={2}
+                        min={0}
+                        hideControls
+                        value={billingDraft(row).balance_due}
+                        onChange={(value) => updateBillingDraft(row, "balance_due", value)}
+                        styles={{ input: { minWidth: 115, textAlign: "right", fontWeight: 900 } }}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Select
+                        aria-label={`Status for ${row.identity}`}
+                        allowDeselect={false}
+                        searchable
+                        value={billingDraft(row).status}
+                        onChange={(value) => updateBillingDraft(row, "status", value || row.project.status || "New")}
+                        data={[...new Set([row.project.status, "New", "Needs Quote", "Awaiting Approval", "Approved", "Needs Scheduling", "Scheduled", "Released to Production", "In Progress", "On Hold", "Completed", "Cancelled"].filter(Boolean))]}
+                        styles={{ input: { minWidth: 150, fontWeight: 800 } }}
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <Stack gap={6}>
+                        <Button size="compact-xs" color="green" loading={savingBillingProjectId === row.project.id} disabled={!billingDrafts[row.project.id]} onClick={() => saveBillingProject(row)}>Save Changes</Button>
+                        <Group gap={6} wrap="nowrap">
+                          <Button size="compact-xs" color="red" variant="light" onClick={() => openProjectBilling(row.project)}>Open Billing</Button>
+                          <Button size="compact-xs" variant="default" onClick={() => openBillingDocument(row)}>{row.latestInvoice ? "Open Invoice" : row.approvedQuote ? "Open Quote" : "Start Quote"}</Button>
+                        </Group>
+                      </Stack>
                     </Table.Td>
                   </Table.Tr>
                 ))}
