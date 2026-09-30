@@ -85,9 +85,9 @@ function getCustomerName(customer) {
 
 function getProjectPerson(project, customer, quote) {
   return (
-    project?.contact_name ||
     quote?.contact_name ||
     quote?.customer_name ||
+    project?.contact_name ||
     getCustomerName(customer) ||
     "Customer"
   );
@@ -95,8 +95,8 @@ function getProjectPerson(project, customer, quote) {
 
 function getProjectCompany(project, customer, projectPerson, quote) {
   const company =
-    project?.company_name ||
     quote?.company_name ||
+    project?.company_name ||
     customer?.company_name ||
     customer?.business_name ||
     "";
@@ -1684,7 +1684,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             <div className="quote-info-cell">
               <span className="quote-info-label">Project Reference</span>
               <div className="quote-info-value">
-                {selectedProject?.project_number || "Standalone Quote"}
+                {selectedProject?.project_number || quote.project_name || quote.quote_number || "Standalone Quote"}
               </div>
             </div>
           </section>

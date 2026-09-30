@@ -368,6 +368,16 @@ function QuoteBuilder({
 
             customer_name: selectedProject.contact_name || "",
 
+            company_name: selectedProject.company_name || "",
+
+            contact_name: selectedProject.contact_name || "",
+
+            contact_phone: selectedProject.contact_phone || "",
+
+            contact_email: selectedProject.contact_email || "",
+
+            prepared_by: "Metal Worx Inc.",
+
             project_name: selectedProject.project_name || "",
 
             tax_rate: 0.07,
@@ -1196,6 +1206,16 @@ function QuoteBuilder({
         quote_title: quote.quote_title || "",
 
         customer_name: quote.customer_name || "",
+
+        company_name: quote.company_name || "",
+
+        contact_name: quote.contact_name || "",
+
+        contact_phone: quote.contact_phone || "",
+
+        contact_email: quote.contact_email || "",
+
+        prepared_by: quote.prepared_by || "Metal Worx Inc.",
 
         project_name: quote.project_name || "",
 
@@ -2540,6 +2560,18 @@ function QuoteBuilder({
               updateQuoteField("price_notes", event.currentTarget.value)
             }
           />
+        </SimpleGrid>
+      </MWSection>
+
+      <MWSection title="Quote Header & Contact Information" mt="lg">
+        <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+          <TextInput label="Prepared For / Company" value={quote.company_name || quote.customer_name || ""} onChange={(event) => updateQuoteField("company_name", event.currentTarget.value)} />
+          <TextInput label="Prepared By" value={quote.prepared_by || ""} onChange={(event) => updateQuoteField("prepared_by", event.currentTarget.value)} />
+          <TextInput label="Customer Contact Name" value={quote.contact_name || quote.customer_name || ""} onChange={(event) => updateQuoteField("contact_name", event.currentTarget.value)} />
+          <TextInput label="Customer Phone" value={quote.contact_phone || ""} onChange={(event) => updateQuoteField("contact_phone", event.currentTarget.value)} />
+          <TextInput label="Customer Email" type="email" value={quote.contact_email || ""} onChange={(event) => updateQuoteField("contact_email", event.currentTarget.value)} />
+          <TextInput label="Project Reference / Job Name" value={quote.project_name || ""} onChange={(event) => updateQuoteField("project_name", event.currentTarget.value)} />
+          <TextInput label="Project Location" value={quote.job_site_address || ""} onChange={(event) => updateQuoteField("job_site_address", event.currentTarget.value)} />
         </SimpleGrid>
       </MWSection>
 
