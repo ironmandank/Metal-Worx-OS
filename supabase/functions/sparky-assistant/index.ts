@@ -12,6 +12,15 @@ type SparkyAction = {
   scope_of_work?: string;
   tax_treatment?: string;
   items?: QuoteItem[];
+  phone?: string;
+  email?: string;
+  project_name?: string;
+  description?: string;
+  special_instructions?: string;
+  due_date?: string | null;
+  design_source?: string;
+  order_id?: number;
+  show_on_huddle?: boolean;
 };
 type RequestBody = { question?: string; page?: string; history?: ChatMessage[]; action?: SparkyAction; confirmed?: boolean };
 
@@ -99,6 +108,32 @@ function parseQuoteDraft(text: string) {
   const items = parseQuoteItems(text);
   const taxTreatment = /\b(?:tax exempt|no tax|exclude tax|tax added later)\b/i.test(text) ? "added_later" : "included";
   return { customerName, quoteTitle, scope, items, taxTreatment };
+}
+
+function wantsArtworkOrder(question: string) {
+  return /\b(?:create|add|start|make)\b[\s\S]{0,40}\b(?:artwork|design)\s+order\b/i.test(question)
+    || (/^\s*customer\s*:/im.test(question) && /^\s*(?:artwork|project|item)\s*:/im.test(question) && /^\s*description\s*:/im.test(question));
+}
+
+function parseArtworkOrder(text: string) {
+  const dueDate = labeledValue(text, ["due date", "date requested", "needed by"]);
+  return {
+    customerName: labeledValue(text, ["customer", "customer name", "company"]),
+    phone: labeledValue(text, ["phone", "customer phone"]),
+    email: labeledValue(text, ["email", "customer email"]),
+    projectName: labeledValue(text, ["artwork", "project", "project name", "item", "title"]),
+    description: labeledValue(text, ["description", "details", "scope"]),
+    instructions: labeledValue(text, ["special instructions", "instructions", "notes"]),
+    dueDate: /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : null,
+    designSource: /already on file|existing (?:file|design)|approved cut file/i.test(text) ? "Design Already on File" : "New Design Required",
+    rush: /\brush\b|\bhot\b|\burgent\b/i.test(text),
+  };
+}
+
+function huddleChange(question: string) {
+  const match = question.match(/\b(add|put|show|remove|take)\s+(.+?)\s+(?:on|to|from|off)\s+(?:the\s+)?(?:morning\s+)?huddle\b/i);
+  if (!match) return null;
+  return { show: !/remove|take/i.test(match[1]), target: cleanText(match[2], 160) };
 }
 
 function searchTerm(question: string) {
@@ -229,6 +264,80 @@ Deno.serve(async (request: Request) => {
         result,
         open_page: "quoteCenter",
       });
+    }
+
+    if (body.confirmed && body.action?.type === "create_artwork_order") {
+      const { data: result, error: actionError } = await callerClient.rpc("mw_sparky_create_artwork_order", {
+        p_customer_name: cleanText(body.action.customer_name, 180),
+        p_phone: cleanText(body.action.phone, 80) || null,
+        p_email: cleanText(body.action.email, 180) || null,
+        p_project_name: cleanText(body.action.project_name, 180),
+        p_description: cleanText(body.action.description, 2000),
+        p_special_instructions: cleanText(body.action.special_instructions, 2000) || null,
+        p_due_date: body.action.due_date || null,
+        p_design_source: body.action.design_source === "Design Already on File" ? "Design Already on File" : "New Design Required",
+        p_actor: employee.display_name,
+        p_confirmation: "CONFIRM CREATE ARTWORK ORDER",
+      });
+      if (actionError) return json({ error: actionError.message }, 409);
+      return json({ answer: `Done. ${result?.order_number || "The artwork order"} was created for ${body.action.customer_name} and released to ${result?.starting_department || "Design"}. Images can be added from the artwork card.`, action_executed: true, result, open_page: "designQueue" });
+    }
+
+    if (body.confirmed && body.action?.type === "set_order_huddle") {
+      const orderId = Number(body.action.order_id);
+      if (!Number.isInteger(orderId) || orderId <= 0) return json({ error: "The selected order is invalid." }, 400);
+      const { data: order, error: actionError } = await callerClient.from("customer_orders").update({ show_on_huddle: Boolean(body.action.show_on_huddle) }).eq("id", orderId).select("order_number,show_on_huddle").single();
+      if (actionError) return json({ error: actionError.message }, 409);
+      return json({ answer: `${order.order_number} ${order.show_on_huddle ? "will now appear" : "was removed from the manual Huddle list"}. Dated or aging work may still appear automatically.`, action_executed: true, result: order, open_page: "morningHuddleTV" });
+    }
+
+    if (wantsArtworkOrder(question)) {
+      const draft = parseArtworkOrder(question);
+      const missing = [];
+      if (!draft.customerName) missing.push("customer name");
+      if (!draft.phone && !draft.email) missing.push("phone or email");
+      if (!draft.projectName) missing.push("artwork/project name");
+      if (!draft.description) missing.push("description");
+      if (missing.length) return json({ answer: `I can create the artwork order. I still need ${missing.join(", ")}. Send it like this:\n\nCustomer: Jane Smith\nPhone: 910-555-0100\nArtwork: 24-inch retirement flag\nDescription: New custom design with unit crest\nDue date: 2026-10-15\nSpecial instructions: Customer will provide the logo` });
+      return json({
+        answer: `I prepared this artwork order:\n\nCustomer: ${draft.customerName}\nArtwork: ${draft.projectName}\nDescription: ${draft.description}\nDesign source: ${draft.designSource}\nDue: ${draft.dueDate || "No hard date entered"}\nDestination: ${draft.designSource === "Design Already on File" ? "Laser" : "Design Queue"}\n\nConfirming will create the customer/order records and production workflow. Images can be added to the new artwork card afterward.`,
+        proposed_action: { type: "create_artwork_order", label: `Create Artwork Order — ${draft.projectName} for ${draft.customerName}`, customer_name: draft.customerName, phone: draft.phone, email: draft.email, project_name: draft.projectName, description: draft.description, special_instructions: draft.instructions, due_date: draft.dueDate, design_source: draft.designSource },
+      });
+    }
+
+    const requestedHuddleChange = huddleChange(question);
+    if (requestedHuddleChange) {
+      const { data: customers, error: customerError } = await adminClient.from("customers").select("id,first_name,last_name,company_name").eq("is_active", true).limit(500);
+      if (customerError) throw customerError;
+      const target = normalized(requestedHuddleChange.target);
+      const customerIds = (customers || []).filter((customer) => normalized(`${customer.first_name || ""} ${customer.last_name || ""} ${customer.company_name || ""}`).includes(target)).map((customer) => customer.id);
+      let orderQuery = adminClient.from("customer_orders").select("id,order_number,status,due_date,show_on_huddle,customer_id").is("archived_at", null).limit(20);
+      if (/^mw-/i.test(requestedHuddleChange.target)) orderQuery = orderQuery.ilike("order_number", `%${requestedHuddleChange.target}%`);
+      else if (customerIds.length) orderQuery = orderQuery.in("customer_id", customerIds);
+      else return json({ answer: `I could not find an active customer or order matching “${requestedHuddleChange.target}.” Use the order number so I update the correct Huddle item.` });
+      const { data: orders, error: orderError } = await orderQuery;
+      if (orderError) throw orderError;
+      if (!orders?.length) return json({ answer: `I could not find an active order matching “${requestedHuddleChange.target}.”` });
+      if (orders.length > 1) return json({ answer: `I found ${orders.length} active orders for that customer. Tell me the MW order number so I change the correct Huddle item.` });
+      const order = orders[0];
+      return json({ answer: `I found ${order.order_number}, currently ${order.status}. Confirm to ${requestedHuddleChange.show ? "add it to" : "remove it from"} the manual Morning Huddle list.`, proposed_action: { type: "set_order_huddle", label: `${requestedHuddleChange.show ? "Add" : "Remove"} ${order.order_number} ${requestedHuddleChange.show ? "to" : "from"} Morning Huddle`, order_id: order.id, show_on_huddle: requestedHuddleChange.show } });
+    }
+
+    if (/\b(?:make|create|build|pull|show|give me)\b[\s\S]{0,30}\b(?:report|analytics|summary)\b/i.test(question)) {
+      const [{ data: orders }, { data: projects }, { data: jobs }, { data: workOrders }] = await Promise.all([
+        adminClient.from("customer_orders").select("status,total_amount,balance_due,due_date,archived_at"),
+        adminClient.from("projects").select("status,is_active,quoted_amount,quote_total,balance_due,due_date,target_completion_date"),
+        adminClient.from("production_jobs").select("status,is_active,current_department"),
+        adminClient.from("work_orders").select("status,is_active,department"),
+      ]);
+      const closed = new Set(["Completed", "Complete", "Closed", "Cancelled", "Canceled"]);
+      const openOrders = (orders || []).filter((item) => !item.archived_at && !closed.has(item.status));
+      const openProjects = (projects || []).filter((item) => item.is_active !== false && !closed.has(item.status));
+      const activeJobs = (jobs || []).filter((item) => item.is_active !== false && !closed.has(item.status));
+      const activeSteps = (workOrders || []).filter((item) => item.is_active !== false && !closed.has(item.status));
+      const orderValue = openOrders.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+      const projectValue = openProjects.reduce((sum, item) => sum + Number(item.quote_total || item.quoted_amount || 0), 0);
+      return json({ answer: `Current Metal Worx operating report:\n\n• ${openOrders.length} open customer orders\n• ${openProjects.length} active outside projects\n• ${activeJobs.length} active production jobs\n• ${activeSteps.length} open production steps\n• $${(orderValue + projectValue).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} combined open pipeline value\n\nUse **Open Reports & Downloads** below for the full filters, charts, PDF, and PowerPoint exports.`, report_ready: true, open_page: "reports" });
     }
 
     if (wantsQuoteDraft(question)) {

@@ -31,6 +31,7 @@ function suggestedAction(question) {
   if (/quote|estimate|pricing/.test(value)) return { page: "quoteCenter", label: "Open Quote Drafts", icon: IconFileSpreadsheet };
   if (/artwork|design|photo|image|logo|proof/.test(value)) return { page: "designQueue", label: "Add Artwork & Images", icon: IconPhotoPlus, intake: true };
   if (/morning huddle|huddle|shop meeting/.test(value)) return { page: "morningHuddleTV", label: "Open Updated Huddle", icon: IconUsers };
+  if (/report|analytics|summary/.test(value)) return { page: "reports", label: "Open Reports & Downloads", icon: IconFileSpreadsheet };
   if (/my task|my work|need to complete|assigned to me|follow[- ]?up/.test(value)) return { page: "dashboard", label: "Open My Tasks", icon: IconClipboardList, anchor: "personal-followups" };
   return null;
 }
@@ -236,7 +237,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
         <Paper radius={0} p="md" style={{ borderTop: "1px solid rgba(255,255,255,0.09)", background: "#101215" }}>
           <Stack gap="sm">
             {messages.length === 1 && <Group gap="xs">{prompts.map((prompt) => <Button key={prompt} size="compact-xs" variant="light" color="gray" onClick={() => askSparky(prompt)}>{prompt}</Button>)}</Group>}
-            {pendingAction && <Paper p="sm" radius="md" style={{ border: "1px solid #9f2028", background: "#22090c" }}><Stack gap="xs"><Text size="xs" fw={900} c="red.3">{pendingAction.type === "create_quote_draft" ? "CONFIRM NEW QUOTE DRAFT" : "CONFIRM SHOP RECORD CHANGE"}</Text><Text size="sm">{pendingAction.label}</Text><Group grow><Button variant="default" onClick={() => setPendingAction(null)} disabled={sending}>Cancel</Button><Button color="red" leftSection={<IconBolt size={16}/>} onClick={confirmPendingAction} loading={sending}>{pendingAction.type === "create_quote_draft" ? "Create Draft" : "Confirm Move"}</Button></Group></Stack></Paper>}
+            {pendingAction && <Paper p="sm" radius="md" style={{ border: "1px solid #9f2028", background: "#22090c" }}><Stack gap="xs"><Text size="xs" fw={900} c="red.3">CONFIRM METAL WORX ACTION</Text><Text size="sm">{pendingAction.label}</Text><Group grow><Button variant="default" onClick={() => setPendingAction(null)} disabled={sending}>Cancel</Button><Button color="red" leftSection={<IconBolt size={16}/>} onClick={confirmPendingAction} loading={sending}>{pendingAction.type === "create_quote_draft" ? "Create Draft" : pendingAction.type === "create_artwork_order" ? "Create Order" : pendingAction.type === "set_order_huddle" ? "Update Huddle" : "Confirm Move"}</Button></Group></Stack></Paper>}
             {!pendingAction && action && messages.length > 1 && (() => { const ActionIconComponent = action.icon; return <Button variant="light" color="red" leftSection={<ActionIconComponent size={17}/>} onClick={openAction}>{action.label}</Button>; })()}
             <Textarea value={question} onChange={(event) => setQuestion(event.currentTarget.value)} placeholder="Ask about a job, create a quote draft, find an item, or check today's priorities…" minRows={2} maxRows={8} autosize disabled={sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); askSparky(); } }}/>
             <Group justify="space-between">
