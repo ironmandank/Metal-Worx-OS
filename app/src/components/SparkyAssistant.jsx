@@ -54,7 +54,22 @@ const SPARKY_STYLES = `
     cursor: pointer;
     font: inherit;
     font-weight: 900;
+    overflow: visible;
   }
+  .sparky-launcher::before, .sparky-launcher::after {
+    content: "";
+    position: absolute;
+    width: 5px;
+    height: 5px;
+    left: 42px;
+    top: 6px;
+    border-radius: 50%;
+    background: #ffd45a;
+    box-shadow: 7px 5px 0 #ff6a21, -5px 8px 0 #fff0a0;
+    animation: sparky-sparks 1.6s ease-out infinite;
+    pointer-events: none;
+  }
+  .sparky-launcher::after { animation-delay: .8s; }
   .sparky-launcher img {
     width: 44px;
     height: 44px;
@@ -62,14 +77,17 @@ const SPARKY_STYLES = `
     object-fit: cover;
     object-position: 50% 18%;
     background: #151719;
-    animation: sparky-idle 3.2s ease-in-out infinite;
+    animation: sparky-idle 2.4s ease-in-out infinite;
   }
   .sparky-launcher:hover img { animation-duration: .8s; }
   .sparky-launcher svg { animation: sparky-glow 1.8s ease-in-out infinite; }
+  .sparky-avatar-wrap { position: relative; width: 74px; height: 74px; flex: 0 0 74px; }
+  .sparky-avatar-wrap::before, .sparky-avatar-wrap::after { content:""; position:absolute; z-index:2; width:6px; height:6px; right:3px; top:8px; border-radius:50%; background:#ffd45a; box-shadow:8px 6px 0 #ff6421,-4px 11px 0 #fff4b2; animation:sparky-sparks 1.6s ease-out infinite; pointer-events:none; }
+  .sparky-avatar-wrap::after { animation-delay:.8s; }
   .sparky-avatar {
     width: 74px;
     height: 74px;
-    flex: 0 0 74px;
+    display: block;
     border-radius: 18px;
     object-fit: cover;
     object-position: 50% 20%;
@@ -79,17 +97,18 @@ const SPARKY_STYLES = `
   }
   .sparky-thinking { animation: sparky-thinking .72s ease-in-out infinite alternate; }
   .sparky-message { white-space: pre-wrap; line-height: 1.52; }
-  @keyframes sparky-idle { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-3px) rotate(-1deg); } }
+  @keyframes sparky-idle { 0%,100% { transform: translateY(0) rotate(0); } 45% { transform: translateY(-7px) rotate(-3deg); } 55% { transform: translateY(-7px) rotate(3deg); } }
   @keyframes sparky-glow { 0%,100% { filter: drop-shadow(0 0 2px rgba(255,190,60,.25)); transform: scale(1); } 50% { filter: drop-shadow(0 0 7px rgba(255,190,60,.9)); transform: scale(1.08); } }
   @keyframes sparky-breathe { 0%,100% { box-shadow: 0 0 0 rgba(212,31,38,0); transform: translateY(0); } 50% { box-shadow: 0 0 22px rgba(212,31,38,.24); transform: translateY(-2px); } }
   @keyframes sparky-thinking { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-4px) rotate(1deg); } }
+  @keyframes sparky-sparks { 0% { opacity:0; transform:translate(0,7px) scale(.4); } 30% { opacity:1; } 100% { opacity:0; transform:translate(14px,-15px) scale(1.1); } }
   @media (max-width: 650px) {
     .sparky-launcher { right: 14px; bottom: 14px; min-height: 52px; padding-right: 13px; }
     .sparky-launcher img { width: 39px; height: 39px; }
     .sparky-launcher span { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .sparky-launcher img, .sparky-launcher svg, .sparky-avatar, .sparky-thinking { animation: none !important; }
+    .sparky-launcher img, .sparky-launcher svg, .sparky-avatar, .sparky-thinking, .sparky-launcher::before, .sparky-launcher::after, .sparky-avatar-wrap::before, .sparky-avatar-wrap::after { animation: none !important; }
   }
 `;
 
@@ -167,7 +186,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
       <Stack h="100dvh" gap={0} bg="#0b0d0f">
         <Paper radius={0} p="md" style={{ borderBottom: "1px solid rgba(255,255,255,0.09)", background: "linear-gradient(135deg, #160809, #171a1d)" }}>
           <Group wrap="nowrap" align="center">
-            <img className={`sparky-avatar ${sending ? "sparky-thinking" : ""}`} src={sparkyImage} alt="Sparky"/>
+            <div className="sparky-avatar-wrap"><img className={`sparky-avatar ${sending ? "sparky-thinking" : ""}`} src={sparkyImage} alt="Sparky"/></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Group gap="xs"><Title order={2}>Sparky</Title><Badge color="green" variant="light">Online</Badge></Group>
               <Text size="sm" c="dimmed">Metal Worx Shop Assistant</Text>
