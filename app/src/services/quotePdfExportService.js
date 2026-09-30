@@ -149,7 +149,8 @@ export async function buildQuotePdf(model) {
   doc.setFont("QuoteSans", "bold");
   doc.setTextColor(...COLORS.black);
   doc.setFontSize(8);
-  doc.text("PROJECT QUOTATION", PAGE.width / 2, y, { align: "center" });
+  const documentType = model.documentType === "Invoice" ? "Invoice" : "Quote";
+  doc.text(documentType === "Invoice" ? "PROJECT INVOICE" : "PROJECT QUOTATION", PAGE.width / 2, y, { align: "center" });
   y += 14;
   doc.setFontSize(15);
   doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center" });
@@ -160,7 +161,7 @@ export async function buildQuotePdf(model) {
   y += 14;
 
   const metaRows = [
-    ["Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
+    [documentType === "Invoice" ? "Invoice No." : "Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
     ["Prepared For", model.preparedFor || "Customer", "Prepared By", model.preparedBy || "Metal Worx Inc."],
     ["Project", model.projectItem || "Not specified", "Location", model.projectLocation || "Not specified"],
     ["Valid Through", model.validThrough || "Not set", "Status", model.status || "Draft"],

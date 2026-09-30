@@ -435,6 +435,9 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const projectItem = getProjectItem(selectedProject, quote);
   const quoteDate =
     quote?.quote_date || quote?.created_at || new Date().toISOString();
+  const documentType = quote?.document_type === "Invoice" ? "Invoice" : "Quote";
+  const documentHeading = documentType === "Invoice" ? "PROJECT INVOICE" : "PROJECT QUOTATION";
+  const documentNumberLabel = documentType === "Invoice" ? "Invoice No." : "Quote No.";
   const projectLocation =
     quote?.job_site_address ||
     [
@@ -492,6 +495,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       await downloadQuotePdf({
         logoUrl: COMPANY_LOGO_URL,
         quoteNumber: quote.quote_number,
+        documentType,
         quoteDate: formatLongDate(quoteDate),
         validThrough: formatLongDate(quote.valid_until),
         status: quote.status,
@@ -1618,7 +1622,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
 
           <section className="quote-title-grid">
             <div className="quote-title-block">
-              <div className="eyebrow">PROJECT QUOTATION</div>
+              <div className="eyebrow">{documentHeading}</div>
               <h1>{projectItem}</h1>
               <p>
                 {selectedProject?.project_type ||
@@ -1629,7 +1633,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
             </div>
             <div className="quote-meta">
               <div className="quote-meta-row">
-                <span>Quote No.</span>
+                <span>{documentNumberLabel}</span>
                 <strong>{quote.quote_number || "Not set"}</strong>
               </div>
               <div className="quote-meta-row">

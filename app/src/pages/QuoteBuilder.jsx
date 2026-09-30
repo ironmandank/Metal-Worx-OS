@@ -1219,6 +1219,8 @@ function QuoteBuilder({
 
         project_name: quote.project_name || "",
 
+        document_type: quote.document_type === "Invoice" ? "Invoice" : "Quote",
+
         tax_rate: Number(quote.tax_rate || 0),
 
         tax_treatment: quote.tax_treatment || "none",
@@ -2565,6 +2567,14 @@ function QuoteBuilder({
 
       <MWSection title="Quote Header & Contact Information" mt="lg">
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+          <Select
+            label="Document Type"
+            description="Choose whether the customer document is a quote or an invoice."
+            data={["Quote", "Invoice"]}
+            value={quote.document_type === "Invoice" ? "Invoice" : "Quote"}
+            onChange={(value) => updateQuoteField("document_type", value || "Quote")}
+            allowDeselect={false}
+          />
           <TextInput label="Prepared For / Company" value={quote.company_name || quote.customer_name || ""} onChange={(event) => updateQuoteField("company_name", event.currentTarget.value)} />
           <TextInput label="Prepared By" value={quote.prepared_by || ""} onChange={(event) => updateQuoteField("prepared_by", event.currentTarget.value)} />
           <TextInput label="Customer Contact Name" value={quote.contact_name || quote.customer_name || ""} onChange={(event) => updateQuoteField("contact_name", event.currentTarget.value)} />
