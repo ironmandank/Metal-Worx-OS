@@ -62,7 +62,10 @@ const SPARKY_STYLES = `
     object-fit: cover;
     object-position: 50% 18%;
     background: #151719;
+    animation: sparky-idle 3.2s ease-in-out infinite;
   }
+  .sparky-launcher:hover img { animation-duration: .8s; }
+  .sparky-launcher svg { animation: sparky-glow 1.8s ease-in-out infinite; }
   .sparky-avatar {
     width: 74px;
     height: 74px;
@@ -72,12 +75,21 @@ const SPARKY_STYLES = `
     object-position: 50% 20%;
     background: radial-gradient(circle, #3d1113, #0e1012 70%);
     border: 1px solid rgba(255,255,255,0.12);
+    animation: sparky-breathe 3.4s ease-in-out infinite;
   }
+  .sparky-thinking { animation: sparky-thinking .72s ease-in-out infinite alternate; }
   .sparky-message { white-space: pre-wrap; line-height: 1.52; }
+  @keyframes sparky-idle { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-3px) rotate(-1deg); } }
+  @keyframes sparky-glow { 0%,100% { filter: drop-shadow(0 0 2px rgba(255,190,60,.25)); transform: scale(1); } 50% { filter: drop-shadow(0 0 7px rgba(255,190,60,.9)); transform: scale(1.08); } }
+  @keyframes sparky-breathe { 0%,100% { box-shadow: 0 0 0 rgba(212,31,38,0); transform: translateY(0); } 50% { box-shadow: 0 0 22px rgba(212,31,38,.24); transform: translateY(-2px); } }
+  @keyframes sparky-thinking { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-4px) rotate(1deg); } }
   @media (max-width: 650px) {
     .sparky-launcher { right: 14px; bottom: 14px; min-height: 52px; padding-right: 13px; }
     .sparky-launcher img { width: 39px; height: 39px; }
     .sparky-launcher span { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sparky-launcher img, .sparky-launcher svg, .sparky-avatar, .sparky-thinking { animation: none !important; }
   }
 `;
 
@@ -155,7 +167,7 @@ export default function SparkyAssistant({ currentPage, activeUser, authenticated
       <Stack h="100dvh" gap={0} bg="#0b0d0f">
         <Paper radius={0} p="md" style={{ borderBottom: "1px solid rgba(255,255,255,0.09)", background: "linear-gradient(135deg, #160809, #171a1d)" }}>
           <Group wrap="nowrap" align="center">
-            <img className="sparky-avatar" src={sparkyImage} alt="Sparky"/>
+            <img className={`sparky-avatar ${sending ? "sparky-thinking" : ""}`} src={sparkyImage} alt="Sparky"/>
             <div style={{ flex: 1, minWidth: 0 }}>
               <Group gap="xs"><Title order={2}>Sparky</Title><Badge color="green" variant="light">Online</Badge></Group>
               <Text size="sm" c="dimmed">Metal Worx Shop Assistant</Text>
