@@ -1,0 +1,25 @@
+name: Publish quote tax visibility fix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/codex-quote-tax-visibility.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply tested fix
+        run: |
+          git config user.name "Metal Worx OS Publisher"
+          git config user.email "actions@users.noreply.github.com"
+          base64 --decode quote-tax-visibility.patch.b64 | git apply
+          git add app/src/lib/quoteOrganizer.js app/src/pages/QuoteBuilder.jsx app/src/pages/QuoteCenter.jsx app/src/pages/QuotePreview.jsx app/src/services/quotePdfExportService.js
+          git commit -m "Hide tax details unless explicitly selected"
+          git rm quote-tax-visibility.patch.b64 .github/workflows/codex-quote-tax-visibility.yml
+          git commit -m "Remove temporary tax publishing files"
+          git push origin HEAD:main
