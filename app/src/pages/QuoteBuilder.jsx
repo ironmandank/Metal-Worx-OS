@@ -2774,17 +2774,18 @@ function QuoteBuilder({
                 <Text fw={700}>{money(liveTotals.subtotal)}</Text>
               </Group>
 
-              <Group justify="space-between">
-                <Text>Sales Tax</Text>
+              {((quote.tax_treatment === "plus") ||
+                (quote.tax_treatment === "included" && Number(quote.tax_rate || 0) > 0)) && (
+                <Group justify="space-between">
+                  <Text>Sales Tax</Text>
 
-                <Text fw={700}>
-                  {quote.tax_treatment === "plus"
-                    ? "Plus taxes & fees"
-                    : quote.tax_treatment === "included"
-                      ? money(liveTotals.tax_amount)
-                      : "Not shown"}
-                </Text>
-              </Group>
+                  <Text fw={700}>
+                    {quote.tax_treatment === "plus"
+                      ? "Plus taxes & fees"
+                      : money(liveTotals.tax_amount)}
+                  </Text>
+                </Group>
+              )}
 
               <Divider />
 

@@ -407,9 +407,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const contractSubtotal =
     materialSubtotal + baseSubtotal + selectedOptionsTotal;
   const taxTreatment = quote?.tax_treatment || "none";
-  const showTax = taxTreatment === "included" || taxTreatment === "plus";
+  const taxRate = Number(quote?.tax_rate || 0);
+  const showTax =
+    taxTreatment === "plus" ||
+    (taxTreatment === "included" && taxRate > 0);
   const taxAmount = taxTreatment === "included"
-    ? contractSubtotal * Number(quote?.tax_rate || 0)
+    ? contractSubtotal * taxRate
     : 0;
   const calculatedTotal = contractSubtotal + taxAmount;
   const grandTotal =
