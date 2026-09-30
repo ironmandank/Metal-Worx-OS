@@ -11,6 +11,7 @@ import {
   Group,
   Image,
   Loader,
+  Modal,
   NumberInput,
   Progress,
   ScrollArea,
@@ -247,6 +248,9 @@ function QuoteBuilder({
     quantity: 1,
     unit_price: 0,
   });
+
+  const [editItem, setEditItem] = useState(null);
+  const [editItemSaving, setEditItemSaving] = useState(false);
 
   const [imageFile, setImageFile] = useState(null);
 
@@ -1805,6 +1809,79 @@ function QuoteBuilder({
     await loadItems(quote.id);
   }
 
+  function beginEditItem(item) {
+    setEditItem({
+      ...item,
+      quantity: Number(item.quantity || 0),
+      unit_price: Number(item.unit_price || 0),
+    });
+  }
+
+  async function saveEditedItem(previewAfterSave = false) {
+    if (!editItem?.id || !String(editItem.title || "").trim()) {
+      notifications.show({
+        title: "Item Title Required",
+        message: "Enter a title before saving this quote item.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setEditItemSaving(true);
+    try {
+      const quantity = Number(editItem.quantity || 0);
+      const unitPrice = Number(editItem.unit_price || 0);
+      const itemUpdates = {
+        item_type: editItem.item_type || "Base",
+        title: String(editItem.title || "").trim(),
+        description: String(editItem.description || "").trim(),
+        quantity,
+        unit_price: unitPrice,
+        line_total: quantity * unitPrice,
+      };
+      const { data: savedItem, error: itemError } = await supabase
+        .from("project_quote_items")
+        .update(itemUpdates)
+        .eq("id", editItem.id)
+        .select()
+        .single();
+      if (itemError) throw itemError;
+
+      const nextItems = items.map((item) => item.id === savedItem.id ? savedItem : item);
+      const totals = calculateTotals(nextItems, quote);
+      const { data: savedQuote, error: quoteError } = await supabase
+        .from("project_quotes")
+        .update({
+          subtotal: totals.subtotal,
+          tax_amount: totals.tax_amount,
+          total_amount: totals.total_amount,
+        })
+        .eq("id", quote.id)
+        .select()
+        .single();
+      if (quoteError) throw quoteError;
+
+      setItems(nextItems);
+      setQuote(savedQuote);
+      setSelectedQuote?.(savedQuote);
+      setEditItem(null);
+      notifications.show({
+        title: "Quote Item Updated",
+        message: `${savedItem.title} is now ${money(savedItem.line_total)}. The quote total was recalculated.`,
+        color: "green",
+      });
+      if (previewAfterSave) setPage("quotePreview");
+    } catch (error) {
+      notifications.show({
+        title: "Item Could Not Be Updated",
+        message: error.message || "Please try again.",
+        color: "red",
+      });
+    } finally {
+      setEditItemSaving(false);
+    }
+  }
+
   async function toggleOptionalItem(item) {
     const { error } = await supabase
       .from("project_quote_items")
@@ -3187,6 +3264,14 @@ function QuoteBuilder({
 
                       <Button
                         size="xs"
+                        color="blue"
+                        onClick={() => beginEditItem(item)}
+                      >
+                        Edit Item / Amount
+                      </Button>
+
+                      <Button
+                        size="xs"
                         variant="light"
                         color="red"
                         onClick={() => deleteItem(item.id)}
@@ -3233,6 +3318,14 @@ function QuoteBuilder({
                     </Box>
 
                     <Stack>
+                      <Button
+                        size="xs"
+                        color="blue"
+                        onClick={() => beginEditItem(item)}
+                      >
+                        Edit Item / Amount
+                      </Button>
+
                       <Button
                         size="xs"
                         variant="light"
@@ -3587,6 +3680,71 @@ function QuoteBuilder({
           Save Quote
         </Button>
       </Group>
+
+      <Modal
+        opened={Boolean(editItem)}
+        onClose={() => setEditItem(null)}
+        title="Edit Quote Item"
+        centered
+        size="lg"
+      >
+        {editItem && (
+          <Stack>
+            <Alert color="blue" title="Simple quote update">
+              Change the description, quantity, or amount. Saving recalculates the quote automatically.
+            </Alert>
+            <Select
+              label="Item Type"
+              data={["Base", "Service", "Labor", "Material", "Installation", "Mileage", "Optional"]}
+              value={editItem.item_type || "Base"}
+              onChange={(value) => setEditItem((current) => ({ ...current, item_type: value || "Base" }))}
+              allowDeselect={false}
+            />
+            <TextInput
+              label="Item Title"
+              required
+              value={editItem.title || ""}
+              onChange={(event) => setEditItem((current) => ({ ...current, title: event.currentTarget.value }))}
+            />
+            <Textarea
+              label="Description"
+              minRows={3}
+              autosize
+              value={editItem.description || ""}
+              onChange={(event) => setEditItem((current) => ({ ...current, description: event.currentTarget.value }))}
+            />
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <NumberInput
+                label="Quantity"
+                min={0}
+                decimalScale={2}
+                value={editItem.quantity}
+                onChange={(value) => setEditItem((current) => ({ ...current, quantity: Number(value || 0) }))}
+              />
+              <NumberInput
+                label="Unit Price"
+                min={0}
+                decimalScale={2}
+                fixedDecimalScale
+                prefix="$"
+                value={editItem.unit_price}
+                onChange={(value) => setEditItem((current) => ({ ...current, unit_price: Number(value || 0) }))}
+              />
+            </SimpleGrid>
+            <Paper withBorder radius="md" p="md">
+              <Group justify="space-between">
+                <Text fw={700}>Updated Line Total</Text>
+                <Title order={3}>{money(Number(editItem.quantity || 0) * Number(editItem.unit_price || 0))}</Title>
+              </Group>
+            </Paper>
+            <Group justify="flex-end">
+              <Button variant="default" onClick={() => setEditItem(null)} disabled={editItemSaving}>Cancel</Button>
+              <Button variant="light" color="blue" onClick={() => saveEditedItem(false)} loading={editItemSaving}>Save Item</Button>
+              <Button color="red" onClick={() => saveEditedItem(true)} loading={editItemSaving}>Save &amp; Preview PDF</Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </>
   );
 }

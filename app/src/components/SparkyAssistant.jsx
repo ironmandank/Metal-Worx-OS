@@ -82,16 +82,17 @@ const SPARKY_STYLES = `
   }
   .sparky-launcher:hover img { animation-duration: .8s; }
   .sparky-launcher svg { animation: sparky-glow 1.8s ease-in-out infinite; }
-  .sparky-avatar-wrap { position: relative; width: 74px; height: 74px; flex: 0 0 74px; }
+  .sparky-avatar-wrap { position: relative; width: 128px; height: 144px; flex: 0 0 128px; }
   .sparky-avatar-wrap::before, .sparky-avatar-wrap::after { content:""; position:absolute; z-index:2; width:6px; height:6px; right:3px; top:8px; border-radius:50%; background:#ffd45a; box-shadow:8px 6px 0 #ff6421,-4px 11px 0 #fff4b2; animation:sparky-sparks 1.6s ease-out infinite; pointer-events:none; }
   .sparky-avatar-wrap::after { animation-delay:.8s; }
   .sparky-avatar {
-    width: 74px;
-    height: 74px;
+    width: 128px;
+    height: 144px;
     display: block;
     border-radius: 18px;
-    object-fit: cover;
-    object-position: 50% 20%;
+    object-fit: contain;
+    object-position: center;
+    padding: 4px;
     background: radial-gradient(circle, #3d1113, #0e1012 70%);
     border: 1px solid rgba(255,255,255,0.12);
     animation: sparky-breathe 3.4s ease-in-out infinite;
@@ -107,6 +108,8 @@ const SPARKY_STYLES = `
     .sparky-launcher { right: 14px; bottom: 14px; min-height: 52px; padding-right: 13px; }
     .sparky-launcher img { width: 39px; height: 39px; }
     .sparky-launcher span { display: none; }
+    .sparky-avatar-wrap { width: 104px; height: 118px; flex-basis: 104px; }
+    .sparky-avatar { width: 104px; height: 118px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .sparky-launcher img, .sparky-launcher svg, .sparky-avatar, .sparky-thinking, .sparky-launcher::before, .sparky-launcher::after, .sparky-avatar-wrap::before, .sparky-avatar-wrap::after { animation: none !important; }

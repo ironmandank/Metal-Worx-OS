@@ -1849,7 +1849,7 @@ function QuoteCenter({
                     color="gray"
                     onClick={() => openQuote(quote, "quoteBuilder")}
                   >
-                    Open Quote &amp; Mileage
+                    Edit Quote &amp; Amounts
                   </Button>
                   <Button
                     {...QUOTE_ACTION_BUTTON_PROPS}
