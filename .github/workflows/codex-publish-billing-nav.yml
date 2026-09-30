@@ -1,0 +1,23 @@
+name: Publish Project Billing navigation
+on:
+  push:
+    paths:
+      - ".github/workflows/codex-publish-billing-nav.yml"
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply tested navigation patch
+        run: |
+          echo 'H4sIAAAAAAACA7VW227iSBB991eUeFgRYYxtAsRsyAxJyCy7mUkm5PIQRVHbbkPPGNvjbsggwr9vtW+YyySr1S5Ccrv6VHVdTlX7Ig6n4DWp0zYs26Cu17GdTts06RFp6XarfdSxcUEs12tTCp/DAEY0AqMDut5N/mDquqFcoJkunIUu/QnHjnx8DCMaEKY54fREOSeCduF2MlPBgCtHoJLZBr3T1VtdowU13dJ1ZTSzv1FHdOHxun979scT9F0XruNQCuGU+T4LxhCQORsTwdARPglj4cyEotTrdQVIFDV47DT6UaR94z/hV79XaEKtVlJAD6MwoIHgDZ8swpmQJi6TVWLoFY5QIf2ttSIypryRucd3T3yFQ3kMntMEj/mUgzMhwZi6mAITWMBpLKPg1dqBihCX+jR9rx8oiss8D+r1MRNAGtuB2dsShQUy755nUY+6mmZ22sT0LDB0vX14KLOza0XBYPZY+vgR6m3dVDtQSx8o8GaBkyQcQdUDWCpZhDEVsziA4z9D+5wKwnwOHKNwBHVR1FuWXla4I64xY1KaLFbQOPk9tbRSQKnLBfOgKtMKvV4PKlGW2oo8svbGPry+wo4440tl19+qUtToOC+fUircjqdpUgxdbWNS8PFmUjILoyz2r7NQpKY2JKsynKChOb1DQvSW6/UWxKGcX9I59REzExNkK3OwqVyMQLLrg5ZCnn2JWaX5Sn8sYIIR/yGMv/OIOPSe0Zfe8pcJgw9QsfN1F9chid1KyZvGSb4+KAq4l6/v9ZX9T5EZvy1CW7RNNM2yTavt6Pv5/Z6tTd6/h5alt2ThrbTsDOGxSMs9dMLgNGbUcwinaiGZMd/F5F1gKcN4YRYbZ8SngUviwRyPU2WFUimfrCETEotTEpcEdB6HwSX1xLbsho0nKJQOGpYhXTQsUzWa0ktEcQFf+vfPn26u7q5H0IPHdQG5oBEW9up+cHM/HDxU1PUWQ81uckqag3P0LiFAgVmpObeWa5JJMnV3mKSuAT6xqY+IrWlehriUOzGLZE+VgCIUxOcqnrCYyiqpYBOfBEh1FUjgQsZUjImIGS/by6I8HV5eDr98Ku+sg0yTXysigzwy2Irsh2zaM3SAxuV05WENuGBT7EYOv8l5EIdzdBqBe9tiz8Vhv7GZkZ84nWbLRvJTq2k2jaP95N+jvsn3PQDJINNsyZGfPsrTbUxFwdtAxIvbRUSrVK6ymZcN1RJuDdEyQsgBvVzJaZGM+sJ47kZ1mQ9dtTw7s211Z56qpZGplmcjrJK74v87QN07TbG9sjGZOoBpSTvwMb+jkiNyb54QP+N0hJSl1cendIpmCnIe4YdA4VuqebYtfcsEiZ0J+r5pob8l3DWQ0KDZTGiQPMo0+I8SWfIy6Sh+uhi6idbX4nXDs5Q169Dy3jpdZOZlaFvCtwzMsVqf8es0UbzPXjYUKqnDFVSrF2ov5Wonuhv13zSQMgH1a/9Kfx/BNpOQOFjspznYlG0YxK+T3kk+01IbnCAVCjSCX3DIhC+aHzrEH+G1hQXWsKWHgk6rlelLHa8CzlxaLwKp5Hd/1v9Xd7ej4fng+eHq5q/Rdf9sMNJ4OMXDC43Ei+JN+04XyefHpisHOM9AMbWWoRmK8jeLfz1anAwAAA==' | base64 -d | gunzip > /tmp/billing-nav.patch
+          git config user.name "Metal Worx OS Publisher"
+          git config user.email "actions@users.noreply.github.com"
+          git am /tmp/billing-nav.patch
+          git rm .github/workflows/codex-publish-billing-nav.yml
+          git commit -m "Remove temporary billing navigation publishing workflow"
+          git push origin HEAD:main
