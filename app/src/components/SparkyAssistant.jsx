@@ -1,0 +1,173 @@
+import { ActionIcon, Badge, Button, Drawer, Group, Loader, Paper, ScrollArea, Stack, Text, Textarea, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { IconBolt, IconSend, IconTrash, IconX } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import sparkyImage from "../assets/sparky-assistant.png";
+import { supabase } from "../lib/supabase";
+
+const STARTER_MESSAGE = {
+  role: "assistant",
+  content: "Hey, I’m Sparky. Ask me about projects, orders, production, inventory locations, manuals, or what needs attention today. I can review and recommend, but I won’t change shop records without confirmation.",
+};
+
+const PAGE_PROMPTS = {
+  inventoryCount: ["Where is this item stored?", "Show unverified inventory items", "Help standardize an item name"],
+  inventoryDashboard: ["What inventory needs attention?", "Find an item and all its crates", "Which items are low or out?"],
+  projects: ["What outside project should we work next?", "Which projects are blocked?", "What installs are coming up?"],
+  productionControl: ["What is due soon?", "Which department is backed up?", "Show blocked production work"],
+  departmentQueue: ["What should this department work next?", "Which jobs are overdue?", "Summarize this queue"],
+  knowledgeCenter: ["Find the right equipment manual", "What manuals are available?", "Help me troubleshoot safely"],
+};
+
+const DEFAULT_PROMPTS = [
+  "What needs attention today?",
+  "Where is an inventory item stored?",
+  "What job should we work next?",
+];
+
+const SPARKY_STYLES = `
+  .sparky-launcher {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 220;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 58px;
+    padding: 6px 16px 6px 7px;
+    border: 1px solid rgba(232, 44, 44, 0.7);
+    border-radius: 999px;
+    color: white;
+    background: linear-gradient(135deg, #7d0d0d, #d41f26);
+    box-shadow: 0 14px 35px rgba(0, 0, 0, 0.44), 0 0 24px rgba(212, 31, 38, 0.22);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 900;
+  }
+  .sparky-launcher img {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: 50% 18%;
+    background: #151719;
+  }
+  .sparky-avatar {
+    width: 74px;
+    height: 74px;
+    flex: 0 0 74px;
+    border-radius: 18px;
+    object-fit: cover;
+    object-position: 50% 20%;
+    background: radial-gradient(circle, #3d1113, #0e1012 70%);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .sparky-message { white-space: pre-wrap; line-height: 1.52; }
+  @media (max-width: 650px) {
+    .sparky-launcher { right: 14px; bottom: 14px; min-height: 52px; padding-right: 13px; }
+    .sparky-launcher img { width: 39px; height: 39px; }
+    .sparky-launcher span { display: none; }
+  }
+`;
+
+function cleanMessage(value) {
+  return String(value || "").trim().slice(0, 2000);
+}
+
+export default function SparkyAssistant({ currentPage, activeUser, authenticatedProfile }) {
+  const [opened, setOpened] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [sending, setSending] = useState(false);
+  const [messages, setMessages] = useState([STARTER_MESSAGE]);
+  const viewport = useRef(null);
+
+  const prompts = useMemo(() => PAGE_PROMPTS[currentPage] || DEFAULT_PROMPTS, [currentPage]);
+
+  useEffect(() => {
+    if (!opened) return;
+    window.setTimeout(() => viewport.current?.scrollTo({ top: viewport.current.scrollHeight, behavior: "smooth" }), 60);
+  }, [messages, opened, sending]);
+
+  async function askSparky(suggestedQuestion) {
+    const message = cleanMessage(suggestedQuestion ?? question);
+    if (!message || sending) return;
+
+    const nextMessages = [...messages, { role: "user", content: message }];
+    setMessages(nextMessages);
+    setQuestion("");
+    setSending(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("sparky-assistant", {
+        body: {
+          question: message,
+          page: currentPage,
+          history: nextMessages.slice(-8),
+        },
+      });
+      if (error) throw error;
+      if (!data?.answer) throw new Error(data?.error || "Sparky could not prepare an answer.");
+      setMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+    } catch (error) {
+      const messageText = error?.context?.body?.error || error.message || "Sparky is temporarily unavailable.";
+      setMessages((current) => [...current, { role: "assistant", content: `I couldn’t complete that request. ${messageText}` }]);
+      notifications.show({ title: "Sparky Could Not Answer", message: messageText, color: "red" });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function clearConversation() {
+    setMessages([STARTER_MESSAGE]);
+    setQuestion("");
+  }
+
+  return <>
+    <style>{SPARKY_STYLES}</style>
+    <button type="button" className="sparky-launcher" onClick={() => setOpened(true)} aria-label="Ask Sparky">
+      <img src={sparkyImage} alt="Sparky, the Metal Worx shop assistant"/>
+      <span>Ask Sparky</span>
+      <IconBolt size={19}/>
+    </button>
+
+    <Drawer opened={opened} onClose={() => setOpened(false)} position="right" size="min(470px, 100vw)" withCloseButton={false} padding={0}>
+      <Stack h="100dvh" gap={0} bg="#0b0d0f">
+        <Paper radius={0} p="md" style={{ borderBottom: "1px solid rgba(255,255,255,0.09)", background: "linear-gradient(135deg, #160809, #171a1d)" }}>
+          <Group wrap="nowrap" align="center">
+            <img className="sparky-avatar" src={sparkyImage} alt="Sparky"/>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Group gap="xs"><Title order={2}>Sparky</Title><Badge color="green" variant="light">Online</Badge></Group>
+              <Text size="sm" c="dimmed">Metal Worx Shop Assistant</Text>
+              <Text size="xs" c="gray.6">{activeUser || authenticatedProfile?.display_name || "Employee"} · {authenticatedProfile?.department || currentPage || "Metal Worx OS"}</Text>
+            </div>
+            <ActionIcon variant="subtle" color="gray" onClick={() => setOpened(false)} aria-label="Close Sparky"><IconX/></ActionIcon>
+          </Group>
+        </Paper>
+
+        <ScrollArea viewportRef={viewport} style={{ flex: 1 }} p="md">
+          <Stack gap="md" pb="md">
+            {messages.map((message, index) => <Paper key={`${message.role}-${index}`} p="md" radius="lg" ml={message.role === "user" ? 42 : 0} mr={message.role === "assistant" ? 28 : 0} style={{ background: message.role === "user" ? "linear-gradient(135deg, #761012, #aa181d)" : "#181b1f", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <Text size="xs" fw={900} c={message.role === "user" ? "red.1" : "red.4"} mb={5}>{message.role === "user" ? "YOU" : "SPARKY"}</Text>
+              <Text size="sm" className="sparky-message">{message.content}</Text>
+            </Paper>)}
+            {sending && <Paper p="md" radius="lg" mr={28} style={{ background: "#181b1f", border: "1px solid rgba(255,255,255,0.08)" }}><Group gap="sm"><Loader size="sm" color="red"/><Text size="sm" c="dimmed">Sparky is checking Metal Worx OS…</Text></Group></Paper>}
+          </Stack>
+        </ScrollArea>
+
+        <Paper radius={0} p="md" style={{ borderTop: "1px solid rgba(255,255,255,0.09)", background: "#101215" }}>
+          <Stack gap="sm">
+            {messages.length === 1 && <Group gap="xs">{prompts.map((prompt) => <Button key={prompt} size="compact-xs" variant="light" color="gray" onClick={() => askSparky(prompt)}>{prompt}</Button>)}</Group>}
+            <Textarea value={question} onChange={(event) => setQuestion(event.currentTarget.value)} placeholder="Ask about a job, item, crate, manual, or today's priorities…" minRows={2} maxRows={5} autosize disabled={sending} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); askSparky(); } }}/>
+            <Group justify="space-between">
+              <Button size="xs" variant="subtle" color="gray" leftSection={<IconTrash size={15}/>} onClick={clearConversation} disabled={sending || messages.length === 1}>Clear</Button>
+              <Button color="red" rightSection={sending ? <Loader size={15} color="white"/> : <IconSend size={16}/>} onClick={() => askSparky()} disabled={!question.trim() || sending}>Ask Sparky</Button>
+            </Group>
+            <Text size="xs" c="gray.6" ta="center">Sparky can make mistakes. Verify safety instructions, measurements, quantities, and customer commitments.</Text>
+          </Stack>
+        </Paper>
+      </Stack>
+    </Drawer>
+  </>;
+}

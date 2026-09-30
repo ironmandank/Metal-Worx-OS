@@ -48,6 +48,7 @@ import {
   markNotificationRead,
 } from "../../services/notificationService";
 import AnimatedWalkthrough from "../AnimatedWalkthrough";
+import SparkyAssistant from "../SparkyAssistant";
 
 const GLOBAL_STATUS_STYLES = `
   .mw-global-shop-status {
@@ -855,6 +856,7 @@ function AppLayout({
         </header>
 
         <section className="mw-content" data-tour="page-content">{children}</section>
+        <SparkyAssistant currentPage={activePage} activeUser={safeActiveUser} authenticatedProfile={authenticatedProfile}/>
       </main>
     </div>
   );
