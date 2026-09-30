@@ -1,0 +1,25 @@
+name: Publish quote editor fix
+
+on:
+  push:
+    paths:
+      - ".github/workflows/codex-quote-editor-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply tested fix
+        run: |
+          git config user.name "Metal Worx OS Publisher"
+          git config user.email "actions@users.noreply.github.com"
+          base64 --decode quote-amount-editor-fix.patch.b64 | git apply
+          git add app/src/pages/QuoteBuilder.jsx
+          git commit -m "Fix quote amount editor workspace crash"
+          git rm quote-amount-editor-fix.patch.b64 .github/workflows/codex-quote-editor-fix.yml
+          git commit -m "Remove temporary quote editor publishing files"
+          git push origin HEAD:main
