@@ -39,8 +39,11 @@ function designToLaserTarget(question: string) {
 }
 
 function wantsQuoteDraft(question: string) {
-  return /\b(?:create|make|start|build|prepare|draft|put together|write up)\b[\s\S]{0,45}\b(?:quote|estimate)\b|\b(?:quote|estimate)\b[\s\S]{0,45}\b(?:create|make|start|build|prepare|draft)\b/i.test(question)
-    || /(?:^|\n)\s*customer\s*:.+(?:\n|$)[\s\S]*(?:^|\n)\s*(?:quote|quote title|project)\s*:.+(?:\n|$)[\s\S]*(?:^|\n)\s*items?\s*:/i.test(question);
+  const requestsQuote = /\b(?:create|make|start|build|prepare|draft|put together|write up)\b[\s\S]{0,45}\b(?:quote|estimate)\b|\b(?:quote|estimate)\b[\s\S]{0,45}\b(?:create|make|start|build|prepare|draft)\b/i.test(question);
+  const structuredQuote = /^\s*customer\s*:/im.test(question)
+    && /^\s*(?:quote|quote title|project)\s*:/im.test(question)
+    && /^\s*items?\s*:/im.test(question);
+  return requestsQuote || structuredQuote;
 }
 
 function labeledValue(text: string, labels: string[]) {
