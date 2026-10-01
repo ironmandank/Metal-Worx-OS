@@ -685,16 +685,21 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         const balanceDue = Number.isFinite(Number(project.balance_due))
           ? Math.max(Number(project.balance_due || 0), 0)
           : Math.max(contractTotal - amountPaid, 0);
+        const needsInvoice = contractTotal > 0 && invoices.length === 0;
+        const needsBillingAction = needsInvoice || balanceDue > 0;
         const identity = getProjectIdentity(project, customer);
         const haystack = [identity, project.project_number, project.contact_name, customer?.company_name, approvedQuote?.quote_number, latestInvoice?.quote_number]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
 
-        return { project, customer, identity, approvedQuote, invoices, latestInvoice, contractTotal, amountPaid, balanceDue, haystack };
+        return { project, customer, identity, approvedQuote, invoices, latestInvoice, contractTotal, amountPaid, balanceDue, needsInvoice, needsBillingAction, haystack };
       })
+      .filter((row) => row.project.status !== "Completed" || row.needsBillingAction)
       .filter((row) => !normalizedSearch || row.haystack.includes(normalizedSearch))
       .sort((left, right) => {
+        if (left.needsInvoice !== right.needsInvoice) return left.needsInvoice ? -1 : 1;
+        if (left.needsBillingAction !== right.needsBillingAction) return left.needsBillingAction ? -1 : 1;
         if (left.balanceDue !== right.balanceDue) return right.balanceDue - left.balanceDue;
         return left.identity.localeCompare(right.identity);
       });
@@ -1546,7 +1551,11 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     </Table.Td>
                     <Table.Td>
                       <Text fw={800} size="sm">{row.latestInvoice?.quote_number || "Not created"}</Text>
-                      <Text size="xs" c="dimmed">{row.invoices.length ? `${row.invoices.length} invoice${row.invoices.length === 1 ? "" : "s"}` : "Create after approval"}</Text>
+                      {row.needsInvoice ? (
+                        <Badge size="xs" color="red" variant="light">Needs Invoice</Badge>
+                      ) : (
+                        <Text size="xs" c="dimmed">{row.invoices.length ? `${row.invoices.length} invoice${row.invoices.length === 1 ? "" : "s"}` : "No invoice required"}</Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <NumberInput
@@ -1610,7 +1619,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             </Table>
           </ScrollArea>
           {!billingRows.length && <Alert color="blue" mt="md">No projects match this billing search.</Alert>}
-          <Text size="xs" c="dimmed" mt="md">Approved quotes remain unchanged. Invoices and payments stay linked to the project so the financial history is preserved.</Text>
+          <Text size="xs" c="dimmed" mt="md">Projects needing an invoice or payment are listed first. Completed and fully settled projects leave this billing list automatically but remain available under Completed and Archive.</Text>
         </MWPanel>
       )}
 
