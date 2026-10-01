@@ -1524,7 +1524,18 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             <Paper p="md" withBorder radius="md"><Text size="xs" c="dimmed" fw={800} tt="uppercase">Invoices</Text><Text fz={24} fw={900}>{billingSummary.invoices}</Text></Paper>
           </SimpleGrid>
 
-          <ScrollArea type="auto">
+          <Text size="xs" c="dimmed" fw={700} mb={6}>
+            Scroll left or right to view every billing column.
+          </Text>
+          <ScrollArea
+            type="always"
+            offsetScrollbars="x"
+            scrollbarSize={14}
+            styles={{
+              scrollbar: { backgroundColor: "rgba(255,255,255,.08)" },
+              thumb: { backgroundColor: "rgba(255,255,255,.38)" },
+            }}
+          >
             <Table striped highlightOnHover withTableBorder withColumnBorders miw={1120} verticalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
