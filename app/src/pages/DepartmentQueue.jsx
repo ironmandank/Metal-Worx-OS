@@ -285,6 +285,16 @@ function DepartmentQueue({
       await setArtworkWorkflowStatus(workOrder.id, nextStatus, activeUser, note);
       notifications.show({ title: "Artwork Status Updated", message: `${nextStatus} is now shown everywhere this job appears.`, color: "green" });
       setDetailTarget(null);
+      if (nextStatus === "Waiting for Customer Pickup") {
+        setStageFilter("All Active Stages");
+        setQueueFilter("Waiting for Pickup");
+      } else if (nextStatus === "Ready to Ship") {
+        setStageFilter("All Active Stages");
+        setQueueFilter("Ready to Ship");
+      } else if (["Completed — Picked Up", "Completed — Shipped"].includes(nextStatus)) {
+        setStageFilter("Completed / Archive");
+        setQueueFilter("Completed / Archive");
+      }
       await loadQueue();
     } catch (error) {
       notifications.show({ title: "Status Could Not Be Updated", message: error?.message || "Please try again.", color: "red" });
@@ -1058,7 +1068,8 @@ function DepartmentQueue({
     (workOrder) => workOrder.status === "Blocked"
   );
 
-  const fulfillmentOrders = displayedWorkOrders.filter((workOrder) => workflowStage(workOrder) === "Fulfillment");
+  const waitingPickupOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Waiting for Customer Pickup");
+  const readyToShipOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Ready to Ship");
   const archivedOrders = workOrders.filter((workOrder) => workflowStage(workOrder) === "Completed / Archive");
 
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
@@ -1605,7 +1616,8 @@ function DepartmentQueue({
                 ? [["Customer Approval", awaitingApprovalOrders.length]]
                 : []),
               ...(unifiedArtwork ? [
-                ["Fulfillment", fulfillmentOrders.length],
+                ["Waiting for Pickup", waitingPickupOrders.length],
+                ["Ready to Ship", readyToShipOrders.length],
                 ["Completed / Archive", archivedOrders.length],
               ] : []),
             ].map(([label, count]) => (
@@ -1665,10 +1677,18 @@ function DepartmentQueue({
             </MWSection>
           )}
 
-          {unifiedArtwork && (queueFilter === "All" || queueFilter === "Fulfillment") && (
-            <MWSection title="Pickup, Shipping & Installation" subtitle={`${fulfillmentOrders.length} finished production item${fulfillmentOrders.length === 1 ? "" : "s"} awaiting fulfillment`}>
+          {unifiedArtwork && (queueFilter === "All" || queueFilter === "Waiting for Pickup") && (
+            <MWSection title="Waiting for Customer Pickup" subtitle={`${waitingPickupOrders.length} completed item${waitingPickupOrders.length === 1 ? "" : "s"} waiting for the customer`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {fulfillmentOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for fulfillment.</Text> : fulfillmentOrders.map(renderQueueCard)}
+                {waitingPickupOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for customer pickup.</Text> : waitingPickupOrders.map(renderQueueCard)}
+              </SimpleGrid>
+            </MWSection>
+          )}
+
+          {unifiedArtwork && (queueFilter === "All" || queueFilter === "Ready to Ship") && (
+            <MWSection title="Ready to Ship" subtitle={`${readyToShipOrders.length} completed item${readyToShipOrders.length === 1 ? "" : "s"} waiting to be shipped`}>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
+                {readyToShipOrders.length === 0 ? <Text c="dimmed">No artwork is currently ready to ship.</Text> : readyToShipOrders.map(renderQueueCard)}
               </SimpleGrid>
             </MWSection>
           )}
