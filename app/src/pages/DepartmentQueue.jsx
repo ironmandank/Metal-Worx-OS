@@ -237,11 +237,14 @@ function DepartmentQueue({
 
   async function changeArtworkStage(workOrder, nextStage) {
     if (!nextStage || nextStage === stationFor(workOrder) || movingStageId) return;
-    const reason = window.prompt(`Move this artwork from ${stationFor(workOrder)} to ${nextStage}? Add a short note:`, `Moved to ${nextStage} from the Artwork Workflow.`);
-    if (!reason?.trim()) return;
     setMovingStageId(workOrder.id);
     try {
-      await moveArtworkToStation(workOrder.id, nextStage, activeUser, reason.trim());
+      await moveArtworkToStation(
+        workOrder.id,
+        nextStage,
+        activeUser,
+        `Moved from ${stationFor(workOrder)} to ${nextStage} from the Artwork Workflow.`
+      );
       notifications.show({
         title: `Artwork Moved to ${nextStage}`,
         message: "The existing job, images, files, notes, and history stayed together.",
