@@ -28,6 +28,7 @@ function DesignQueue({
         accessLevel={accessLevel}
         refreshKey={refreshKey}
         onCreateDesign={() => setIntakeOpen(true)}
+        unifiedArtwork
       />
       <DesignIntakeModal
         opened={intakeOpen}

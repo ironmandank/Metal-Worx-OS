@@ -44,7 +44,10 @@ import {
   canonicalStation,
   bypassProductionStep,
   completeProductionStep,
+  moveArtworkToStation,
   returnLaserWorkToDesign,
+  setArtworkWorkflowStatus,
+  SHOP_STATIONS,
   startProductionStep,
 } from "../lib/productionWorkflow";
 import { uploadOrderImages } from "../services/orderImageService";
@@ -135,11 +138,14 @@ function DepartmentQueue({
   accessLevel,
   refreshKey = 0,
   onCreateDesign,
+  unifiedArtwork = false,
 }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [jobDetails, setJobDetails] = useState({});
   const [loading, setLoading] = useState(true);
   const [queueFilter, setQueueFilter] = useState("All");
+  const [stageFilter, setStageFilter] = useState("All Active Stages");
+  const [movingStageId, setMovingStageId] = useState(null);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [bypassTarget, setBypassTarget] = useState(null);
@@ -172,12 +178,20 @@ function DepartmentQueue({
   async function loadQueue() {
     setLoading(true);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("work_orders")
       .select("*")
-      .eq("department", canonicalStation(department) || department)
-      .in("status", ["Ready", "In Progress", "Blocked"])
-      .order("station_entered_at", { ascending: true });
+      .eq("is_active", true);
+
+    if (!unifiedArtwork) {
+      query = query
+        .eq("department", canonicalStation(department) || department)
+        .in("status", ["Ready", "In Progress", "Blocked"]);
+    }
+
+    const { data, error } = await query
+      .order("production_job_id", { ascending: true })
+      .order("step_order", { ascending: true });
 
     if (error) {
       console.error(error);
@@ -185,12 +199,23 @@ function DepartmentQueue({
       return;
     }
 
-    const queue = data || [];
+    const rows = data || [];
+    const queue = unifiedArtwork
+      ? Object.values(rows.reduce((groups, row) => {
+          const key = String(row.production_job_id || row.id);
+          groups[key] = groups[key] || [];
+          groups[key].push(row);
+          return groups;
+        }, {}))
+          .filter((route) => route.some((row) => canonicalStation(row.department) === "Design"))
+          .map((route) => route.find((row) => ["Ready", "In Progress", "Blocked"].includes(row.status)) || [...route].reverse().find((row) => row.status === "Completed"))
+          .filter(Boolean)
+      : rows;
 
     setWorkOrders(queue);
     await Promise.all([
       loadJobDetails(queue),
-      department === "Design"
+      (department === "Design" || unifiedArtwork)
         ? getTodaysHotTodayItems({ department: "Design" })
             .then(setHotTodayItems)
             .catch((hotError) => {
@@ -200,6 +225,85 @@ function DepartmentQueue({
         : Promise.resolve(),
     ]);
     setLoading(false);
+  }
+
+  function stationFor(workOrder) {
+    return canonicalStation(workOrder?.department) || workOrder?.department || "Unassigned";
+  }
+
+  function isDesignStation(workOrder) {
+    return stationFor(workOrder) === "Design";
+  }
+
+  async function changeArtworkStage(workOrder, nextStage) {
+    if (!nextStage || nextStage === stationFor(workOrder) || movingStageId) return;
+    const reason = window.prompt(`Move this artwork from ${stationFor(workOrder)} to ${nextStage}? Add a short note:`, `Moved to ${nextStage} from the Artwork Workflow.`);
+    if (!reason?.trim()) return;
+    setMovingStageId(workOrder.id);
+    try {
+      await moveArtworkToStation(workOrder.id, nextStage, activeUser, reason.trim());
+      notifications.show({
+        title: `Artwork Moved to ${nextStage}`,
+        message: "The existing job, images, files, notes, and history stayed together.",
+        color: "green",
+      });
+      setDetailTarget(null);
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Artwork Could Not Be Moved",
+        message: error?.message || "The production route could not be updated.",
+        color: "red",
+      });
+    } finally {
+      setMovingStageId(null);
+    }
+  }
+
+  function currentWorkflowStatus(workOrder) {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    if (order?.status === "Completed") {
+      return order?.fulfillment_method === "Pickup" ? "Completed — Picked Up" : "Completed — Shipped";
+    }
+    if (order?.status === "Ready for Pickup") return "Waiting for Customer Pickup";
+    if (order?.status === "Ready to Ship") return "Ready to Ship";
+    if (order?.design_status === "Awaiting Customer Approval") return "Awaiting Customer Approval";
+    return workOrder.status;
+  }
+
+  async function changeArtworkStatus(workOrder, nextStatus) {
+    if (!nextStatus || nextStatus === currentWorkflowStatus(workOrder) || savingAction) return;
+    let note = `Status changed to ${nextStatus} from the Artwork Workflow.`;
+    if (nextStatus === "Blocked") {
+      note = window.prompt("Why is this artwork blocked?", "") || "";
+      if (!note.trim()) return;
+    }
+    if (["Completed — Picked Up", "Completed — Shipped"].includes(nextStatus) &&
+        !window.confirm(`Mark this artwork ${nextStatus.toLowerCase()} and move it to the archive?`)) return;
+    setSavingAction(true);
+    try {
+      await setArtworkWorkflowStatus(workOrder.id, nextStatus, activeUser, note);
+      notifications.show({ title: "Artwork Status Updated", message: `${nextStatus} is now shown everywhere this job appears.`, color: "green" });
+      setDetailTarget(null);
+      await loadQueue();
+    } catch (error) {
+      notifications.show({ title: "Status Could Not Be Updated", message: error?.message || "Please try again.", color: "red" });
+    } finally {
+      setSavingAction(false);
+    }
+  }
+
+  function artworkStatusOptions(workOrder) {
+    return [
+      "Ready",
+      "In Progress",
+      "Blocked",
+      ...(isDesignStation(workOrder) ? ["Awaiting Customer Approval"] : []),
+      "Waiting for Customer Pickup",
+      "Ready to Ship",
+      "Completed — Picked Up",
+      "Completed — Shipped",
+    ];
   }
 
   async function loadJobDetails(workOrderList) {
@@ -704,7 +808,7 @@ function DepartmentQueue({
   async function startWorkOrder(workOrder) {
     const order = jobDetails[workOrder.production_job_id]?.order;
     if (
-      department === "Design" &&
+      isDesignStation(workOrder) &&
       order?.design_fee_required &&
       !order?.design_fee_paid &&
       order?.design_fee_status !== "Paid"
@@ -719,7 +823,7 @@ function DepartmentQueue({
     try {
       await startProductionStep(workOrder.id, activeUser);
       let designStatusWarning = "";
-      if (department === "Design" && order?.id) {
+      if (isDesignStation(workOrder) && order?.id) {
         const note = `Design started by ${activeUser || "Design Team"} on ${new Date().toLocaleString()}.`;
         const { error: orderError } = await supabase
           .from("customer_orders")
@@ -916,26 +1020,46 @@ function DepartmentQueue({
     }
   }
 
+  function workflowStage(workOrder) {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    if (order?.status === "Completed" || order?.fulfillment_completed) return "Completed / Archive";
+    if (["Ready for Pickup", "Ready to Ship", "Ready for Installation"].includes(order?.status)) return "Fulfillment";
+    if (order?.design_status === "Awaiting Customer Approval") return "Customer Approval";
+    return stationFor(workOrder);
+  }
+
+  const displayedWorkOrders = useMemo(() => {
+    if (!unifiedArtwork || stageFilter === "All Active Stages") {
+      return unifiedArtwork
+        ? workOrders.filter((workOrder) => workflowStage(workOrder) !== "Completed / Archive")
+        : workOrders;
+    }
+    return workOrders.filter((workOrder) => workflowStage(workOrder) === stageFilter);
+  }, [jobDetails, stageFilter, unifiedArtwork, workOrders]);
+
   const readyOrders = useMemo(() => {
-    const ready = workOrders.filter((workOrder) => workOrder.status === "Ready");
-    return department === "Design"
+    const ready = displayedWorkOrders.filter((workOrder) => workOrder.status === "Ready" && !["Customer Approval", "Fulfillment", "Completed / Archive"].includes(workflowStage(workOrder)));
+    return (department === "Design" || unifiedArtwork)
       ? sortDesignQueue(ready, jobDetails, hotTodayItems)
       : ready;
-  }, [department, hotTodayItems, jobDetails, workOrders]);
+  }, [department, displayedWorkOrders, hotTodayItems, jobDetails, unifiedArtwork]);
 
-  const awaitingApprovalOrders = workOrders.filter((workOrder) => {
+  const awaitingApprovalOrders = displayedWorkOrders.filter((workOrder) => {
     const order = jobDetails[workOrder.production_job_id]?.order;
-    return department === "Design" && order?.design_status === "Awaiting Customer Approval";
+    return (department === "Design" || unifiedArtwork) && order?.design_status === "Awaiting Customer Approval";
   });
 
-  const inProgressOrders = workOrders.filter((workOrder) => {
+  const inProgressOrders = displayedWorkOrders.filter((workOrder) => {
     const order = jobDetails[workOrder.production_job_id]?.order;
     return workOrder.status === "In Progress" && order?.design_status !== "Awaiting Customer Approval";
   });
 
-  const blockedOrders = workOrders.filter(
+  const blockedOrders = displayedWorkOrders.filter(
     (workOrder) => workOrder.status === "Blocked"
   );
+
+  const fulfillmentOrders = displayedWorkOrders.filter((workOrder) => workflowStage(workOrder) === "Fulfillment");
+  const archivedOrders = workOrders.filter((workOrder) => workflowStage(workOrder) === "Completed / Archive");
 
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
@@ -944,7 +1068,7 @@ function DepartmentQueue({
     const job = detail?.job;
     const customer = detail?.customer;
     const order = detail?.order;
-    const designWork = department === "Design" ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
+    const designWork = (department === "Design" || unifiedArtwork) ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
     const items = detail?.items || [];
     const products = detail?.products || [];
     const project = detail?.project;
@@ -982,7 +1106,7 @@ function DepartmentQueue({
                 </Badge>
               )}
               {overdue && <Badge color="red" variant="outline">Overdue</Badge>}
-              {department === "Design" && (
+              {isDesignStation(workOrder) && (
                 <Badge
                   color={order?.design_fee_required
                     ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "green" : "orange")
@@ -1003,17 +1127,38 @@ function DepartmentQueue({
             {customerName} — {project?.project_name || productNames}
           </Title>
 
+          {unifiedArtwork && (
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <Select
+                label="Current Stage"
+                description="Move the same job; no duplicate is created"
+                data={SHOP_STATIONS}
+                value={stationFor(workOrder)}
+                disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
+                onChange={(value) => changeArtworkStage(workOrder, value)}
+              />
+              <Select
+                label="Workflow Status"
+                description="Includes pickup, shipping, and archive"
+                data={artworkStatusOptions(workOrder)}
+                value={currentWorkflowStatus(workOrder)}
+                disabled={!isAdministrator || savingAction}
+                onChange={(value) => changeArtworkStatus(workOrder, value)}
+              />
+            </SimpleGrid>
+          )}
+
           <Stack gap={2}>
             {companyName && <Text fw={700}>{companyName}</Text>}
-            {department === "Design" && order?.design_notes && (
+            {(department === "Design" || unifiedArtwork) && order?.design_notes && (
               <Text size="sm" c={`${designWork.color}.4`} fw={800}>
                 Artwork: {String(order.design_notes).split("\n")[0]}
               </Text>
             )}
-            {department === "Design" && designWork.fileName && (
+            {(department === "Design" || unifiedArtwork) && designWork.fileName && (
               <Text size="sm"><b>Find File:</b> {designWork.fileName}</Text>
             )}
-            {department === "Design" && (customer?.phone || customer?.email) && (
+            {(department === "Design" || unifiedArtwork) && (customer?.phone || customer?.email) && (
               <Text size="sm" c="dimmed">
                 {[customer.phone, customer.email].filter(Boolean).join(" • ")}
               </Text>
@@ -1121,7 +1266,7 @@ function DepartmentQueue({
           )}
 
           <SimpleGrid cols={2} spacing="xs">
-            {department === "Design" && (
+            {isDesignStation(workOrder) && (
               <Button
                 fullWidth
                 size="xs"
@@ -1146,7 +1291,7 @@ function DepartmentQueue({
                 {workOrder.priority === "High" ? "Normal Priority" : "Mark High Priority"}
               </Button>
             )}
-            {isAdministrator && department === "Laser" && (
+            {isAdministrator && stationFor(workOrder) === "Laser" && (
               <Button fullWidth size="xs" variant="light" color="orange" leftSection={<IconRoute size={15} />} onClick={() => returnToDesign(workOrder)}>
                 Return to Design
               </Button>
@@ -1193,7 +1338,7 @@ function DepartmentQueue({
               Open Job
             </Button>
 
-            {department === "Design" && order?.design_status === "Awaiting Customer Approval" ? (
+            {isDesignStation(workOrder) && order?.design_status === "Awaiting Customer Approval" ? (
               isAdministrator ? (
                 <>
                   <Button color="orange" variant="light" onClick={() => returnDesignForChanges(workOrder)}>Changes Requested</Button>
@@ -1205,7 +1350,7 @@ function DepartmentQueue({
             ) : (
               <>
                 <Button color="red" variant="light" disabled={workOrder.status !== "Ready"} onClick={() => startWorkOrder(workOrder)}>Start</Button>
-                {department === "Design" ? (
+                {isDesignStation(workOrder) ? (
                   <>
                     <Button
                       color="green"
@@ -1239,11 +1384,11 @@ function DepartmentQueue({
     const customer = detail?.customer;
     const project = detail?.project;
     const order = detail?.order;
-    const designWork = department === "Design" ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
+    const designWork = (department === "Design" || unifiedArtwork) ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
     const customerName = project?.contact_name || getCustomerName(customer);
     const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
-    const designRank = department === "Design" && workOrder.status === "Ready"
+    const designRank = isDesignStation(workOrder) && workOrder.status === "Ready"
       ? getDesignPriority(workOrder, detail, hotTodayItems)
       : null;
 
@@ -1270,7 +1415,8 @@ function DepartmentQueue({
                 </Badge>
               )}
               <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
-              {department === "Design" && (
+              {unifiedArtwork && <Badge color="violet" variant="light">{workflowStage(workOrder)}</Badge>}
+              {isDesignStation(workOrder) && (
                 <Badge
                   color={order?.design_fee_required
                     ? (order?.design_fee_paid || order?.design_fee_status === "Paid" ? "green" : "orange")
@@ -1305,11 +1451,34 @@ function DepartmentQueue({
             </Text>
           </div>
 
+          {unifiedArtwork && (
+            <SimpleGrid cols={2} spacing="xs">
+              <Select
+                size="xs"
+                label="Stage"
+                data={SHOP_STATIONS}
+                value={stationFor(workOrder)}
+                disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(value) => changeArtworkStage(workOrder, value)}
+              />
+              <Select
+                size="xs"
+                label="Status"
+                data={artworkStatusOptions(workOrder)}
+                value={currentWorkflowStatus(workOrder)}
+                disabled={!isAdministrator || savingAction}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(value) => changeArtworkStatus(workOrder, value)}
+              />
+            </SimpleGrid>
+          )}
+
           <Progress value={job?.progress_percent || 0} color="red" size="sm" radius="xl" />
 
           <Stack gap={6}>
             <Text size="xs" c="dimmed" ta="center">Click the card to view files, notes, materials, and actions</Text>
-            {department === "Design" && (
+            {isDesignStation(workOrder) && (
               <Button
                 fullWidth
                 size="xs"
@@ -1337,7 +1506,7 @@ function DepartmentQueue({
                 Start
               </Button>
             )}
-            {workOrder.status === "In Progress" && department !== "Design" && (
+            {workOrder.status === "In Progress" && !isDesignStation(workOrder) && (
               <Button
                 fullWidth
                 size="xs"
@@ -1354,7 +1523,7 @@ function DepartmentQueue({
                 Complete
               </Button>
             )}
-            {workOrder.status === "In Progress" && department === "Design" && (
+            {workOrder.status === "In Progress" && isDesignStation(workOrder) && (
               <Button
                 fullWidth
                 size="xs"
@@ -1376,19 +1545,48 @@ function DepartmentQueue({
   return (
     <>
       <MWPageHeader
-        title={department === "Design" ? "Design Intake & Queue" : `${department} Queue`}
-        subtitle={department === "Design"
+        title={unifiedArtwork ? "Artwork Workflow" : department === "Design" ? "Design Intake & Queue" : `${department} Queue`}
+        subtitle={unifiedArtwork
+          ? "One place for every artwork job. Filter the list, then use the dropdowns to move the same job through Design, Laser, Prep, Showroom, pickup, shipping, and completion."
+          : department === "Design"
           ? "Add customer design work, track Kory's progress, and hold finished proofs for customer approval."
           : `Only work currently ready or in progress for ${department}.`}
-        buttonText={department === "Design" ? "Add Design Work" : "Production Control"}
-        onButtonClick={department === "Design" ? onCreateDesign : () => setPage("productionControl")}
+        buttonText={(department === "Design" || unifiedArtwork) ? "Add Artwork" : "Production Control"}
+        onButtonClick={(department === "Design" || unifiedArtwork) ? onCreateDesign : () => setPage("productionControl")}
       />
 
-      {department === "Design" && (
+      {unifiedArtwork ? (
+        <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="One job, one record">
+          Images, files, customer details, notes, and history stay attached to the original job. Changing Stage moves that job; changing Status records whether it is active, blocked, awaiting approval, waiting for pickup, shipped, or completed.
+        </Alert>
+      ) : department === "Design" && (
         <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="How design work moves">
           Add the customer request here. New artwork waits for the $50 design fee, Kory or the design team uploads the proof,
           an administrator records customer approval, and the approved job moves to Laser. Artwork already on file skips Design.
         </Alert>
+      )}
+
+      {unifiedArtwork && (
+        <Card withBorder radius="lg" p="md" mb="lg">
+          <Stack gap="sm">
+            <Group justify="space-between" align="flex-end" wrap="wrap">
+              <div>
+                <Text fw={800}>Filter by Stage</Text>
+                <Text size="sm" c="dimmed">Choose a department without opening a separate queue screen.</Text>
+              </div>
+              <Select
+                label="Artwork Stage"
+                data={["All Active Stages", ...SHOP_STATIONS, "Customer Approval", "Fulfillment", "Completed / Archive"]}
+                value={stageFilter}
+                onChange={(value) => {
+                  setStageFilter(value || "All Active Stages");
+                  setQueueFilter(value === "Completed / Archive" ? "Completed / Archive" : "All");
+                }}
+                style={{ minWidth: 260 }}
+              />
+            </Group>
+          </Stack>
+        </Card>
       )}
 
       <Card withBorder radius="lg" p="md" mb="lg">
@@ -1399,13 +1597,17 @@ function DepartmentQueue({
           </Stack>
           <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" style={{ flex: "1 1 520px" }}>
             {[
-              ["All", workOrders.length],
+              ["All", displayedWorkOrders.length],
               ["Ready", readyOrders.length],
               ["In Progress", inProgressOrders.length],
               ["Blocked", blockedOrders.length],
-              ...(department === "Design"
+              ...((department === "Design" || unifiedArtwork)
                 ? [["Customer Approval", awaitingApprovalOrders.length]]
                 : []),
+              ...(unifiedArtwork ? [
+                ["Fulfillment", fulfillmentOrders.length],
+                ["Completed / Archive", archivedOrders.length],
+              ] : []),
             ].map(([label, count]) => (
               <Button
                 key={label}
@@ -1451,7 +1653,7 @@ function DepartmentQueue({
             </MWSection>
           )}
 
-          {department === "Design" && (queueFilter === "All" || queueFilter === "Customer Approval") && (
+          {(department === "Design" || unifiedArtwork) && (queueFilter === "All" || queueFilter === "Customer Approval") && (
             <MWSection title="Customer Approval" subtitle={`${awaitingApprovalOrders.length} awaiting confirmation`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {awaitingApprovalOrders.length === 0 ? (
@@ -1459,6 +1661,22 @@ function DepartmentQueue({
                 ) : (
                   awaitingApprovalOrders.map(renderQueueCard)
                 )}
+              </SimpleGrid>
+            </MWSection>
+          )}
+
+          {unifiedArtwork && (queueFilter === "All" || queueFilter === "Fulfillment") && (
+            <MWSection title="Pickup, Shipping & Installation" subtitle={`${fulfillmentOrders.length} finished production item${fulfillmentOrders.length === 1 ? "" : "s"} awaiting fulfillment`}>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
+                {fulfillmentOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for fulfillment.</Text> : fulfillmentOrders.map(renderQueueCard)}
+              </SimpleGrid>
+            </MWSection>
+          )}
+
+          {unifiedArtwork && (queueFilter === "Completed / Archive") && (
+            <MWSection title="Completed Artwork Archive" subtitle={`${archivedOrders.length} completed item${archivedOrders.length === 1 ? "" : "s"}`}>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
+                {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map(renderQueueCard)}
               </SimpleGrid>
             </MWSection>
           )}

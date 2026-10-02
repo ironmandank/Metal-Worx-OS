@@ -111,9 +111,9 @@ const PRIMARY_NAV = [
     icon: IconAlertTriangle,
   },
   {
-    page: "quickTurnaround",
+    page: "designQueue",
     label: "Artwork",
-    fullLabel: "Hot Artwork",
+    fullLabel: "Artwork Workflow",
     icon: IconBolt,
   },
   {
@@ -320,48 +320,18 @@ const NAV_GROUPS = [
   {
     id: "stations",
     label: "Stations",
-    description: "Open the live queue for each shop station",
+    description: "Manage artwork from one workflow",
     icon: IconColumns,
     items: [
       {
         page: "designQueue",
-        label: "Design Intake & Queue",
+        label: "Artwork Workflow",
         icon: IconPalette,
       },
       {
         page: "imageToDxf",
         label: "Image to Laser DXF",
         icon: IconFileVector,
-      },
-      {
-        department: "Laser",
-        label: "Laser Queue",
-        icon: IconFlame,
-      },
-      {
-        department: "Welding",
-        label: "Welding Queue",
-        icon: IconTool,
-      },
-      {
-        department: "Prep",
-        label: "Prep Queue",
-        icon: IconTool,
-      },
-      {
-        department: "Paint/Powder",
-        label: "Paint / Powder",
-        icon: IconPalette,
-      },
-      {
-        department: "Assembly",
-        label: "Assembly Queue",
-        icon: IconPackage,
-      },
-      {
-        department: "Final QC / Showroom",
-        label: "Final QC / Showroom",
-        icon: IconShieldCheck,
       },
     ],
   },

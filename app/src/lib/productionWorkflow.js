@@ -90,6 +90,28 @@ export async function returnLaserWorkToDesign(workOrderId, actor = "", reason = 
   return data;
 }
 
+export async function moveArtworkToStation(workOrderId, station, actor = "", reason = "") {
+  const { data, error } = await supabase.rpc("mw_move_artwork_to_station", {
+    p_work_order_id: Number(workOrderId),
+    p_target_department: canonicalStation(station),
+    p_actor: String(actor || "").trim() || null,
+    p_reason: String(reason || "").trim() || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function setArtworkWorkflowStatus(workOrderId, status, actor = "", note = "") {
+  const { data, error } = await supabase.rpc("mw_set_artwork_workflow_status", {
+    p_work_order_id: Number(workOrderId),
+    p_workflow_status: String(status || "").trim(),
+    p_actor: String(actor || "").trim() || null,
+    p_note: String(note || "").trim() || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function releaseProject(projectId, actor = "") {
   const { data, error } = await supabase.rpc("mw_release_project_to_production", {
     p_project_id: Number(projectId),
