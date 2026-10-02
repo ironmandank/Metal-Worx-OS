@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   FileButton,
   Group,
   Image,
@@ -146,6 +147,9 @@ function DepartmentQueue({
   const [queueFilter, setQueueFilter] = useState("All");
   const [stageFilter, setStageFilter] = useState("All Active Stages");
   const [movingStageId, setMovingStageId] = useState(null);
+  const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState([]);
+  const [bulkStage, setBulkStage] = useState(null);
+  const [bulkMoving, setBulkMoving] = useState(false);
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [bypassTarget, setBypassTarget] = useState(null);
@@ -1102,6 +1106,64 @@ function DepartmentQueue({
     setQueueFilter(stage === "Completed / Archive" ? "Completed / Archive" : "All");
   }
 
+  function toggleWorkOrderSelection(workOrderId) {
+    setSelectedWorkOrderIds((current) => current.includes(workOrderId)
+      ? current.filter((id) => id !== workOrderId)
+      : [...current, workOrderId]);
+  }
+
+  function visibleSelectableOrders() {
+    if (queueFilter === "Ready") return readyOrders;
+    if (queueFilter === "In Progress") return inProgressOrders;
+    if (queueFilter === "Blocked") return blockedOrders;
+    if (queueFilter === "Customer Approval") return awaitingApprovalOrders;
+    if (queueFilter === "Waiting for Pickup") return waitingPickupOrders;
+    if (queueFilter === "Ready to Ship") return readyToShipOrders;
+    return displayedWorkOrders.filter((workOrder) => workflowStage(workOrder) !== "Completed / Archive");
+  }
+
+  async function moveSelectedArtwork() {
+    if (!bulkStage || bulkMoving || selectedWorkOrderIds.length === 0) return;
+    const selectedOrders = workOrders.filter((workOrder) =>
+      selectedWorkOrderIds.includes(workOrder.id) &&
+      workflowStage(workOrder) !== "Completed / Archive" &&
+      stationFor(workOrder) !== bulkStage
+    );
+    if (selectedOrders.length === 0) {
+      notifications.show({
+        title: "Nothing to Move",
+        message: "The selected artwork is already in that stage or is archived.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setBulkMoving(true);
+    const results = await Promise.allSettled(selectedOrders.map((workOrder) =>
+      moveArtworkToStation(
+        workOrder.id,
+        bulkStage,
+        activeUser,
+        `Bulk moved from ${stationFor(workOrder)} to ${bulkStage} from the Artwork Workflow.`
+      )
+    ));
+    const failed = results.filter((result) => result.status === "rejected");
+    const movedCount = results.length - failed.length;
+    notifications.show({
+      title: failed.length ? "Bulk Move Partially Completed" : "Artwork Moved",
+      message: failed.length
+        ? `${movedCount} moved to ${bulkStage}; ${failed.length} could not be moved.`
+        : `${movedCount} artwork job${movedCount === 1 ? " was" : "s were"} moved to ${bulkStage}.`,
+      color: failed.length ? "orange" : "green",
+    });
+    setSelectedWorkOrderIds([]);
+    setBulkStage(null);
+    setStageFilter(bulkStage);
+    setQueueFilter("All");
+    await loadQueue();
+    setBulkMoving(false);
+  }
+
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
   function renderWorkOrder(workOrder) {
@@ -1450,6 +1512,14 @@ function DepartmentQueue({
         <Stack gap="sm">
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Group gap={6} wrap="wrap">
+              {unifiedArtwork && isAdministrator && workflowStage(workOrder) !== "Completed / Archive" && (
+                <Checkbox
+                  aria-label={`Select ${workOrder.work_order_number || "artwork"}`}
+                  checked={selectedWorkOrderIds.includes(workOrder.id)}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={() => toggleWorkOrderSelection(workOrder.id)}
+                />
+              )}
               {designRank && (
                 <Badge color={designRank.color} variant="filled">
                   #{index + 1} · {designRank.reason}
@@ -1637,6 +1707,50 @@ function DepartmentQueue({
               })}
             </SimpleGrid>
           </Stack>
+        </Card>
+      )}
+
+      {unifiedArtwork && isAdministrator && (
+        <Card withBorder radius="lg" p="md" mb="lg">
+          <Group justify="space-between" align="flex-end" wrap="wrap">
+            <Stack gap={2}>
+              <Text fw={800}>Move Multiple Artwork Jobs</Text>
+              <Text size="sm" c="dimmed">Select cards below, choose the new stage, and move them together.</Text>
+            </Stack>
+            <Group align="flex-end" wrap="wrap">
+              <Button
+                variant="light"
+                color="gray"
+                onClick={() => setSelectedWorkOrderIds(visibleSelectableOrders().map((workOrder) => workOrder.id))}
+              >
+                Select All Shown
+              </Button>
+              <Button
+                variant="subtle"
+                color="gray"
+                disabled={selectedWorkOrderIds.length === 0}
+                onClick={() => setSelectedWorkOrderIds([])}
+              >
+                Clear
+              </Button>
+              <Select
+                label={`${selectedWorkOrderIds.length} selected`}
+                placeholder="Choose destination"
+                data={SHOP_STATIONS}
+                value={bulkStage}
+                onChange={setBulkStage}
+                style={{ minWidth: 220 }}
+              />
+              <Button
+                color="red"
+                loading={bulkMoving}
+                disabled={!bulkStage || selectedWorkOrderIds.length === 0}
+                onClick={moveSelectedArtwork}
+              >
+                Move Selected
+              </Button>
+            </Group>
+          </Group>
         </Card>
       )}
 
