@@ -63,6 +63,8 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
   const [commitmentImages, setCommitmentImages] = useState([]);
   const [commitmentContacts, setCommitmentContacts] = useState([]);
   const [uploadingImages, setUploadingImages] = useState("");
+  const [fulfillmentItem, setFulfillmentItem] = useState(null);
+  const [fulfillmentSaving, setFulfillmentSaving] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -113,12 +115,31 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     .filter((order) => !order.showOnHuddle && !order.dueDate && Number(order.businessDaysInShop || 0) < 12)
     .sort((left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0));
   const agingSoon = regularArtwork.filter((order) => Number(order.businessDaysInShop || 0) >= 10).length;
-  const overdue = active.filter((item) => item.timing_status === "Overdue").length;
+  const overdue = active.filter((item) => item.timing_status === "Overdue" && !isWaitingForPickup(item)).length;
   const dueToday = active.filter((item) => ["Due Today", "Due Soon"].includes(item.timing_status)).length;
   const blocked = active.filter((item) => item.status === "Blocked" || item.materials_status === "Blocked").length;
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function fulfillmentState(item) {
+    const notes = String(item?.notes || "");
+    if (notes.includes("[Fulfillment: Waiting for Customer Pickup]")) return "Waiting for Customer Pickup";
+    if (notes.includes("[Fulfillment: Completed & Shipped]")) return "Completed & Shipped";
+    return "";
+  }
+
+  function isWaitingForPickup(item) {
+    return fulfillmentState(item) === "Waiting for Customer Pickup";
+  }
+
+  function withFulfillmentNote(notes, label) {
+    const cleaned = String(notes || "")
+      .replace(/\n?\[Fulfillment: Waiting for Customer Pickup\]/g, "")
+      .replace(/\n?\[Fulfillment: Completed & Shipped\]/g, "")
+      .trim();
+    return [cleaned, `[Fulfillment: ${label}]`].filter(Boolean).join("\n");
   }
 
   function imagesFor(commitmentId) {
@@ -257,6 +278,49 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     }
   }
 
+  async function updateFulfillment(item, label) {
+    if (!item || fulfillmentSaving) return;
+    setFulfillmentSaving(true);
+    try {
+      const completed = label === "Completed & Shipped";
+      const { error } = await supabase.rpc("mw_save_quick_turnaround_commitment", {
+        p_id: item.id,
+        p_source_type: item.source_type || "Manual",
+        p_source_id: item.source_id || null,
+        p_source_number: item.source_number || null,
+        p_title: item.title,
+        p_customer_name: item.customer_name || null,
+        p_description: item.description || null,
+        p_priority: item.priority || "Urgent",
+        p_status: completed ? "Completed" : "In Progress",
+        p_required_by: item.required_by || null,
+        p_assigned_to: item.assigned_to || null,
+        p_department: completed ? "Office" : "Showroom",
+        p_materials_required: Boolean(item.materials_required),
+        p_materials_status: item.materials_status || "Not Required",
+        p_reason: item.reason || null,
+        p_notes: withFulfillmentNote(item.notes, label),
+        p_created_by: activeUser || item.created_by || null,
+        p_date_received: item.date_received || null,
+        p_hot_reason_category: item.hot_reason_category || "Deadline",
+      });
+      if (error) throw error;
+      notifications.show({
+        title: completed ? "Completed & Shipped" : "Waiting for Customer Pickup",
+        message: completed
+          ? `${item.title} was completed and moved to the Archive.`
+          : `${item.title} will remain visible until the customer picks it up.`,
+        color: "green",
+      });
+      setFulfillmentItem(null);
+      await loadData();
+    } catch (error) {
+      notifications.show({ title: "Fulfillment Status Not Saved", message: error.message, color: "red" });
+    } finally {
+      setFulfillmentSaving(false);
+    }
+  }
+
   async function toggleHuddleOrder(order, checked) {
     setSavingHuddleOrder(String(order.id));
     const { error } = await supabase.from("customer_orders").update({ show_on_huddle: checked }).eq("id", order.id);
@@ -293,21 +357,29 @@ function QuickTurnaroundDashboard({ setPage, setSelectedCustomerOrder, activeUse
     </MWPanel>
     <MWPanel title="Hot Items This Week" subtitle={`${filtered.length + promotedArtwork.length} selected, dated, or aging item${filtered.length + promotedArtwork.length === 1 ? "" : "s"} shown`} icon={IconClock}>
       {promotedArtwork.length > 0 && <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md" mb="md">{promotedArtwork.map((item) => { const aged=Number(item.businessDaysInShop||0)>=12; const automatic=Boolean(item.dueDate)||aged; return <Paper key={`promoted-${item.id}`} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.dueDate?"red":aged?"orange":"blue"}>{item.dueDate?"DATED ORDER":aged?"12+ BUSINESS DAYS":"SELECTED FOR HUDDLE"}</Badge>{!automatic && <Switch checked={Boolean(item.showOnHuddle)} disabled={savingHuddleOrder===String(item.id)} label="Show on TV Huddle" onChange={(event)=>toggleHuddleOrder(item,event.currentTarget.checked)}/>}</Group><Title order={3}>{item.title}</Title><Text c="dimmed">{item.customer} · {item.department}</Text><Group justify="space-between"><Text fw={900} c={aged?"red.4":"gray.1"}>{item.businessDaysInShop} business days</Text><Text>{item.dueDate?`Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}`:item.owner}</Text></Group><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
-      {!filtered.length ? <Alert color="gray" icon={<IconClock size={19}/>}>No commitments match the current filters.</Alert> : <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">{filtered.map((item) => <Paper key={item.id} p="lg" radius="lg" style={{ background: "rgba(255,255,255,.025)", border: `1px solid ${item.timing_status === "Overdue" ? "rgba(250,82,82,.55)" : "rgba(255,255,255,.08)"}` }}><Stack gap="md">
-        <Group justify="space-between" align="flex-start" wrap="nowrap"><Stack gap={4}><Group gap="xs"><Badge color={priorityColor(item.priority)}>{item.priority}</Badge><Badge color={timingColor(item.timing_status)} variant="light">{item.timing_status}</Badge><Badge color="gray" variant="light">{item.source_type}</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed" size="sm">{[item.customer_name, item.source_number].filter(Boolean).join(" · ") || "Internal Metal Worx commitment"}</Text></Stack><ThemeIcon size={48} radius="lg" color={timingColor(item.timing_status)} variant="light"><IconBolt size={24}/></ThemeIcon></Group>
-        <Paper p="sm" withBorder><Group justify="space-between"><Group gap="xs"><IconClock size={18}/><Text fw={800}>{item.required_by ? `Required ${formatDue(item.required_by)}` : "Completion date not set"}</Text></Group><Text fw={900} c={item.timing_status === "Overdue" ? "red.4" : "gray.1"}>{!item.required_by ? "DATE OPEN" : item.timing_status === "Overdue" ? "PAST DUE" : `${Math.round(Number(item.hours_remaining || 0))} hrs`}</Text></Group></Paper>
+      {!filtered.length ? <Alert color="gray" icon={<IconClock size={19}/>}>No commitments match the current filters.</Alert> : <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">{filtered.map((item) => <Paper key={item.id} p="lg" radius="lg" style={{ background: "rgba(255,255,255,.025)", border: `1px solid ${item.timing_status === "Overdue" && !isWaitingForPickup(item) ? "rgba(250,82,82,.55)" : "rgba(255,255,255,.08)"}` }}><Stack gap="md">
+        <Group justify="space-between" align="flex-start" wrap="nowrap"><Stack gap={4}><Group gap="xs"><Badge color={priorityColor(item.priority)}>{item.priority}</Badge><Badge color={isWaitingForPickup(item) ? "green" : timingColor(item.timing_status)} variant="light">{isWaitingForPickup(item) ? "WAITING FOR PICKUP" : item.timing_status}</Badge><Badge color="gray" variant="light">{item.source_type}</Badge></Group><Title order={3}>{item.title}</Title><Text c="dimmed" size="sm">{[item.customer_name, item.source_number].filter(Boolean).join(" · ") || "Internal Metal Worx commitment"}</Text></Stack><ThemeIcon size={48} radius="lg" color={isWaitingForPickup(item) ? "green" : timingColor(item.timing_status)} variant="light"><IconBolt size={24}/></ThemeIcon></Group>
+        <Paper p="sm" withBorder><Group justify="space-between"><Group gap="xs"><IconClock size={18}/><Text fw={800}>{isWaitingForPickup(item) ? "Production complete — awaiting customer pickup" : item.required_by ? `Required ${formatDue(item.required_by)}` : "Completion date not set"}</Text></Group><Text fw={900} c={item.timing_status === "Overdue" && !isWaitingForPickup(item) ? "red.4" : isWaitingForPickup(item) ? "green.4" : "gray.1"}>{isWaitingForPickup(item) ? "READY" : !item.required_by ? "DATE OPEN" : item.timing_status === "Overdue" ? "PAST DUE" : `${Math.round(Number(item.hours_remaining || 0))} hrs`}</Text></Group></Paper>
         <SimpleGrid cols={{ base: 2, sm: 4 }}><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>ASSIGNED TO</Text><Text fw={750}>{item.assigned_to || "Unassigned"}</Text></Stack><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>CURRENT STATION</Text><Text fw={750}>{item.department || "Not assigned"}</Text></Stack><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>DAYS IN SHOP</Text><Text fw={900} c={Number(item.days_in_shop || 0) >= 14 ? "red.4" : "gray.1"}>{item.days_in_shop || 0}</Text></Stack><Stack gap={2}><Text size="xs" c="dimmed" fw={800}>WHY HOT</Text><Badge w="fit-content" color={item.hot_reason_category === "Aging" ? "orange" : "red"} variant="light">{item.hot_reason_category || "Deadline"}</Badge></Stack></SimpleGrid>
         {(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}
         {imagesFor(item.id).length > 0 && <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={110} fit="cover" radius="md"/>)}</SimpleGrid>}
         {item.description && <Text size="sm">{item.description}</Text>}
-        {!readOnly && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm"><Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Artwork</Button><FileButton onChange={(files) => uploadImages(item.id, files)} accept="image/jpeg,image/png,image/webp" multiple>{(props) => <Button {...props} fullWidth variant="light" color="gray" loading={uploadingImages === String(item.id)} leftSection={<IconPhoto size={17}/>}>Add Images</Button>}</FileButton>{item.status === "Open" && <Button fullWidth color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button fullWidth color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button fullWidth color="green" leftSection={<IconArchive size={17}/>} onClick={() => updateStatus(item.id, "Completed")}>Complete & Archive</Button>}</SimpleGrid>}
+        {!readOnly && <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm"><Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Artwork</Button><FileButton onChange={(files) => uploadImages(item.id, files)} accept="image/jpeg,image/png,image/webp" multiple>{(props) => <Button {...props} fullWidth variant="light" color="gray" loading={uploadingImages === String(item.id)} leftSection={<IconPhoto size={17}/>}>Add Images</Button>}</FileButton>{item.status === "Open" && <Button fullWidth color="blue" variant="light" leftSection={<IconCheck size={17}/>} onClick={() => updateStatus(item.id, "Acknowledged")}>Acknowledge</Button>}{["Open", "Acknowledged"].includes(item.status) && <Button fullWidth color="orange" variant="light" leftSection={<IconPlayerPlay size={17}/>} onClick={() => updateStatus(item.id, "In Progress")}>Start Work</Button>}{!["Completed", "Cancelled"].includes(item.status) && <Button fullWidth color="green" leftSection={<IconPackage size={17}/>} onClick={() => setFulfillmentItem(item)}>Finish / Fulfillment</Button>}</SimpleGrid>}
       </Stack></Paper>)}</SimpleGrid>}
     </MWPanel>
     </> : viewMode === "orders" ? <MWPanel title="Artwork Orders" subtitle="Choose undated orders for Hot Items; dated and 12-business-day orders appear automatically" icon={IconPackage}>
       {!unlinkedArtwork.length ? <Alert color="gray" icon={<IconPackage size={19}/>}>No artwork orders are waiting.</Alert> : <SimpleGrid cols={{ base:1, md:2, xl:3 }} spacing="md">{unlinkedArtwork.sort((left,right)=>Number(right.businessDaysInShop||0)-Number(left.businessDaysInShop||0)).map((item) => { const age=Number(item.businessDaysInShop||0); const automatic=Boolean(item.dueDate)||age>=12; return <Paper key={item.id} p="md" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.dueDate?"red":age>=12?"orange":item.showOnHuddle?"blue":age>=10?"orange":"gray"}>{item.dueDate?"DATED":age>=12?"AGING":item.showOnHuddle?"ON HUDDLE":age>=10?"AGING SOON":"REGULAR"}</Badge><Text fw={900} c={age>=10?"orange.4":"gray.1"}>{age} business day{age===1?"":"s"}</Text></Group><Title order={4}>{item.title}</Title><Text size="sm" c="dimmed">{item.customer}</Text><Switch checked={automatic||Boolean(item.showOnHuddle)} disabled={automatic||savingHuddleOrder===String(item.id)} label={automatic?item.dueDate?"Automatically shown because it has a date":"Automatically shown at 12 business days":"Show on Hot Items This Week"} onChange={(event)=>toggleHuddleOrder(item,event.currentTarget.checked)}/><SimpleGrid cols={2}><div><Text size="xs" c="dimmed" fw={800}>STATION</Text><Text size="sm" fw={750}>{item.department}</Text></div><div><Text size="xs" c="dimmed" fw={800}>LEAD</Text><Text size="sm" fw={750}>{item.owner}</Text></div></SimpleGrid><Text size="sm">{item.dueDate ? `Requested ${new Date(`${item.dueDate}T12:00:00`).toLocaleDateString()}` : "No requested date"}</Text><Button variant="light" color="gray" onClick={() => { setSelectedCustomerOrder?.({ id:item.id }); setPage("customerOrderDetails"); }}>Open Order</Button></Stack></Paper>})}</SimpleGrid>}
     </MWPanel> : <MWPanel title="Artwork Archive" subtitle="Completed and cancelled artwork retained with its contact details, notes, and images" icon={IconArchive}>
-      {!archived.length ? <Alert color="gray" icon={<IconArchive size={19}/>}>No completed artwork has been archived yet.</Alert> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{archived.map((item) => <Paper key={item.id} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.status === "Completed" ? "green" : "gray"}>{item.status}</Badge><Text size="xs" c="dimmed">{item.completed_at ? new Date(item.completed_at).toLocaleDateString() : "Archived"}</Text></Group><Title order={4}>{item.title}</Title><Text fw={750}>{item.customer_name}</Text>{(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}{imagesFor(item.id).length > 0 && <SimpleGrid cols={2} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={120} fit="cover" radius="md"/>)}</SimpleGrid>}{item.description && <Text size="sm">{item.description}</Text>}{item.notes && <Text size="sm" c="dimmed">{item.notes}</Text>}{!readOnly && <Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Archived Artwork</Button>}</Stack></Paper>)}</SimpleGrid>}
+      {!archived.length ? <Alert color="gray" icon={<IconArchive size={19}/>}>No completed artwork has been archived yet.</Alert> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{archived.map((item) => <Paper key={item.id} p="lg" radius="lg" withBorder><Stack gap="sm"><Group justify="space-between"><Badge color={item.status === "Completed" ? "green" : "gray"}>{fulfillmentState(item) || item.status}</Badge><Text size="xs" c="dimmed">{item.completed_at ? new Date(item.completed_at).toLocaleDateString() : "Archived"}</Text></Group><Title order={4}>{item.title}</Title><Text fw={750}>{item.customer_name}</Text>{(contactFor(item.id).customer_phone || contactFor(item.id).customer_email) && <Text size="sm" c="dimmed">{[contactFor(item.id).customer_phone, contactFor(item.id).customer_email].filter(Boolean).join(" · ")}</Text>}{imagesFor(item.id).length > 0 && <SimpleGrid cols={2} spacing="xs">{imagesFor(item.id).slice(0, 4).map((image) => <Image key={image.id} src={image.image_url} alt={image.caption || item.title} h={120} fit="cover" radius="md"/>)}</SimpleGrid>}{item.description && <Text size="sm">{item.description}</Text>}{item.notes && <Text size="sm" c="dimmed">{item.notes.replace(/\n?\[Fulfillment: (Waiting for Customer Pickup|Completed & Shipped)\]/g, "")}</Text>}{!readOnly && <Button fullWidth variant="light" color="gray" leftSection={<IconEdit size={17}/>} onClick={() => openArtworkEditor(item)}>Edit Archived Artwork</Button>}</Stack></Paper>)}</SimpleGrid>}
     </MWPanel>}
+
+    <Modal opened={fulfillmentItem !== null} onClose={() => !fulfillmentSaving && setFulfillmentItem(null)} title="Finish / Fulfillment Status" centered size="md"><Stack>
+      <Text fw={800}>{fulfillmentItem?.title}</Text>
+      <Text c="dimmed">Choose what happened after production. Waiting items stay visible; shipped items move to the Archive.</Text>
+      <Button size="lg" color="blue" variant="light" loading={fulfillmentSaving} leftSection={<IconClock size={19}/>} onClick={() => updateFulfillment(fulfillmentItem, "Waiting for Customer Pickup")}>Waiting for Customer Pickup</Button>
+      <Button size="lg" color="green" loading={fulfillmentSaving} leftSection={<IconArchive size={19}/>} onClick={() => updateFulfillment(fulfillmentItem, "Completed & Shipped")}>Completed & Shipped</Button>
+      <Button variant="subtle" color="gray" disabled={fulfillmentSaving} onClick={() => setFulfillmentItem(null)}>Cancel</Button>
+    </Stack></Modal>
 
     <Modal opened={modalOpen} onClose={() => { setModalOpen(false); setEditingId(null); setPendingImages([]); setFormAttempted(false); }} title={editingId ? "Edit Hot Artwork" : "Add Hot Artwork"} centered size="lg"><Stack>
       <Alert color="blue" variant="light">Only the artwork name and customer are required. Dates, assignment, station, and notes can be added later.</Alert>
