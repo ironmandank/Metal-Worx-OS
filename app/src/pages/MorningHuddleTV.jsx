@@ -36,6 +36,15 @@ const styles = `
   .tv-kpi span { display:flex; width:100%; min-height:48px; align-items:flex-start; justify-content:center; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
   .tv-kpi strong { display:flex; min-height:58px; margin-top:auto; align-items:center; justify-content:center; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
+  .tv-pipeline { margin-top:14px; padding:14px; border:1px solid #354047; border-radius:10px; background:#10161a; }
+  .tv-pipeline-head { display:flex; align-items:center; gap:9px; margin-bottom:11px; color:#f6f7f8; font-size:clamp(16px,1.15vw,21px); font-weight:900; text-transform:uppercase; }
+  .tv-pipeline-head svg { color:#ff3445; }
+  .tv-pipeline-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+  .tv-pipeline-stage { display:flex; min-width:0; min-height:64px; padding:9px 11px; border:1px solid #343e45; border-radius:8px; background:#171e23; align-items:center; justify-content:space-between; gap:8px; }
+  .tv-pipeline-stage span { color:#cbd2d7; font-size:12px; font-weight:900; line-height:1.15; text-transform:uppercase; }
+  .tv-pipeline-stage strong { color:#fff; font-size:28px; line-height:1; }
+  .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
+  .tv-pipeline-stage.attention strong { color:#ff5965; }
   .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:stretch; }
   .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
@@ -60,7 +69,7 @@ const styles = `
   .tv-workload.gray { color:#e1e5e8; background:#374151; }
   .tv-empty { padding:28px 16px; color:#8c979f; font-size:18px; text-align:center; }
   .tv-foot { margin-top:12px; color:#76828a; font-size:12px; text-align:center; text-transform:uppercase; letter-spacing:.15em; }
-  @media(max-width:1400px){ .tv-kpis{grid-template-columns:repeat(3,1fr)} .tv-grid{grid-template-columns:1fr 1fr} .tv-panel,.tv-panel.tv-production,.tv-panel.tv-field{grid-column:span 1}.tv-panel.tv-hot-artwork{grid-column:1 / -1} }
+  @media(max-width:1400px){ .tv-kpis{grid-template-columns:repeat(3,1fr)} .tv-pipeline-grid{grid-template-columns:repeat(3,minmax(0,1fr))} .tv-grid{grid-template-columns:1fr 1fr} .tv-panel,.tv-panel.tv-production,.tv-panel.tv-field{grid-column:span 1}.tv-panel.tv-hot-artwork{grid-column:1 / -1} }
   @media(max-width:700px){
     .tv-board{width:100%;padding:8px;overflow-x:hidden}
     .tv-head{align-items:stretch;flex-direction:column;padding:13px}
@@ -68,6 +77,7 @@ const styles = `
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
     .tv-summary{padding:10px 12px}.tv-summary p{font-size:15px;line-height:1.3}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
+    .tv-pipeline{padding:11px}.tv-pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.tv-pipeline-stage{min-height:58px;padding:8px}.tv-pipeline-stage span{font-size:11px}.tv-pipeline-stage strong{font-size:24px}
     .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-list li{padding:12px;font-size:15px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
@@ -145,6 +155,7 @@ export default function MorningHuddleTV({ setPage }) {
   const field = (huddle.todayFieldWork || []).slice(0,6);
   const blockers = [...(huddle.blockers || []), ...blockerTasks.map((b) => ({ title: b.blocker || "Blocked checklist task", detail: "Checklist blocker" }))].slice(0,6);
   const shopWorkload = (huddle.shopWorkload || []).filter((item) => Number(item.count || 0) > 0);
+  const artworkPipeline = huddle.artworkPipeline || [];
 
   async function fullscreen() { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); else await document.exitFullscreen(); }
 
@@ -162,6 +173,19 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-kpi warn"><span>Open Site Visits</span><strong>{siteVisits.length}</strong></div>
       <div className="tv-kpi good"><span>Field Today</span><strong>{summary.todayFieldWork || 0}</strong></div>
       <div className="tv-kpi danger"><span>Needs Attention</span><strong>{Number(summary.blockers || blockers.length) + Number(summary.overdueActions || 0)}</strong></div>
+    </section>
+    <section className="tv-pipeline">
+      <div className="tv-pipeline-head"><IconClipboardCheck/> Artwork Pipeline Overview</div>
+      <div className="tv-pipeline-grid">
+        {artworkPipeline.map((stage) => (
+          <div
+            className={`tv-pipeline-stage ${["Customer Approval", "Waiting for Pickup", "Ready to Ship"].includes(stage.name) && Number(stage.count || 0) > 0 ? "attention" : ""}`}
+            key={stage.name}
+          >
+            <span>{stage.name}</span><strong>{stage.count || 0}</strong>
+          </div>
+        ))}
+      </div>
     </section>
     <section className="tv-grid">
       <div className="tv-panel tv-hot-artwork"><h2><IconClipboardCheck/> Hot Items This Week</h2>{priorities.length ? <ul className="tv-list">{priorities.map((x,i)=><li key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.owner)} · {text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop · {text(x.hotReasonCategory,"Deadline")} · {text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></li>)}</ul>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}</div>

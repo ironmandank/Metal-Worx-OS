@@ -1609,6 +1609,60 @@ export async function getDashboardData() {
       };
     });
 
+  const productionJobMap = new Map(
+    productionJobs.map((job) => [String(job.id), job])
+  );
+  const customerOrderMap = new Map(
+    customerOrders.map((order) => [String(order.id), order])
+  );
+  const artworkRoutes = Object.values(
+    workOrders
+      .filter((workOrder) => workOrder.is_active !== false)
+      .reduce((routes, workOrder) => {
+        const key = String(workOrder.production_job_id || workOrder.id);
+        routes[key] = routes[key] || [];
+        routes[key].push(workOrder);
+        return routes;
+      }, {})
+  ).filter((route) => route.some((workOrder) => getCanonicalShopStage(workOrder) === "Design"));
+
+  const artworkPipelineStages = [
+    ...departmentStages,
+    "Customer Approval",
+    "Waiting for Pickup",
+    "Ready to Ship",
+  ];
+  const artworkPipelineCounts = Object.fromEntries(
+    artworkPipelineStages.map((stage) => [stage, 0])
+  );
+
+  artworkRoutes.forEach((route) => {
+    const representative = route.find((workOrder) =>
+      ["ready", "in progress", "blocked", "on hold"].includes(normalizeStatus(workOrder.status))
+    ) || [...route].reverse().find((workOrder) => isClosedStatus(workOrder.status));
+    if (!representative) return;
+
+    const job = productionJobMap.get(String(representative.production_job_id));
+    const order = job?.customer_order_id
+      ? customerOrderMap.get(String(job.customer_order_id))
+      : null;
+    if (isClosedStatus(order?.status) || order?.fulfillment_completed) return;
+
+    let stage = getCanonicalShopStage(representative);
+    if (normalizeStatus(order?.status) === "ready for pickup") stage = "Waiting for Pickup";
+    else if (["ready to ship", "ready for installation"].includes(normalizeStatus(order?.status))) stage = "Ready to Ship";
+    else if (normalizeStatus(order?.design_status) === "awaiting customer approval") stage = "Customer Approval";
+
+    if (stage && Object.prototype.hasOwnProperty.call(artworkPipelineCounts, stage)) {
+      artworkPipelineCounts[stage] += 1;
+    }
+  });
+
+  const artworkPipeline = artworkPipelineStages.map((name) => ({
+    name,
+    count: artworkPipelineCounts[name],
+  }));
+
   /* =====================================================
      DAILY ATTENTION
   ===================================================== */
@@ -2104,6 +2158,8 @@ export async function getDashboardData() {
     projectHealth,
 
     shopWorkload: shopFlow,
+
+    artworkPipeline,
 
     todayFocus,
 

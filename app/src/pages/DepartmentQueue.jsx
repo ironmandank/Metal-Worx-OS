@@ -286,11 +286,11 @@ function DepartmentQueue({
       notifications.show({ title: "Artwork Status Updated", message: `${nextStatus} is now shown everywhere this job appears.`, color: "green" });
       setDetailTarget(null);
       if (nextStatus === "Waiting for Customer Pickup") {
-        setStageFilter("All Active Stages");
-        setQueueFilter("Waiting for Pickup");
+        setStageFilter("Waiting for Pickup");
+        setQueueFilter("All");
       } else if (nextStatus === "Ready to Ship") {
-        setStageFilter("All Active Stages");
-        setQueueFilter("Ready to Ship");
+        setStageFilter("Ready to Ship");
+        setQueueFilter("All");
       } else if (["Completed — Picked Up", "Completed — Shipped"].includes(nextStatus)) {
         setStageFilter("Completed / Archive");
         setQueueFilter("Completed / Archive");
@@ -1033,7 +1033,8 @@ function DepartmentQueue({
   function workflowStage(workOrder) {
     const order = jobDetails[workOrder.production_job_id]?.order;
     if (order?.status === "Completed" || order?.fulfillment_completed) return "Completed / Archive";
-    if (["Ready for Pickup", "Ready to Ship", "Ready for Installation"].includes(order?.status)) return "Fulfillment";
+    if (order?.status === "Ready for Pickup") return "Waiting for Pickup";
+    if (["Ready to Ship", "Ready for Installation"].includes(order?.status)) return "Ready to Ship";
     if (order?.design_status === "Awaiting Customer Approval") return "Customer Approval";
     return stationFor(workOrder);
   }
@@ -1048,12 +1049,16 @@ function DepartmentQueue({
   }, [jobDetails, stageFilter, unifiedArtwork, workOrders]);
 
   const readyOrders = useMemo(() => {
-    const ready = displayedWorkOrders.filter((workOrder) => workOrder.status === "Ready" && !["Customer Approval", "Fulfillment", "Completed / Archive"].includes(workflowStage(workOrder)));
+    const ready = displayedWorkOrders.filter((workOrder) => workOrder.status === "Ready" && !["Customer Approval", "Waiting for Pickup", "Ready to Ship", "Completed / Archive"].includes(workflowStage(workOrder)));
     return (department === "Design" || unifiedArtwork)
       ? sortDesignQueue(ready, jobDetails, hotTodayItems)
       : ready;
   }, [department, displayedWorkOrders, hotTodayItems, jobDetails, unifiedArtwork]);
 
+  const allAwaitingApprovalOrders = workOrders.filter((workOrder) => {
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    return (department === "Design" || unifiedArtwork) && order?.design_status === "Awaiting Customer Approval";
+  });
   const awaitingApprovalOrders = displayedWorkOrders.filter((workOrder) => {
     const order = jobDetails[workOrder.production_job_id]?.order;
     return (department === "Design" || unifiedArtwork) && order?.design_status === "Awaiting Customer Approval";
@@ -1071,6 +1076,28 @@ function DepartmentQueue({
   const waitingPickupOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Waiting for Customer Pickup");
   const readyToShipOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Ready to Ship");
   const archivedOrders = workOrders.filter((workOrder) => workflowStage(workOrder) === "Completed / Archive");
+  const activeArtworkOrders = workOrders.filter((workOrder) => workflowStage(workOrder) !== "Completed / Archive");
+  const stageOverview = [
+    ["All Active", activeArtworkOrders.length],
+    ...SHOP_STATIONS.map((stage) => [
+      stage,
+      workOrders.filter((workOrder) => workflowStage(workOrder) === stage).length,
+    ]),
+    ["Customer Approval", allAwaitingApprovalOrders.length],
+    ["Waiting for Pickup", waitingPickupOrders.length],
+    ["Ready to Ship", readyToShipOrders.length],
+    ["Completed / Archive", archivedOrders.length],
+  ];
+
+  function selectStageOverview(stage) {
+    if (stage === "All Active") {
+      setStageFilter("All Active Stages");
+      setQueueFilter("All");
+      return;
+    }
+    setStageFilter(stage);
+    setQueueFilter(stage === "Completed / Archive" ? "Completed / Archive" : "All");
+  }
 
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
 
@@ -1580,22 +1607,32 @@ function DepartmentQueue({
       {unifiedArtwork && (
         <Card withBorder radius="lg" p="md" mb="lg">
           <Stack gap="sm">
-            <Group justify="space-between" align="flex-end" wrap="wrap">
-              <div>
-                <Text fw={800}>Filter by Stage</Text>
-                <Text size="sm" c="dimmed">Choose a department without opening a separate queue screen.</Text>
-              </div>
-              <Select
-                label="Artwork Stage"
-                data={["All Active Stages", ...SHOP_STATIONS, "Customer Approval", "Fulfillment", "Completed / Archive"]}
-                value={stageFilter}
-                onChange={(value) => {
-                  setStageFilter(value || "All Active Stages");
-                  setQueueFilter(value === "Completed / Archive" ? "Completed / Archive" : "All");
-                }}
-                style={{ minWidth: 260 }}
-              />
-            </Group>
+            <div>
+              <Text fw={800}>Artwork Pipeline</Text>
+              <Text size="sm" c="dimmed">Live totals by stage. Select a stage to see only that work.</Text>
+            </div>
+            <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
+              {stageOverview.map(([label, count]) => {
+                const selected = label === "All Active"
+                  ? stageFilter === "All Active Stages" && queueFilter === "All"
+                  : stageFilter === label;
+                return (
+                  <Button
+                    key={label}
+                    size="sm"
+                    color={label === "Completed / Archive" ? "gray" : "red"}
+                    variant={selected ? "filled" : "light"}
+                    h="auto"
+                    mih={42}
+                    py={8}
+                    styles={{ label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center" } }}
+                    onClick={() => selectStageOverview(label)}
+                  >
+                    {label} ({count})
+                  </Button>
+                );
+              })}
+            </SimpleGrid>
           </Stack>
         </Card>
       )}
@@ -1603,8 +1640,8 @@ function DepartmentQueue({
       <Card withBorder radius="lg" p="md" mb="lg">
         <Group justify="space-between" align="center" wrap="wrap">
           <Stack gap={2}>
-            <Text fw={800}>Queue View</Text>
-            <Text size="sm" c="dimmed">Focus the station team on the work that needs attention now.</Text>
+            <Text fw={800}>{unifiedArtwork ? "Work Status" : "Queue View"}</Text>
+            <Text size="sm" c="dimmed">{unifiedArtwork ? "Narrow the selected stage by its current work status." : "Focus the station team on the work that needs attention now."}</Text>
           </Stack>
           <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" style={{ flex: "1 1 520px" }}>
             {[
@@ -1612,14 +1649,9 @@ function DepartmentQueue({
               ["Ready", readyOrders.length],
               ["In Progress", inProgressOrders.length],
               ["Blocked", blockedOrders.length],
-              ...((department === "Design" || unifiedArtwork)
+              ...((department === "Design" && !unifiedArtwork)
                 ? [["Customer Approval", awaitingApprovalOrders.length]]
                 : []),
-              ...(unifiedArtwork ? [
-                ["Waiting for Pickup", waitingPickupOrders.length],
-                ["Ready to Ship", readyToShipOrders.length],
-                ["Completed / Archive", archivedOrders.length],
-              ] : []),
             ].map(([label, count]) => (
               <Button
                 key={label}
