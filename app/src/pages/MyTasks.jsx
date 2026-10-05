@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Checkbox,
   Group,
   Loader,
   Modal,
@@ -69,7 +68,6 @@ export default function MyTasks({ setPage }) {
   const [userId, setUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showCompleted, setShowCompleted] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -158,6 +156,11 @@ export default function MyTasks({ setPage }) {
       return;
     }
     await loadTasks();
+    notifications.show({
+      title: completed ? "Task Completed" : "Task Reopened",
+      message: completed ? "Moved to Completed Today. It was not deleted." : "Moved back to your open task list.",
+      color: completed ? "green" : "blue",
+    });
   }
 
   async function deleteTask(task) {
@@ -171,7 +174,6 @@ export default function MyTasks({ setPage }) {
     const overdue = !completed && task.due_at && localDateKey(task.due_at) < today;
     return <Card withBorder radius="lg" p="md" style={{ borderLeft: `4px solid ${overdue ? "#fa5252" : completed ? "#40c057" : "#e03131"}` }}>
       <Group align="flex-start" wrap="nowrap">
-        <Checkbox size="lg" mt={3} checked={completed} aria-label={completed ? `Reopen ${task.title}` : `Complete ${task.title}`} onChange={(event) => completeTask(task, event.currentTarget.checked)}/>
         <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="wrap">
             <Text fw={900} td={completed ? "line-through" : undefined} c={completed ? "dimmed" : undefined}>{task.title}</Text>
@@ -181,7 +183,10 @@ export default function MyTasks({ setPage }) {
           {task.details && <Text size="sm" c="dimmed" style={{ whiteSpace: "pre-wrap" }}>{task.details}</Text>}
           <Group gap={5}><IconClock size={14}/><Text size="xs" c="dimmed">{completed ? `Completed ${dueLabel(task.completed_at)}` : dueLabel(task.due_at)}</Text></Group>
         </Stack>
-        <Button variant="subtle" color="gray" size="compact-sm" aria-label={`Delete ${task.title}`} onClick={() => deleteTask(task)}><IconTrash size={17}/></Button>
+        <Stack gap={5}>
+          <Button color={completed ? "blue" : "green"} variant={completed ? "light" : "filled"} size="compact-sm" leftSection={completed ? <IconRefresh size={15}/> : <IconCheck size={15}/>} onClick={() => completeTask(task, !completed)}>{completed ? "Reopen" : "Complete"}</Button>
+          <Button variant="subtle" color="gray" size="compact-sm" leftSection={<IconTrash size={15}/>} aria-label={`Delete ${task.title}`} onClick={() => deleteTask(task)}>Delete</Button>
+        </Stack>
       </Group>
     </Card>;
   }
@@ -211,8 +216,8 @@ export default function MyTasks({ setPage }) {
 
     {laterTasks.length > 0 && <MWPanel title="Upcoming & Unscheduled" subtitle="Open tasks that are due later or do not have a date." icon={IconClipboardList} color="blue"><Stack gap="sm">{laterTasks.map((task) => <TaskCard key={task.id} task={task}/>)}</Stack></MWPanel>}
 
-    <MWPanel title="Completed Today" subtitle="Today’s finished work remains visible for review." icon={IconCheck} color="green" rightSection={<Button variant="subtle" color="gray" size="xs" onClick={() => setShowCompleted((value) => !value)}>{showCompleted ? "Hide" : "Show"}</Button>}>
-      {!showCompleted ? <Text c="dimmed" size="sm">{completedToday.length} task{completedToday.length === 1 ? "" : "s"} completed today.</Text> : completedToday.length ? <Stack gap="sm">{completedToday.map((task) => <TaskCard key={task.id} task={task} completed/>)}</Stack> : <Text c="dimmed">No tasks have been completed today yet.</Text>}
+    <MWPanel title="Completed Today" subtitle="Completed tasks stay here and can be reopened. Only Delete permanently removes a task." icon={IconCheck} color="green">
+      {completedToday.length ? <Stack gap="sm">{completedToday.map((task) => <TaskCard key={task.id} task={task} completed/>)}</Stack> : <Text c="dimmed">No tasks have been completed today yet.</Text>}
     </MWPanel>
 
     <Modal opened={taskOpen} onClose={() => setTaskOpen(false)} title="Add a Task" centered>
