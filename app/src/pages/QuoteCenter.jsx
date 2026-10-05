@@ -162,6 +162,7 @@ function QuoteCenter({
   const [deletingQuoteId, setDeletingQuoteId] = useState(null);
   const [archivingQuoteId, setArchivingQuoteId] = useState(null);
   const [approvingQuoteId, setApprovingQuoteId] = useState(null);
+  const [bypassingInvoiceId, setBypassingInvoiceId] = useState(null);
   const [showSiteEstimate, setShowSiteEstimate] = useState(false);
   const [requestPath, setRequestPath] = useState(null);
   const [siteEstimate, setSiteEstimate] = useState(loadSavedSiteEstimate);
@@ -1100,6 +1101,39 @@ function QuoteCenter({
     }
   }
 
+  async function bypassToInvoice(quote) {
+    if (!quote?.id || bypassingInvoiceId) return;
+    const label = quote.quote_number || `Quote ${quote.id}`;
+    if (!window.confirm(`Convert ${label} directly to an invoice? This will skip project creation and open the invoice preview.`)) return;
+    setBypassingInvoiceId(quote.id);
+    try {
+      const { data, error } = await supabase
+        .from("project_quotes")
+        .update({
+          document_type: "Invoice",
+          status: "Approved",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", quote.id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      setQuotes((current) => current.map((entry) => entry.id === quote.id ? data : entry));
+      setSelectedQuote(data);
+      setSelectedProject(null);
+      setPage("quotePreview");
+      notifications.show({
+        title: "Invoice Ready",
+        message: `${label} was converted directly to an invoice without creating a project.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({ title: "Invoice Could Not Be Created", message: error.message, color: "red" });
+    } finally {
+      setBypassingInvoiceId(null);
+    }
+  }
+
   async function createStandaloneQuote() {
     if (!form.project_name.trim()) {
       notifications.show({
@@ -1782,13 +1816,13 @@ function QuoteCenter({
               >
                 <div>
                   <Text size="xs" c="dimmed" fw={800} tt="uppercase">
-                    Quote
+                    {quote.document_type === "Invoice" ? "Invoice" : "Quote"}
                   </Text>
                   <Text fw={900}>
                     {quote.quote_number || `Quote ${quote.id}`}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {quote.project_id ? "Project Quote" : "Standalone Quote"}
+                    {quote.document_type === "Invoice" ? "Direct Invoice" : quote.project_id ? "Project Quote" : "Standalone Quote"}
                   </Text>
                 </div>
 
@@ -1849,7 +1883,7 @@ function QuoteCenter({
                     color="gray"
                     onClick={() => openQuote(quote, "quoteBuilder")}
                   >
-                    Edit Quote &amp; Amounts
+                    Edit {quote.document_type === "Invoice" ? "Invoice" : "Quote"} &amp; Amounts
                   </Button>
                   <Button
                     {...QUOTE_ACTION_BUTTON_PROPS}
@@ -1885,7 +1919,7 @@ function QuoteCenter({
                       Archive
                     </Button>
                   )}
-                  {!(quote.status === "Approved" && (quote.project_id || quote.converted_project_id)) && (
+                  {quote.document_type !== "Invoice" && !(quote.status === "Approved" && (quote.project_id || quote.converted_project_id)) && (
                     <Button
                       {...QUOTE_ACTION_BUTTON_PROPS}
                       size="xs"
@@ -1907,7 +1941,7 @@ function QuoteCenter({
                       Open Project
                     </Button>
                   )}
-                  {!quote.project_id &&
+                  {quote.document_type !== "Invoice" && !quote.project_id &&
                     !quote.converted_project_id &&
                     quote.status === "Approved" && (
                       <Button
@@ -1919,6 +1953,18 @@ function QuoteCenter({
                         Convert
                       </Button>
                     )}
+                  {quote.document_type !== "Invoice" && !quote.project_id && !quote.converted_project_id && (
+                    <Button
+                      {...QUOTE_ACTION_BUTTON_PROPS}
+                      size="xs"
+                      color="blue"
+                      variant="light"
+                      loading={bypassingInvoiceId === quote.id}
+                      onClick={() => bypassToInvoice(quote)}
+                    >
+                      Bypass to Invoice
+                    </Button>
+                  )}
                   <Button
                     {...QUOTE_ACTION_BUTTON_PROPS}
                     size="xs"
