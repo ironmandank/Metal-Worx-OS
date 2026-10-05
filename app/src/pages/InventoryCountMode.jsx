@@ -61,14 +61,44 @@ function InventoryCountMode({ setPage, activeUser }) {
       setSessions(sessionResult.data || []);
       const active = (sessionResult.data || []).find((session) => session.status === "In Progress");
       if (active) {
-        const result = await supabase.from("inventory_reset_counts").select("id,session_id,inventory_item_id,bin_id,quantity,notes,counted_by,counted_at").eq("session_id", active.id).order("counted_at", { ascending: false });
-        if (result.error) throw result.error;
-        setCounts(result.data || []);
+        const [countResult, balanceResult] = await Promise.all([
+          supabase.from("inventory_reset_counts").select("id,session_id,inventory_item_id,bin_id,quantity,notes,counted_by,counted_at").eq("session_id", active.id).order("counted_at", { ascending: false }),
+          supabase.from("inventory_bin_balances").select("inventory_item_id,bin_id,quantity_on_hand").gt("quantity_on_hand", 0),
+        ]);
+        if (countResult.error) throw countResult.error;
+        if (balanceResult.error) throw balanceResult.error;
+
+        const existingCountKeys = new Set((countResult.data || []).map((count) => `${count.inventory_item_id}:${count.bin_id}`));
+        const missingPositiveBalances = (balanceResult.data || []).filter((balance) =>
+          balance.inventory_item_id && balance.bin_id &&
+          numberValue(balance.quantity_on_hand) > 0 &&
+          !existingCountKeys.has(`${balance.inventory_item_id}:${balance.bin_id}`)
+        );
+
+        for (const balance of missingPositiveBalances) {
+          const { error: syncError } = await supabase.rpc("mw_save_inventory_reset_count", {
+            p_session_id: active.id,
+            p_inventory_item_id: balance.inventory_item_id,
+            p_bin_id: balance.bin_id,
+            p_quantity: numberValue(balance.quantity_on_hand),
+            p_notes: "Recovered automatically from positive stock during the active fresh inventory count.",
+            p_counted_by: displayUser(activeUser),
+          });
+          if (syncError) throw syncError;
+        }
+
+        if (missingPositiveBalances.length) {
+          const refreshedCounts = await supabase.from("inventory_reset_counts").select("id,session_id,inventory_item_id,bin_id,quantity,notes,counted_by,counted_at").eq("session_id", active.id).order("counted_at", { ascending: false });
+          if (refreshedCounts.error) throw refreshedCounts.error;
+          setCounts(refreshedCounts.data || []);
+        } else {
+          setCounts(countResult.data || []);
+        }
       } else setCounts([]);
     } catch (error) {
       notifications.show({ title: "Inventory Reset Failed to Load", message: error.message, color: "red" });
     } finally { setLoading(false); }
-  }, []);
+  }, [activeUser]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
