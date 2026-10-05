@@ -1,6 +1,6 @@
 import { Alert, Autocomplete, Badge, Button, Group, Loader, Modal, NumberInput, Paper, Progress, Select, SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay, IconPlus } from "@tabler/icons-react";
+import { IconArchive, IconBox, IconCheck, IconClipboardCheck, IconMapPin, IconPackage, IconPhoto, IconPlayerPlay, IconPlus, IconSearch } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import InventoryImageCapture from "../components/inventory/InventoryImageCapture";
@@ -12,6 +12,12 @@ const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 
 const formatNumber = (value) => numberValue(value).toLocaleString("en-US", { maximumFractionDigits: 4 });
 const getItemId = (item) => item?.inventory_item_id || item?.id || null;
 const displayUser = (user) => typeof user === "string" ? user : user?.full_name || user?.name || user?.email || null;
+const FINISH_OPTIONS = ["Black", "Speckle", "Bronze", "B. Disaster", "Patina", "Painted", "Brushed"];
+const getFinish = (item) => String(item?.notes || "").split("\n").find((line) => line.trim().toLowerCase().startsWith("finish:"))?.split(":").slice(1).join(":").trim() || "";
+const withFinish = (notes, finish) => [
+  ...(String(notes || "").split("\n").filter((line) => !line.trim().toLowerCase().startsWith("finish:"))),
+  finish.trim() ? `Finish: ${finish.trim()}` : "",
+].filter(Boolean).join("\n") || null;
 
 function InventoryCountMode({ setPage, activeUser }) {
   const [items, setItems] = useState([]);
@@ -22,6 +28,8 @@ function InventoryCountMode({ setPage, activeUser }) {
   const [selectedItemId, setSelectedItemId] = useState("");
   const [balances, setBalances] = useState([]);
   const [standardizedName, setStandardizedName] = useState("");
+  const [colorName, setColorName] = useState("");
+  const [finish, setFinish] = useState("");
   const [crateEntry, setCrateEntry] = useState("");
   const [countedQuantity, setCountedQuantity] = useState("");
   const [notes, setNotes] = useState("");
@@ -30,6 +38,7 @@ function InventoryCountMode({ setPage, activeUser }) {
   const [saving, setSaving] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
+  const [verifiedSearch, setVerifiedSearch] = useState("");
   const [sessionName, setSessionName] = useState(`Inventory Reset ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`);
 
   const loadData = useCallback(async () => {
@@ -72,9 +81,22 @@ function InventoryCountMode({ setPage, activeUser }) {
   const allocatedTotal = selectedAllocations.reduce((total, count) => total + numberValue(count.quantity), 0);
   const itemOptions = items.map((item) => ({ value: getItemId(item), label: `${countedItemIds.has(getItemId(item)) ? "✓ " : ""}${item.name} · ${item.item_number || item.sku || "No item number"}` }));
   const crateSuggestions = bins.map((bin) => `${bin.code} ${bin.name}`.trim());
+  const visibleCounts = useMemo(() => {
+    const search = verifiedSearch.trim().toLowerCase();
+    if (!search) return counts;
+    return counts.filter((count) => {
+      const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id);
+      const bin = bins.find((candidate) => candidate.id === count.bin_id);
+      return [item?.name, item?.item_number, item?.sku, item?.color_name, getFinish(item), bin?.code, bin?.name, count.notes]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+  }, [bins, counts, items, verifiedSearch]);
 
   async function selectItem(value) {
-    setSelectedItemId(value || ""); setStandardizedName(""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
+    setSelectedItemId(value || ""); setStandardizedName(""); setColorName(""); setFinish(""); setCrateEntry(""); setCountedQuantity(""); setNotes(""); setImageFile(null);
     if (!value) { setBalances([]); return; }
     try {
       const { data, error } = await supabase.from("inventory_bin_balances").select("*").eq("inventory_item_id", value);
@@ -82,6 +104,8 @@ function InventoryCountMode({ setPage, activeUser }) {
       const loaded = data || [];
       const item = items.find((candidate) => getItemId(candidate) === value);
       setStandardizedName(item?.name || "");
+      setColorName(item?.color_name || "");
+      setFinish(getFinish(item));
       setBalances(loaded);
       const startingBinId = item?.default_bin_id || loaded[0]?.bin_id || "";
       const startingBin = bins.find((candidate) => candidate.id === startingBinId);
@@ -162,12 +186,16 @@ function InventoryCountMode({ setPage, activeUser }) {
     try {
       const resolvedCrate = await resolveCrate();
       let itemForSave = selectedItem;
-      if (updatedName !== selectedItem.name) {
+      const updatedColor = colorName.trim();
+      const updatedFinish = finish.trim();
+      if (updatedName !== selectedItem.name || updatedColor !== String(selectedItem.color_name || "").trim() || updatedFinish !== getFinish(selectedItem)) {
         const { data: renamedItem, error: renameError } = await supabase.from("inventory_items").update({
           name: updatedName,
+          color_name: updatedColor || null,
+          notes: withFinish(selectedItem.notes, updatedFinish),
           image_alt_text: selectedItem.primary_image_url ? updatedName : selectedItem.image_alt_text,
           updated_at: new Date().toISOString(),
-        }).eq("id", getItemId(selectedItem)).select("id,name,item_number,sku,primary_image_url,primary_image_path,image_alt_text,default_bin_id,is_active").single();
+        }).eq("id", getItemId(selectedItem)).select("id,name,item_number,sku,color_name,notes,primary_image_url,primary_image_path,image_alt_text,default_bin_id,is_active").single();
         if (renameError) throw renameError;
         itemForSave = { ...selectedItem, ...renamedItem };
         setItems((current) => current.map((item) => getItemId(item) === getItemId(selectedItem) ? { ...item, ...renamedItem } : item));
@@ -218,6 +246,10 @@ function InventoryCountMode({ setPage, activeUser }) {
         <MWPanel title="2. Verify Its New Information" subtitle="Record what is physically in front of you." icon={IconClipboardCheck}>
           {!selectedItem ? <Stack align="center" py={70}><ThemeIcon size={64} radius="xl" color="gray" variant="light"><IconClipboardCheck size={30}/></ThemeIcon><Text c="dimmed">Choose an item to unlock the count form.</Text></Stack> : <Stack gap="lg">
             <TextInput label="Standardized Item Name" description="Keep the current name or edit it to your preferred standard. This renames the selected item and keeps its existing image and item number." placeholder="Enter the standardized item name" value={standardizedName} onChange={(event) => setStandardizedName(event.currentTarget.value)} required size="lg"/>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+              <TextInput label="Color" description="Saved with this inventory item." placeholder="Example: Black" value={colorName} onChange={(event) => setColorName(event.currentTarget.value)}/>
+              <Select label="Finish" description="Choose the finish applied to this item." placeholder="Select finish" data={FINISH_OPTIONS} value={finish || null} onChange={(value) => setFinish(value || "")} searchable clearable/>
+            </SimpleGrid>
             {selectedAllocations.length > 0 && <Paper withBorder p="md"><Stack gap="xs"><Group justify="space-between"><Text fw={800}>Saved Crate Breakdown</Text><Badge color="green">Total {formatNumber(allocatedTotal)}</Badge></Group>{selectedAllocations.map((allocation) => { const bin = bins.find((candidate) => candidate.id === allocation.bin_id); return <Group key={allocation.id} justify="space-between"><Text size="sm">{bin ? `${bin.code} ${bin.name}`.trim() : "Crate"}</Text><Badge variant="light">Qty {formatNumber(allocation.quantity)}</Badge></Group>; })}</Stack></Paper>}
             <Autocomplete label="Crate Code and Updated Name" description="Select an old crate or type its code with the new name. Existing crate codes will be updated instead of duplicated." placeholder="Example: CR-23 Army Airforce" data={crateSuggestions} value={crateEntry} onChange={setCrateEntry} required leftSection={<IconMapPin size={18}/>}/>
             <Text size="xs" c="dimmed">Use the existing crate code followed by its new contents—for example, <b>CR-23 Army Airforce</b>. A brand-new code will create a new crate.</Text>
@@ -230,7 +262,10 @@ function InventoryCountMode({ setPage, activeUser }) {
           </Stack>}
         </MWPanel>
       </SimpleGrid>
-      {counts.length > 0 && <MWPanel title="Recently Verified" subtitle="The latest items saved in this reset." icon={IconCheck} color="green"><Stack gap="xs">{counts.slice(0, 8).map((count) => { const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id); const bin = bins.find((candidate) => candidate.id === count.bin_id); return <Paper key={count.id} withBorder p="sm"><Group justify="space-between"><div><Text fw={800}>{item?.name || "Inventory item"}</Text><Text size="xs" c="dimmed">{bin?.code || bin?.name || "Storage position"} · {new Date(count.counted_at).toLocaleString()}</Text></div><Badge color="green">Qty {formatNumber(count.quantity)}</Badge></Group></Paper>; })}</Stack></MWPanel>}
+      {counts.length > 0 && <MWPanel title="New Inventory Recorded" subtitle={`Every item and crate allocation saved in this reset (${counts.length} records).`} icon={IconCheck} color="green"><Stack gap="md">
+        <TextInput leftSection={<IconSearch size={17}/>} placeholder="Search item, crate, color, finish, number, or notes" value={verifiedSearch} onChange={(event) => setVerifiedSearch(event.currentTarget.value)}/>
+        {visibleCounts.length === 0 ? <Text c="dimmed" ta="center" py="xl">No saved inventory matches that search.</Text> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{visibleCounts.map((count) => { const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id); const bin = bins.find((candidate) => candidate.id === count.bin_id); const itemFinish = getFinish(item); return <Paper key={count.id} withBorder p="md" radius="md"><Group wrap="nowrap" align="flex-start"><div style={{ width: 70, flex: "0 0 70px" }}>{item?.primary_image_url ? <img src={item.primary_image_url} alt={item.image_alt_text || item.name} style={{ width: 70, height: 64, objectFit: "contain", borderRadius: 8, background: "white" }}/> : <ThemeIcon size={64} radius="md" color="gray" variant="light"><IconPhoto size={28}/></ThemeIcon>}</div><Stack gap={5} style={{ minWidth: 0, flex: 1 }}><Group justify="space-between" align="flex-start" wrap="nowrap"><Text fw={900} lineClamp={2}>{item?.name || "Inventory item"}</Text><Badge color="green" variant="light" style={{ flexShrink: 0 }}>Qty {formatNumber(count.quantity)}</Badge></Group><Text size="xs" c="dimmed">{item?.item_number || item?.sku || "No item number"}</Text><Group gap={6}>{item?.color_name && <Badge color="dark" variant="outline">Color: {item.color_name}</Badge>}{itemFinish && <Badge color="gray" variant="outline">Finish: {itemFinish}</Badge>}</Group><Text size="sm" fw={700}>{bin ? `${bin.code} ${bin.name}`.trim() : "Storage position not found"}</Text>{count.notes && <Text size="xs" c="dimmed" lineClamp={2}>{count.notes}</Text>}<Text size="xs" c="dimmed">Saved {new Date(count.counted_at).toLocaleString()}</Text></Stack></Group></Paper>; })}</SimpleGrid>}
+      </Stack></MWPanel>}
     </>}
     <Modal opened={startOpen} onClose={() => setStartOpen(false)} title="Archive Current Inventory & Start Fresh" centered><Stack><Alert color="blue" icon={<IconArchive size={20}/>}>This keeps every item and image. It creates a permanent dated backup, then clears quantities and crate assignments so you can begin fresh. Nothing will be deleted.</Alert><TextInput label="Reset Name" value={sessionName} onChange={(event) => setSessionName(event.currentTarget.value)} required/><Button color="red" loading={saving} disabled={!sessionName.trim()} onClick={startReset}>Create Backup, Clear Counts & Begin</Button><Button variant="subtle" color="gray" onClick={() => setStartOpen(false)}>Cancel</Button></Stack></Modal>
     <Modal opened={completeOpen} onClose={() => setCompleteOpen(false)} title="Finish This Inventory Reset?" centered><Stack><Alert color={verifiedItemCount < (activeSession?.snapshot_item_count || 0) ? "orange" : "green"} icon={<IconClipboardCheck size={20}/>}>{verifiedItemCount} of {activeSession?.snapshot_item_count || 0} archived items have been verified. Finishing closes this reset, but its backup and count history remain available.</Alert><Button color="green" loading={saving} onClick={completeReset}>Finish Inventory Reset</Button><Button variant="subtle" color="gray" onClick={() => setCompleteOpen(false)}>Keep Counting</Button></Stack></Modal>
