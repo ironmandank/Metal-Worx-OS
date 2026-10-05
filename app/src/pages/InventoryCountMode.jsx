@@ -39,6 +39,7 @@ function InventoryCountMode({ setPage, activeUser }) {
   const [startOpen, setStartOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [verifiedSearch, setVerifiedSearch] = useState("");
+  const [updatingFinishId, setUpdatingFinishId] = useState(null);
   const [sessionName, setSessionName] = useState(`Inventory Reset ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`);
 
   const loadData = useCallback(async () => {
@@ -70,6 +71,14 @@ function InventoryCountMode({ setPage, activeUser }) {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (loading || !items.length) return;
+    const newItemId = window.sessionStorage.getItem("mw.inventoryCountNewItemId");
+    if (!newItemId || !items.some((item) => getItemId(item) === newItemId)) return;
+    window.sessionStorage.removeItem("mw.inventoryCountNewItemId");
+    selectItem(newItemId);
+  }, [loading, items]);
 
   const activeSession = sessions.find((session) => session.status === "In Progress") || null;
   const selectedItem = items.find((item) => getItemId(item) === selectedItemId) || null;
@@ -209,6 +218,29 @@ function InventoryCountMode({ setPage, activeUser }) {
     finally { setSaving(false); }
   }
 
+  async function updateRecordedFinish(item, nextFinish) {
+    const itemId = getItemId(item);
+    if (!itemId || updatingFinishId) return;
+    setUpdatingFinishId(itemId);
+    try {
+      const { data, error } = await supabase.from("inventory_items").update({
+        notes: withFinish(item.notes, nextFinish || ""),
+        updated_at: new Date().toISOString(),
+      }).eq("id", itemId).select("id,notes").single();
+      if (error) throw error;
+      setItems((current) => current.map((candidate) => getItemId(candidate) === itemId ? { ...candidate, notes: data.notes } : candidate));
+      notifications.show({
+        title: "Finish Updated",
+        message: nextFinish ? `${item.name} is recorded as ${nextFinish}.` : `The finish was cleared for ${item.name}.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({ title: "Finish Could Not Be Updated", message: error.message, color: "red" });
+    } finally {
+      setUpdatingFinishId(null);
+    }
+  }
+
   async function completeReset() {
     if (!activeSession || saving) return;
     setSaving(true);
@@ -264,7 +296,7 @@ function InventoryCountMode({ setPage, activeUser }) {
       </SimpleGrid>
       {counts.length > 0 && <MWPanel title="New Inventory Recorded" subtitle={`Every item and crate allocation saved in this reset (${counts.length} records).`} icon={IconCheck} color="green"><Stack gap="md">
         <TextInput leftSection={<IconSearch size={17}/>} placeholder="Search item, crate, color, finish, number, or notes" value={verifiedSearch} onChange={(event) => setVerifiedSearch(event.currentTarget.value)}/>
-        {visibleCounts.length === 0 ? <Text c="dimmed" ta="center" py="xl">No saved inventory matches that search.</Text> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{visibleCounts.map((count) => { const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id); const bin = bins.find((candidate) => candidate.id === count.bin_id); const itemFinish = getFinish(item); return <Paper key={count.id} withBorder p="md" radius="md"><Group wrap="nowrap" align="flex-start"><div style={{ width: 70, flex: "0 0 70px" }}>{item?.primary_image_url ? <img src={item.primary_image_url} alt={item.image_alt_text || item.name} style={{ width: 70, height: 64, objectFit: "contain", borderRadius: 8, background: "white" }}/> : <ThemeIcon size={64} radius="md" color="gray" variant="light"><IconPhoto size={28}/></ThemeIcon>}</div><Stack gap={5} style={{ minWidth: 0, flex: 1 }}><Group justify="space-between" align="flex-start" wrap="nowrap"><Text fw={900} lineClamp={2}>{item?.name || "Inventory item"}</Text><Badge color="green" variant="light" style={{ flexShrink: 0 }}>Qty {formatNumber(count.quantity)}</Badge></Group><Text size="xs" c="dimmed">{item?.item_number || item?.sku || "No item number"}</Text><Group gap={6}>{item?.color_name && <Badge color="dark" variant="outline">Color: {item.color_name}</Badge>}{itemFinish && <Badge color="gray" variant="outline">Finish: {itemFinish}</Badge>}</Group><Text size="sm" fw={700}>{bin ? `${bin.code} ${bin.name}`.trim() : "Storage position not found"}</Text>{count.notes && <Text size="xs" c="dimmed" lineClamp={2}>{count.notes}</Text>}<Text size="xs" c="dimmed">Saved {new Date(count.counted_at).toLocaleString()}</Text></Stack></Group></Paper>; })}</SimpleGrid>}
+        {visibleCounts.length === 0 ? <Text c="dimmed" ta="center" py="xl">No saved inventory matches that search.</Text> : <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">{visibleCounts.map((count) => { const item = items.find((candidate) => getItemId(candidate) === count.inventory_item_id); const bin = bins.find((candidate) => candidate.id === count.bin_id); const itemFinish = getFinish(item); return <Paper key={count.id} withBorder p="md" radius="md"><Group wrap="nowrap" align="flex-start"><div style={{ width: 70, flex: "0 0 70px" }}>{item?.primary_image_url ? <img src={item.primary_image_url} alt={item.image_alt_text || item.name} style={{ width: 70, height: 64, objectFit: "contain", borderRadius: 8, background: "white" }}/> : <ThemeIcon size={64} radius="md" color="gray" variant="light"><IconPhoto size={28}/></ThemeIcon>}</div><Stack gap={7} style={{ minWidth: 0, flex: 1 }}><Group justify="space-between" align="flex-start" wrap="nowrap"><Text fw={900} lineClamp={2}>{item?.name || "Inventory item"}</Text><Badge color="green" variant="light" style={{ flexShrink: 0 }}>Qty {formatNumber(count.quantity)}</Badge></Group><Text size="xs" c="dimmed">{item?.item_number || item?.sku || "No item number"}</Text>{item?.color_name && <Badge color="dark" variant="outline" w="fit-content">Color: {item.color_name}</Badge>}<Select label="Quick Finish" placeholder="Select finish" data={FINISH_OPTIONS} value={itemFinish || null} onChange={(value) => updateRecordedFinish(item, value)} searchable clearable size="xs" disabled={!item || Boolean(updatingFinishId)} rightSection={updatingFinishId === getItemId(item) ? <Loader size={14}/> : undefined}/><Text size="sm" fw={700}>{bin ? `${bin.code} ${bin.name}`.trim() : "Storage position not found"}</Text>{count.notes && <Text size="xs" c="dimmed" lineClamp={2}>{count.notes}</Text>}<Text size="xs" c="dimmed">Saved {new Date(count.counted_at).toLocaleString()}</Text></Stack></Group></Paper>; })}</SimpleGrid>}
       </Stack></MWPanel>}
     </>}
     <Modal opened={startOpen} onClose={() => setStartOpen(false)} title="Archive Current Inventory & Start Fresh" centered><Stack><Alert color="blue" icon={<IconArchive size={20}/>}>This keeps every item and image. It creates a permanent dated backup, then clears quantities and crate assignments so you can begin fresh. Nothing will be deleted.</Alert><TextInput label="Reset Name" value={sessionName} onChange={(event) => setSessionName(event.currentTarget.value)} required/><Button color="red" loading={saving} disabled={!sessionName.trim()} onClick={startReset}>Create Backup, Clear Counts & Begin</Button><Button variant="subtle" color="gray" onClick={() => setStartOpen(false)}>Cancel</Button></Stack></Modal>

@@ -1135,6 +1135,31 @@ function NewInventoryItem({
         resolvedBinId
       );
 
+      if (returnPage === "inventoryCount") {
+        window.sessionStorage.setItem("mw.inventoryCountNewItemId", createdItem.id);
+        if (resolvedBinId) {
+          const { data: resetSession, error: resetSessionError } = await supabase
+            .from("inventory_reset_sessions")
+            .select("id,name")
+            .eq("status", "In Progress")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (resetSessionError) throw resetSessionError;
+          if (resetSession) {
+            const { error: resetCountError } = await supabase.rpc("mw_save_inventory_reset_count", {
+              p_session_id: resetSession.id,
+              p_inventory_item_id: createdItem.id,
+              p_bin_id: resolvedBinId,
+              p_quantity: safeNumber(form.startingQuantity),
+              p_notes: cleanNullableText(form.notes),
+              p_counted_by: null,
+            });
+            if (resetCountError) throw resetCountError;
+          }
+        }
+      }
+
       await createQrLabel(createdItem);
 
       const imageResult =
