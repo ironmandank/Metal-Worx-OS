@@ -45,18 +45,25 @@ const styles = `
   .tv-pipeline-stage strong { color:#fff; font-size:28px; line-height:1; }
   .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
   .tv-pipeline-stage.attention strong { color:#ff5965; }
-  .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:stretch; }
+  .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
   .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
-  .tv-panel.tv-hot-artwork { grid-column:1 / -1; }
+  .tv-panel.tv-hot-artwork { grid-column:span 6; }
+  .tv-panel.tv-outside { grid-column:1 / -1; }
   .tv-panel.tv-production { grid-column:span 6; }
   .tv-panel.tv-field { grid-column:span 6; }
   .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:13px 16px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(17px,1.25vw,24px); line-height:1.2; text-transform:uppercase; }
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
-  .tv-list { list-style:none; padding:0; margin:0; }
-  .tv-list li { padding:13px 16px; border-bottom:1px solid #273036; font-size:clamp(14px,1vw,19px); line-height:1.25; }
-  .tv-list strong { display:block; color:#fff; }
-  .tv-list small { display:block; margin-top:4px; color:#9ba5ac; font-size:.82em; }
+  .tv-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding:11px; }
+  .tv-card-grid.wide { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .tv-item-card { min-width:0; min-height:92px; padding:11px 12px; border:1px solid #303a41; border-radius:9px; background:#161d21; }
+  .tv-item-card.urgent { border-color:#8f252e; background:linear-gradient(135deg,#291216,#171d21); }
+  .tv-item-card strong { display:block; color:#fff; font-size:clamp(14px,.95vw,18px); line-height:1.18; overflow-wrap:anywhere; }
+  .tv-item-card small { display:block; margin-top:6px; color:#aab3b9; font-size:clamp(11px,.72vw,14px); line-height:1.28; overflow-wrap:anywhere; }
+  .tv-card-tag { display:inline-block; margin-bottom:7px; padding:3px 7px; border-radius:999px; color:#fff; background:#9b0010; font-size:10px; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
+  .tv-card-tag.gray { color:#dce2e5; background:#364047; }
+  .tv-card-tag.green { color:#c8f8d2; background:#14532d; }
+  .tv-more { display:flex; min-height:40px; margin:0 11px 11px; border:1px dashed #48545c; border-radius:8px; color:#c4ccd1; background:#12181c; align-items:center; justify-content:center; font-size:13px; font-weight:900; }
   .tv-age { display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px; color:#d9e0e4; background:#273138; font-size:.76em; font-weight:900; }
   .tv-age.watch { color:#ffd083; background:#4b3300; }
   .tv-age.hot { color:#fff; background:#9b0010; }
@@ -69,7 +76,7 @@ const styles = `
   .tv-workload.gray { color:#e1e5e8; background:#374151; }
   .tv-empty { padding:28px 16px; color:#8c979f; font-size:18px; text-align:center; }
   .tv-foot { margin-top:12px; color:#76828a; font-size:12px; text-align:center; text-transform:uppercase; letter-spacing:.15em; }
-  @media(max-width:1400px){ .tv-kpis{grid-template-columns:repeat(3,1fr)} .tv-pipeline-grid{grid-template-columns:repeat(3,minmax(0,1fr))} .tv-grid{grid-template-columns:1fr 1fr} .tv-panel,.tv-panel.tv-production,.tv-panel.tv-field{grid-column:span 1}.tv-panel.tv-hot-artwork{grid-column:1 / -1} }
+  @media(max-width:1400px){ .tv-kpis{grid-template-columns:repeat(3,1fr)} .tv-pipeline-grid{grid-template-columns:repeat(3,minmax(0,1fr))} .tv-grid{grid-template-columns:1fr 1fr} .tv-panel,.tv-panel.tv-production,.tv-panel.tv-field{grid-column:span 1}.tv-panel.tv-hot-artwork,.tv-panel.tv-outside{grid-column:1 / -1}.tv-card-grid.wide{grid-template-columns:repeat(3,minmax(0,1fr))} }
   @media(max-width:700px){
     .tv-board{width:100%;padding:8px;overflow-x:hidden}
     .tv-head{align-items:stretch;flex-direction:column;padding:13px}
@@ -78,12 +85,17 @@ const styles = `
     .tv-summary{padding:10px 12px}.tv-summary p{font-size:15px;line-height:1.3}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
     .tv-pipeline{padding:11px}.tv-pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.tv-pipeline-stage{min-height:58px;padding:8px}.tv-pipeline-stage span{font-size:11px}.tv-pipeline-stage strong{font-size:24px}
-    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-list li{padding:12px;font-size:15px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
+    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel.tv-hot-artwork,.tv-panel.tv-outside{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-card-grid,.tv-card-grid.wide{grid-template-columns:1fr;padding:8px}.tv-item-card{min-height:0;padding:10px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
 
 const text = (value, fallback = "Not assigned") => String(value || fallback);
 const dateOnly = (value) => value ? new Date(String(value).length === 10 ? `${value}T12:00:00` : value).toLocaleDateString() : "Date not set";
+
+function MoreCount({ total, shown }) {
+  const remaining = Math.max(0, Number(total || 0) - Number(shown || 0));
+  return remaining > 0 ? <div className="tv-more">+ {remaining} more — open Metal Worx OS for the full list</div> : null;
+}
 
 function buildExecutiveSummary(data, openSiteVisitCount = 0, hotArtworkCount = 0) {
   const h = data?.morningHuddle || {};
@@ -127,7 +139,6 @@ export default function MorningHuddleTV({ setPage }) {
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.quickCommitments || [];
   const artworkOrders = data?.artworkOrders || [];
-  const projectLeadCount = new Set(projects.map((project) => String(project.owner || project.assigned_to || "").trim()).filter(Boolean)).size;
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
   const linkedPriorityIds = new Set(priorityItems.filter((item) => item.sourceType === "customerOrder" && item.sourceId).map((item) => String(item.sourceId)));
   const priorityTitles = new Set(priorityItems.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
@@ -188,14 +199,23 @@ export default function MorningHuddleTV({ setPage }) {
       </div>
     </section>
     <section className="tv-grid">
-      <div className="tv-panel tv-hot-artwork"><h2><IconClipboardCheck/> Hot Items This Week</h2>{priorities.length ? <ul className="tv-list">{priorities.map((x,i)=><li key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.owner)} · {text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop · {text(x.hotReasonCategory,"Deadline")} · {text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></li>)}</ul>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}</div>
-      <div className="tv-panel tv-hot-artwork"><h2><IconClipboardCheck/> Design Queue — Easiest to Hardest</h2>{designQueue.length ? <ul className="tv-list">{designQueue.map((x,i)=><li key={`design-${x.id || i}`}><strong><span className={`tv-workload ${x.designWorkColor || "gray"}`}>{x.designWorkLabel || "Design Work"}</span>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · Design fee {text(x.designFeeStatus,"Not Required")} · {x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></li>)}</ul>:<div className="tv-empty">No work is currently waiting in Design.</div>}</div>
-      <div className="tv-panel tv-production"><h2><IconTool/> Production by Station</h2>{shopWorkload.length ? <ul className="tv-list">{shopWorkload.map((item)=><li key={item.name}><strong>{item.name}: {item.count}</strong><small>{item.ready || 0} ready · {item.inProgress || 0} active · {item.onHold || 0} on hold</small></li>)}</ul>:<div className="tv-empty">Artwork has not been released into a production station yet.</div>}</div>
-      <div className="tv-panel tv-field"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <ul className="tv-list">{field.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Field activity")}</strong><small>{dateOnly(x.start || x.date || x.dueDate)} · {text(x.owner)}</small></li>)}</ul>:<div className="tv-empty">No field work scheduled today.</div>}</div>
-      <div className="tv-panel"><h2><IconCalendarEvent/> Pre-Quote Site Visits</h2>{siteVisits.length ? <ul className="tv-list">{siteVisits.slice(0,8).map((visit)=><li key={visit.id}><strong>{text(visit.customer_name,"Potential job")}</strong><small>{dateOnly(visit.requested_visit_date)} · {text(visit.assigned_estimator)} · {text(visit.job_site_address,"Address not entered")}</small></li>)}</ul>:<div className="tv-empty">No open pre-quote site visits.</div>}</div>
-      <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <ul className="tv-list">{blockers.map((x,i)=><li key={x.id || i}><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></li>)}</ul>:<div className="tv-empty">No blockers recorded.</div>}</div>
-      <div className="tv-panel"><h2><IconUsers/> Outside Project Leads</h2>{projects.length ? <ul className="tv-list">{projects.slice(0,12).map((p)=><li key={p.id}><strong>{text(p.title || p.projectName || p.project_name || p.project_number,"Project")}</strong><small>Lead: {text(p.owner || p.assigned_to)}</small></li>)}</ul>:<div className="tv-empty">No active outside projects.</div>}</div>
-      <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><ul className="tv-list"><li><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></li><li><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></li><li><strong>Busiest shop station: {summary.busiestDepartment || "None"}</strong><small>{summary.busiestDepartmentCount || 0} active at this station</small></li></ul></div>
+      <div className="tv-panel tv-hot-artwork">
+        <h2><IconClipboardCheck/> Hot Items This Week</h2>
+        {priorities.length ? <><div className="tv-card-grid">{priorities.slice(0,6).map((x,i)=><div className="tv-item-card urgent" key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><span className="tv-card-tag">{text(x.hotReasonCategory,"Priority")}</span><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop<br/>{text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></div>)}</div><MoreCount total={priorities.length} shown={6}/></>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}
+      </div>
+      <div className="tv-panel tv-hot-artwork">
+        <h2><IconClipboardCheck/> Design Queue — Easiest to Hardest</h2>
+        {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=><div className="tv-item-card" key={`design-${x.id || i}`}><span className={`tv-workload ${x.designWorkColor || "gray"}`}>{x.designWorkLabel || "Design Work"}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · Fee {text(x.designFeeStatus,"Not Required")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
+      </div>
+      <div className="tv-panel tv-outside">
+        <h2><IconUsers/> Outside Projects</h2>
+        {projects.length ? <><div className="tv-card-grid wide">{projects.slice(0,8).map((p)=><div className={`tv-item-card ${p.health === "At Risk" || p.health === "Critical" ? "urgent" : ""}`} key={p.id}><span className={`tv-card-tag ${p.health === "On Track" ? "green" : p.health ? "" : "gray"}`}>{text(p.status,"Open")}</span><strong>{text(p.projectName || p.project_number,"Project")}</strong><small>Lead: {text(p.owner)} · {text(p.health,"Health not set")}<br/>Next: {text(p.nextAction,"Next action not entered")} · Materials: {text(p.materialStatus,"Not set")}</small></div>)}</div><MoreCount total={projects.length} shown={8}/></>:<div className="tv-empty">No active outside projects.</div>}
+      </div>
+      <div className="tv-panel tv-production"><h2><IconTool/> Production by Station</h2>{shopWorkload.length ? <div className="tv-card-grid">{shopWorkload.slice(0,6).map((item)=><div className="tv-item-card" key={item.name}><span className="tv-card-tag gray">{item.count} total</span><strong>{item.name}</strong><small>{item.ready || 0} ready · {item.inProgress || 0} active · {item.onHold || 0} on hold</small></div>)}</div>:<div className="tv-empty">Artwork has not been released into a production station yet.</div>}</div>
+      <div className="tv-panel tv-field"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <div className="tv-card-grid">{field.slice(0,4).map((x,i)=><div className="tv-item-card" key={x.id || i}><span className="tv-card-tag green">{dateOnly(x.start || x.date || x.dueDate)}</span><strong>{text(x.title,"Field activity")}</strong><small>Lead: {text(x.owner)}</small></div>)}</div>:<div className="tv-empty">No field work scheduled today.</div>}</div>
+      <div className="tv-panel"><h2><IconCalendarEvent/> Pre-Quote Site Visits</h2>{siteVisits.length ? <><div className="tv-card-grid">{siteVisits.slice(0,4).map((visit)=><div className="tv-item-card" key={visit.id}><span className="tv-card-tag gray">{dateOnly(visit.requested_visit_date)}</span><strong>{text(visit.customer_name,"Potential job")}</strong><small>{text(visit.assigned_estimator)} · {text(visit.job_site_address,"Address not entered")}</small></div>)}</div><MoreCount total={siteVisits.length} shown={4}/></>:<div className="tv-empty">No open pre-quote site visits.</div>}</div>
+      <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <div className="tv-card-grid">{blockers.slice(0,4).map((x,i)=><div className="tv-item-card urgent" key={x.id || i}><span className="tv-card-tag">Needs Action</span><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></div>)}</div>:<div className="tv-empty">No blockers recorded.</div>}</div>
+      <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><div className="tv-card-grid"><div className="tv-item-card"><span className="tv-card-tag gray">Purchasing</span><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Receiving</span><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Shop Load</span><strong>{summary.busiestDepartment || "No active station"}</strong><small>{summary.busiestDepartmentCount || 0} active at the busiest station</small></div></div></div>
     </section>
     <div className="tv-foot">Auto-refreshes every 30 seconds · Metal Worx Operations System</div>
   </div>;
