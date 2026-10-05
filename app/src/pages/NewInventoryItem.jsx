@@ -37,6 +37,8 @@ import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import InventoryImageCapture from "../components/inventory/InventoryImageCapture";
 
+const FINISH_OPTIONS = ["Black", "Speckle", "Bronze", "B. Disaster", "Patina", "Painted", "Brushed"];
+
 const INITIAL_FORM = {
   itemGroup: "consumable",
 
@@ -1946,16 +1948,15 @@ function NewInventoryItem({
                       }
                     />
 
-                    <TextInput
+                    <Select
                       label="Finish"
-                      placeholder="Patina, painted, black, copper, raw metal"
-                      value={form.finish}
-                      onChange={(event) =>
-                        updateField(
-                          "finish",
-                          event.currentTarget.value
-                        )
-                      }
+                      description="Choose the finish applied to this item."
+                      placeholder="Select finish"
+                      data={FINISH_OPTIONS}
+                      value={form.finish || null}
+                      onChange={(value) => updateField("finish", value || "")}
+                      searchable
+                      clearable
                     />
 
                     <NumberInput
