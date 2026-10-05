@@ -15,6 +15,7 @@ const page = (name) => lazy(pageModules[`./pages/${name}.jsx`]);
 const Dashboard = page("Dashboard");
 const MorningHuddleTV = page("MorningHuddleTV");
 const ActionCenter = page("ActionCenter");
+const MyTasks = page("MyTasks");
 const Callbacks = page("Callbacks");
 const InternalChat = page("InternalChat");
 const Reports = page("Reports");
@@ -432,6 +433,10 @@ function App() {
           openCallback={openCallback}
         />
       );
+    }
+
+    if (page === "myTasks") {
+      return <MyTasks setPage={setPage} />;
     }
 
     if (page === "callbacks") {

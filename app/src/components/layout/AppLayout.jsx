@@ -132,9 +132,14 @@ const NAV_GROUPS = [
     icon: IconBriefcase,
     items: [
       {
+        page: "myTasks",
+        label: "My Tasks",
+        section: "Daily Office Work",
+        icon: IconClipboardList,
+      },
+      {
         page: "companyCalendar",
         label: "Company Events & Availability",
-        section: "Daily Office Work",
         icon: IconCalendarEvent,
       },
       {
