@@ -534,8 +534,6 @@ function DepartmentQueue({
 
     return (
       `${customer.first_name || ""} ${customer.last_name || ""}`.trim() ||
-      customer.contact_name ||
-      customer.name ||
       customer.company_name ||
       "Unnamed Customer"
     );
@@ -633,7 +631,7 @@ function DepartmentQueue({
     const detail = jobDetails[workOrder.production_job_id];
     const designWork = getDesignWorkDetails(detail?.order);
     setDesignDraft({
-      customerName: detail?.project?.contact_name || getCustomerName(detail?.customer),
+      customerName: detail?.order?.artwork_customer_name || detail?.project?.contact_name || getCustomerName(detail?.customer),
       workType: designWork.workType || "New Design Required",
       fileName: designWork.fileName || "",
       description: designWork.description || "",
@@ -650,49 +648,6 @@ function DepartmentQueue({
     });
     setAdditionalDesignPhotos([]);
     setEditDesignTarget(workOrder);
-  }
-
-  async function resolveCustomerForDesignJob(customerName, detail) {
-    const normalizedName = customerName.trim().replace(/\s+/g, " ");
-    const currentName = detail?.project?.contact_name || getCustomerName(detail?.customer);
-    if (!normalizedName || normalizedName.toLowerCase() === currentName.trim().toLowerCase()) {
-      return detail?.customer?.id || null;
-    }
-
-    const { data: customers, error: customerSearchError } = await supabase
-      .from("customers")
-      .select("id, first_name, last_name, contact_name, name, company_name")
-      .limit(500);
-    if (customerSearchError) throw customerSearchError;
-
-    const matchingCustomer = (customers || []).find((customer) => {
-      const names = [
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim(),
-        customer.contact_name,
-        customer.name,
-        customer.company_name,
-      ].filter(Boolean);
-      return names.some((name) => name.trim().toLowerCase() === normalizedName.toLowerCase());
-    });
-    if (matchingCustomer) return matchingCustomer.id;
-
-    const nameParts = normalizedName.split(" ");
-    const firstName = nameParts.shift() || normalizedName;
-    const lastName = nameParts.join(" ");
-    const { data: newCustomer, error: createCustomerError } = await supabase
-      .from("customers")
-      .insert({
-        first_name: firstName,
-        last_name: lastName || null,
-        phone: designDraft.phone.trim() || null,
-        email: designDraft.email.trim() || null,
-        customer_type: "Retail",
-        is_active: true,
-      })
-      .select("id")
-      .single();
-    if (createCustomerError) throw createCustomerError;
-    return newCustomer.id;
   }
 
   async function uploadAdditionalDesignPhotos() {
@@ -749,7 +704,6 @@ function DepartmentQueue({
 
     setSavingAction(true);
     try {
-      const customerId = await resolveCustomerForDesignJob(designDraft.customerName, detail);
       const updates = [
         supabase.from("work_orders").update({
           assigned_to: designDraft.assignedTo.trim() || null,
@@ -757,14 +711,13 @@ function DepartmentQueue({
         }).eq("id", editDesignTarget.id),
         supabase.from("production_jobs").update({
           due_date: toDateString(designDraft.dueDate),
-          customer_id: customerId,
         }).eq("id", editDesignTarget.production_job_id),
       ];
 
       if (detail?.order?.id) {
         updates.push(
           supabase.from("customer_orders").update({
-            customer_id: customerId,
+            artwork_customer_name: designDraft.customerName.trim(),
             design_notes: designNotes,
             design_fee_required: designDraft.feeRequired,
             design_fee_paid: designDraft.feeRequired && designDraft.feePaid,
@@ -775,21 +728,12 @@ function DepartmentQueue({
         );
       }
 
-      if (detail?.project?.id) {
-        updates.push(
-          supabase.from("projects").update({
-            customer_id: customerId,
-            contact_name: designDraft.customerName.trim(),
-          }).eq("id", detail.project.id)
-        );
-      }
-
-      if (customerId) {
+      if (detail?.customer?.id) {
         updates.push(
           supabase.from("customers").update({
             phone: designDraft.phone.trim() || null,
             email: designDraft.email.trim() || null,
-          }).eq("id", customerId)
+          }).eq("id", detail.customer.id)
         );
       }
 
@@ -1331,7 +1275,7 @@ function DepartmentQueue({
     const project = detail?.project;
     const images = detail?.images || [];
     const materials = detail?.materials || [];
-    const customerName = project?.contact_name || getCustomerName(customer);
+    const customerName = order?.artwork_customer_name || project?.contact_name || getCustomerName(customer);
     const companyName = getCustomerCompany(customer);
     const productNames = getProductNames(items, products);
     const orderNumber =
@@ -1656,7 +1600,7 @@ function DepartmentQueue({
     const project = detail?.project;
     const order = detail?.order;
     const designWork = (department === "Design" || unifiedArtwork) ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
-    const customerName = project?.contact_name || getCustomerName(customer);
+    const customerName = order?.artwork_customer_name || project?.contact_name || getCustomerName(customer);
     const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
     const designRank = isDesignStation(workOrder) && workOrder.status === "Ready"
