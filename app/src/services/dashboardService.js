@@ -1516,6 +1516,8 @@ export async function getDashboardData() {
         : order.design_fee_paid || order.design_fee_status === "Paid"
           ? "Paid"
           : "Pending",
+      orderType: order.order_type || "Customer Order",
+      isSmallFabrication: String(order.order_type || "").toLowerCase().includes("small fabrication"),
     };
   }).sort((left, right) => {
     if (left.designFeeCleared !== right.designFeeCleared) {
