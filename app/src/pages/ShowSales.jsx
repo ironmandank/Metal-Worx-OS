@@ -80,6 +80,20 @@ function dateValue(value) {
   return new Date(value).toLocaleDateString();
 }
 
+function databaseDate(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const dateOnly = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+    if (dateOnly) return dateOnly;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getItemId(item) {
   return item?.inventory_item_id || item?.id || null;
 }
@@ -445,8 +459,14 @@ function ShowSales({ setPage, activeUser }) {
   }
 
   async function createEvent() {
-    if (!eventForm.eventName.trim() || !eventForm.startDate || !eventForm.endDate) {
+    const startDate = databaseDate(eventForm.startDate);
+    const endDate = databaseDate(eventForm.endDate);
+    if (!eventForm.eventName.trim() || !startDate || !endDate) {
       notifications.show({ title: "Missing Information", message: "Enter the show name and dates.", color: "orange" });
+      return;
+    }
+    if (endDate < startDate) {
+      notifications.show({ title: "Check Show Dates", message: "The end date cannot be before the start date.", color: "orange" });
       return;
     }
     setSaving(true);
@@ -458,8 +478,8 @@ function ShowSales({ setPage, activeUser }) {
         address: eventForm.address.trim() || null,
         city: eventForm.city.trim() || null,
         state: eventForm.state.trim() || null,
-        start_date: eventForm.startDate.toISOString().slice(0, 10),
-        end_date: eventForm.endDate.toISOString().slice(0, 10),
+        start_date: startDate,
+        end_date: endDate,
         starting_cash: Number(eventForm.startingCash || 0),
         notes: eventForm.notes.trim() || null,
         created_by: activeUser || null,
