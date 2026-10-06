@@ -262,6 +262,7 @@ function DepartmentQueue({
   }
 
   function updateArtworkDraft(workOrder, field, value) {
+    if (!value) return;
     setArtworkDrafts((current) => ({
       ...current,
       [workOrder.id]: {
@@ -277,9 +278,18 @@ function DepartmentQueue({
   }
 
   function artworkDraft(workOrder) {
-    return artworkDrafts[workOrder.id] || {
+    const savedDraft = artworkDrafts[workOrder.id];
+    if (!savedDraft) return {
       stage: stationFor(workOrder),
       status: currentWorkflowStatus(workOrder),
+    };
+    const validStatuses = artworkStatusOptions({
+      ...workOrder,
+      department: SHOP_STATIONS.includes(savedDraft.stage) ? savedDraft.stage : stationFor(workOrder),
+    });
+    return {
+      stage: SHOP_STATIONS.includes(savedDraft.stage) ? savedDraft.stage : stationFor(workOrder),
+      status: validStatuses.includes(savedDraft.status) ? savedDraft.status : currentWorkflowStatus(workOrder),
     };
   }
 
@@ -289,6 +299,9 @@ function DepartmentQueue({
   }
 
   async function applyArtworkUpdate(workOrder, draft, blockedNote = "") {
+    if (!SHOP_STATIONS.includes(draft.stage)) {
+      throw new Error("Choose a valid Stage before saving this artwork job.");
+    }
     const currentStage = stationFor(workOrder);
     const currentStatus = currentWorkflowStatus(workOrder);
     const statusChanged = draft.status !== currentStatus;
@@ -1337,6 +1350,7 @@ function DepartmentQueue({
                     description="Choose where the job belongs"
                     data={SHOP_STATIONS}
                     value={artworkDraft(workOrder).stage}
+                    allowDeselect={false}
                     disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
                     onChange={(value) => updateArtworkDraft(workOrder, "stage", value)}
                   />
@@ -1345,6 +1359,7 @@ function DepartmentQueue({
                     description="Choose its current work or delivery status"
                     data={artworkStatusOptions({ ...workOrder, department: artworkDraft(workOrder).stage })}
                     value={artworkDraft(workOrder).status}
+                    allowDeselect={false}
                     disabled={!isAdministrator || savingAction}
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
@@ -1683,6 +1698,7 @@ function DepartmentQueue({
                     label="Stage"
                     data={SHOP_STATIONS}
                     value={artworkDraft(workOrder).stage}
+                    allowDeselect={false}
                     disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
                     onChange={(value) => updateArtworkDraft(workOrder, "stage", value)}
                   />
@@ -1691,6 +1707,7 @@ function DepartmentQueue({
                     label="Status"
                     data={artworkStatusOptions({ ...workOrder, department: artworkDraft(workOrder).stage })}
                     value={artworkDraft(workOrder).status}
+                    allowDeselect={false}
                     disabled={!isAdministrator || savingAction}
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
