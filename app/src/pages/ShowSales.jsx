@@ -41,7 +41,10 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
-import { downloadShowBookPdf } from "../services/showBookPdfExportService";
+import {
+  downloadCrateSheetsPdf,
+  downloadShowBookPdf,
+} from "../services/showBookPdfExportService";
 
 const PAYMENT_METHODS = [
   "Cash",
@@ -94,6 +97,7 @@ function ShowSales({ setPage, activeUser }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [printingBook, setPrintingBook] = useState(false);
+  const [printingCrates, setPrintingCrates] = useState(false);
   const [events, setEvents] = useState([]);
   const [showSummaries, setShowSummaries] = useState([]);
   const [allProductPerformance, setAllProductPerformance] = useState([]);
@@ -504,12 +508,10 @@ function ShowSales({ setPage, activeUser }) {
     }
   }
 
-  async function printShowBook() {
-    if (!activeEvent || !snapshots.length) return;
-    setPrintingBook(true);
-    try {
+  async function loadShowPrintData() {
       const itemIds = Array.from(new Set(snapshots.map((row) => row.inventory_item_id).filter(Boolean)));
-      const [itemResult, imageResult] = await Promise.all([
+      const binIds = Array.from(new Set(snapshots.map((row) => row.bin_id).filter(Boolean)));
+      const [itemResult, imageResult, binResult] = await Promise.all([
         supabase
           .from("inventory_items")
           .select("id,name,item_number,color_name,notes,selling_price,show_price,primary_image_url")
@@ -521,18 +523,34 @@ function ShowSales({ setPage, activeUser }) {
           .eq("is_active", true)
           .order("is_primary", { ascending: false })
           .order("sort_order", { ascending: true }),
+        supabase
+          .from("inventory_bins")
+          .select("id,code,name")
+          .in("id", binIds),
       ]);
       if (itemResult.error) throw itemResult.error;
       if (imageResult.error) throw imageResult.error;
+      if (binResult.error) throw binResult.error;
+      return {
+        items: itemResult.data || [],
+        images: imageResult.data || [],
+        bins: binResult.data || [],
+      };
+  }
+
+  async function printShowBook() {
+    if (!activeEvent || !snapshots.length) return;
+    setPrintingBook(true);
+    try {
+      const source = await loadShowPrintData();
       await downloadShowBookPdf({
         event: activeEvent,
         snapshots,
-        items: itemResult.data || [],
-        images: imageResult.data || [],
+        ...source,
       });
       notifications.show({
-        title: "Show Book Downloaded",
-        message: "The printable crate book uses four photo products per page to conserve paper and ink.",
+        title: "Master Show Book Downloaded",
+        message: "The complete master copy includes every crate and product.",
         color: "green",
       });
     } catch (error) {
@@ -543,6 +561,32 @@ function ShowSales({ setPage, activeUser }) {
       });
     } finally {
       setPrintingBook(false);
+    }
+  }
+
+  async function printCrateSheets() {
+    if (!activeEvent || !snapshots.length) return;
+    setPrintingCrates(true);
+    try {
+      const source = await loadShowPrintData();
+      await downloadCrateSheetsPdf({
+        event: activeEvent,
+        snapshots,
+        ...source,
+      });
+      notifications.show({
+        title: "Crate Sheets Downloaded",
+        message: "The PDF contains a clearly labeled manifest to place inside each crate.",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Crate Sheets Could Not Be Created",
+        message: error.message,
+        color: "red",
+      });
+    } finally {
+      setPrintingCrates(false);
     }
   }
 
@@ -868,7 +912,10 @@ function ShowSales({ setPage, activeUser }) {
               <Stack align="flex-end" gap="sm">
                 <ThemeIcon color="red" size={52} radius="lg"><IconTruckDelivery size={28} /></ThemeIcon>
                 <Button color="red" leftSection={<IconPrinter size={18} />} loading={printingBook} onClick={printShowBook}>
-                  Download Show Book PDF
+                  Download Master Show Book
+                </Button>
+                <Button color="gray" variant="light" leftSection={<IconPrinter size={18} />} loading={printingCrates} onClick={printCrateSheets}>
+                  Download Individual Crate Sheets
                 </Button>
                 <Button color="orange" variant="light" leftSection={<IconCheck size={18} />} onClick={openReconciliation}>
                   Close & Reconcile

@@ -236,11 +236,9 @@ function drawSummaryPage(doc, event, groupedRows) {
   }
 }
 
-export async function downloadShowBookPdf({ event, snapshots, items, images }) {
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
-  await registerFonts(doc);
-
+async function prepareShowRows({ snapshots, items, images, bins }) {
   const itemMap = new Map((items || []).map((item) => [item.id, item]));
+  const binMap = new Map((bins || []).map((bin) => [bin.id, bin]));
   const imageMap = new Map();
   (images || []).forEach((image) => {
     if (!imageMap.has(image.inventory_item_id) || image.is_primary) {
@@ -250,10 +248,14 @@ export async function downloadShowBookPdf({ event, snapshots, items, images }) {
 
   const rows = (snapshots || []).map((snapshot) => {
     const item = itemMap.get(snapshot.inventory_item_id) || {};
+    const bin = binMap.get(snapshot.bin_id) || {};
+    const crateCode = bin.code || snapshot.bin_code || "";
+    const crateName = bin.name || "";
     return {
       ...snapshot,
       finish: finishFromItem(item),
       price: item.show_price ?? item.selling_price ?? 0,
+      crateLabel: [crateCode, crateName].filter(Boolean).join(" ") || "Unassigned Crate",
       imageUrl: item.primary_image_url || imageMap.get(snapshot.inventory_item_id) || null,
       imageData: null,
     };
@@ -268,15 +270,26 @@ export async function downloadShowBookPdf({ event, snapshots, items, images }) {
     }
   }));
 
+  return rows;
+}
+
+function groupShowRows(rows) {
   const grouped = new Map();
   rows
-    .sort((a, b) => String(a.bin_code || "Unassigned").localeCompare(String(b.bin_code || "Unassigned")) || String(a.item_name).localeCompare(String(b.item_name)))
+    .sort((a, b) => String(a.crateLabel).localeCompare(String(b.crateLabel)) || String(a.item_name).localeCompare(String(b.item_name)))
     .forEach((row) => {
-      const crate = row.bin_code || "Unassigned Crate";
+      const crate = row.crateLabel;
       if (!grouped.has(crate)) grouped.set(crate, []);
       grouped.get(crate).push(row);
     });
-  const groupedRows = Array.from(grouped.entries());
+  return Array.from(grouped.entries());
+}
+
+export async function downloadShowBookPdf({ event, snapshots, items, images, bins }) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  await registerFonts(doc);
+  const rows = await prepareShowRows({ snapshots, items, images, bins });
+  const groupedRows = groupShowRows(rows);
 
   drawSummaryPage(doc, event, groupedRows);
   let pageNumber = 1;
@@ -301,5 +314,69 @@ export async function downloadShowBookPdf({ event, snapshots, items, images }) {
     }
   });
 
-  doc.save(`${safeName(event.event_name)}-Show-Inventory-Book.pdf`);
+  doc.save(`${safeName(event.event_name)}-Master-Show-Inventory-Book.pdf`);
+}
+
+function drawCrateManifestRow(doc, row, y) {
+  const left = PAGE.left;
+  const width = PAGE.width - PAGE.left - PAGE.right;
+  const rowHeight = 101;
+  doc.setDrawColor(...COLORS.line);
+  doc.setLineWidth(0.7);
+  doc.roundedRect(left, y, width, rowHeight, 4, 4, "S");
+  addContainedImage(doc, row.imageData, left + 8, y + 8, 92, 85);
+
+  const textX = left + 112;
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(11.5);
+  doc.setTextColor(...COLORS.ink);
+  const nameLines = doc.splitTextToSize(row.item_name || "Unnamed item", 255).slice(0, 2);
+  doc.text(nameLines, textX, y + 22, { lineHeightFactor: 1.08 });
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COLORS.gray);
+  doc.text(row.item_number || "No item number", textX, y + 52);
+  doc.text(`Finish: ${row.finish || "—"}  •  Price: ${money(row.price)}`, textX, y + 69);
+
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(17);
+  doc.setTextColor(...COLORS.ink);
+  doc.text(`QTY ${Number(row.starting_quantity || 0)}`, left + width - 12, y + 28, { align: "right" });
+  doc.setFontSize(8.5);
+  doc.text("LOADED  □", left + width - 12, y + 56, { align: "right" });
+  doc.text("RETURNED  □", left + width - 12, y + 76, { align: "right" });
+}
+
+export async function downloadCrateSheetsPdf({ event, snapshots, items, images, bins }) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  await registerFonts(doc);
+  const rows = await prepareShowRows({ snapshots, items, images, bins });
+  const groupedRows = groupShowRows(rows);
+  let firstPage = true;
+
+  groupedRows.forEach(([crate, crateRows]) => {
+    for (let start = 0; start < crateRows.length; start += 6) {
+      if (!firstPage) doc.addPage();
+      firstPage = false;
+      doc.setFont("ShowBook", "bold");
+      doc.setFontSize(20);
+      doc.setTextColor(...COLORS.ink);
+      doc.text(crate, PAGE.left, 39);
+      doc.setFontSize(9);
+      doc.setTextColor(...COLORS.red);
+      doc.text("PLACE THIS SHEET INSIDE THE CRATE", PAGE.width - PAGE.right, 39, { align: "right" });
+      doc.setFont("ShowBook", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...COLORS.gray);
+      doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}  •  Page ${Math.floor(start / 6) + 1}`, PAGE.left, 56);
+      doc.setDrawColor(...COLORS.red);
+      doc.setLineWidth(2);
+      doc.line(PAGE.left, 67, PAGE.width - PAGE.right, 67);
+      crateRows.slice(start, start + 6).forEach((row, index) => {
+        drawCrateManifestRow(doc, row, 79 + index * 111);
+      });
+    }
+  });
+
+  doc.save(`${safeName(event.event_name)}-Individual-Crate-Sheets.pdf`);
 }
