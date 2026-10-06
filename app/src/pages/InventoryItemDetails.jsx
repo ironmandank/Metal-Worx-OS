@@ -500,6 +500,27 @@ function InventoryItemDetails({
     }
   }
 
+  async function restoreInventoryItem() {
+    setSavingItem(true);
+    try {
+      const { error } = await supabase
+        .from("inventory_items")
+        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .eq("id", itemId);
+      if (error) throw error;
+      notifications.show({
+        title: "Inventory Item Restored",
+        message: `${item?.name || "The item"} is active again. Its quantity remains zero until you add it to a crate or storage position.`,
+        color: "green",
+      });
+      await loadItemDetails();
+    } catch (error) {
+      notifications.show({ title: "Item Could Not Be Restored", message: error.message, color: "red" });
+    } finally {
+      setSavingItem(false);
+    }
+  }
+
   function openBin(balance) {
     const bin = {
       id: balance.bin_id,
@@ -1315,6 +1336,17 @@ function InventoryItemDetails({
             )}
 
             <Group grow>
+              {!item.is_active && (
+                <Button
+                  variant="light"
+                  color="green"
+                  leftSection={<IconRestore size={18} />}
+                  loading={savingItem}
+                  onClick={restoreInventoryItem}
+                >
+                  Restore to Active Inventory
+                </Button>
+              )}
               <Button
                 variant="light"
                 color="gray"
@@ -1323,7 +1355,7 @@ function InventoryItemDetails({
               >
                 Edit Item
               </Button>
-              <Button
+              {item.is_active && <Button
                 variant="light"
                 color="red"
                 leftSection={<IconTrash size={18} />}
@@ -1331,7 +1363,7 @@ function InventoryItemDetails({
                 onClick={removeInventoryItem}
               >
                 Delete / Archive
-              </Button>
+              </Button>}
               <Button
                 color="red"
                 leftSection={<IconRefresh size={18} />}

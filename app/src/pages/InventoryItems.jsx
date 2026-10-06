@@ -17,6 +17,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconArchive,
   IconAlertTriangle,
   IconBox,
   IconBuildingStore,
@@ -321,6 +322,9 @@ function InventoryItems({
   const [search, setSearch] =
     useState("");
 
+  const [recordFilter, setRecordFilter] =
+    useState("active");
+
   const [groupFilter, setGroupFilter] =
     useState("all");
 
@@ -476,6 +480,7 @@ function InventoryItems({
 
   function clearFilters() {
     setSearch("");
+    setRecordFilter("active");
     setGroupFilter("all");
     setCategoryFilter("all");
     setStatusFilter("all");
@@ -542,6 +547,9 @@ function InventoryItems({
       .toLowerCase();
 
     return items.filter((item) => {
+      if (recordFilter === "active" && !item.is_active) return false;
+      if (recordFilter === "archived" && item.is_active) return false;
+
       if (
         groupFilter !== "all" &&
         getItemGroup(item).toLowerCase() !==
@@ -608,6 +616,7 @@ function InventoryItems({
   }, [
     items,
     search,
+    recordFilter,
     groupFilter,
     categoryFilter,
     statusFilter,
@@ -864,6 +873,7 @@ function InventoryItems({
 
   const hasFilters =
     search.trim() !== "" ||
+    recordFilter !== "active" ||
     groupFilter !== "all" ||
     categoryFilter !== "all" ||
     statusFilter !== "all" ||
@@ -885,6 +895,18 @@ function InventoryItems({
       color: "blue",
       onClick: () => {
         clearFilters();
+      },
+    },
+    {
+      key: "archived-items",
+      label: "Archived Items",
+      value: formatNumber(items.filter((item) => !item.is_active).length, 0),
+      description: "Zero-count items kept for later search and restoration.",
+      icon: IconArchive,
+      color: "gray",
+      onClick: () => {
+        clearFilters();
+        setRecordFilter("archived");
       },
     },
     {
@@ -1076,6 +1098,18 @@ function InventoryItems({
           }
         >
           <Stack gap="md">
+            <Select
+              label="Catalog View"
+              value={recordFilter}
+              onChange={(value) => setRecordFilter(value || "active")}
+              data={[
+                { value: "active", label: "Active Inventory" },
+                { value: "archived", label: "Archived Items" },
+                { value: "all", label: "All Records" },
+              ]}
+              allowDeselect={false}
+              radius="md"
+            />
             <TextInput
               value={search}
               onChange={(event) =>

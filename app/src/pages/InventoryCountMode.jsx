@@ -275,10 +275,10 @@ function InventoryCountMode({ setPage, activeUser }) {
     if (!activeSession || saving) return;
     setSaving(true);
     try {
-      const { error } = await supabase.rpc("mw_complete_inventory_reset", { p_session_id: activeSession.id });
+      const { data, error } = await supabase.rpc("mw_finalize_inventory_reset", { p_session_id: activeSession.id });
       if (error) throw error;
       setCompleteOpen(false); await loadData();
-      notifications.show({ title: "Inventory Reset Completed", message: "The fresh count is complete and the original backup remains archived.", color: "green", icon: <IconCheck size={18}/> });
+      notifications.show({ title: "New Inventory Is Active", message: `${data?.active_item_count || verifiedItemCount} counted items are active. ${data?.archived_item_count || 0} zero-quantity items were archived and remain searchable.`, color: "green", icon: <IconCheck size={18}/> });
     } catch (error) { notifications.show({ title: "Reset Could Not Be Completed", message: error.message, color: "red" }); }
     finally { setSaving(false); }
   }
@@ -330,7 +330,7 @@ function InventoryCountMode({ setPage, activeUser }) {
       </Stack></MWPanel>}
     </>}
     <Modal opened={startOpen} onClose={() => setStartOpen(false)} title="Archive Current Inventory & Start Fresh" centered><Stack><Alert color="blue" icon={<IconArchive size={20}/>}>This keeps every item and image. It creates a permanent dated backup, then clears quantities and crate assignments so you can begin fresh. Nothing will be deleted.</Alert><TextInput label="Reset Name" value={sessionName} onChange={(event) => setSessionName(event.currentTarget.value)} required/><Button color="red" loading={saving} disabled={!sessionName.trim()} onClick={startReset}>Create Backup, Clear Counts & Begin</Button><Button variant="subtle" color="gray" onClick={() => setStartOpen(false)}>Cancel</Button></Stack></Modal>
-    <Modal opened={completeOpen} onClose={() => setCompleteOpen(false)} title="Finish This Inventory Reset?" centered><Stack><Alert color={verifiedItemCount < (activeSession?.snapshot_item_count || 0) ? "orange" : "green"} icon={<IconClipboardCheck size={20}/>}>{verifiedItemCount} of {activeSession?.snapshot_item_count || 0} archived items have been verified. Finishing closes this reset, but its backup and count history remain available.</Alert><Button color="green" loading={saving} onClick={completeReset}>Finish Inventory Reset</Button><Button variant="subtle" color="gray" onClick={() => setCompleteOpen(false)}>Keep Counting</Button></Stack></Modal>
+    <Modal opened={completeOpen} onClose={() => setCompleteOpen(false)} title="Make This the Official Inventory?" centered><Stack><Alert color="blue" icon={<IconClipboardCheck size={20}/>}>The {verifiedItemCount} items with a physical quantity will become the active inventory. Every zero-quantity item will move to the searchable archive with its images and history preserved. Empty craft-show crates will also be archived; shop storage areas remain available.</Alert><Button color="green" loading={saving} onClick={completeReset}>Use This as the New Inventory</Button><Button variant="subtle" color="gray" onClick={() => setCompleteOpen(false)}>Keep Counting</Button></Stack></Modal>
   </Stack>;
 }
 
