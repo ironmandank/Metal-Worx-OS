@@ -143,6 +143,12 @@ export default function MorningHuddleTV({ setPage }) {
   const linkedPriorityIds = new Set(priorityItems.filter((item) => item.sourceType === "customerOrder" && item.sourceId).map((item) => String(item.sourceId)));
   const priorityTitles = new Set(priorityItems.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
   const unduplicatedOrders = artworkOrders.filter((order) => !linkedPriorityIds.has(String(order.id)) && !priorityTitles.has(String(order.title || "").trim().toLowerCase()));
+  const smallFabrication = artworkOrders
+    .filter((order) => order.isSmallFabrication)
+    .sort((left, right) => {
+      if (Boolean(left.dueDate) !== Boolean(right.dueDate)) return left.dueDate ? -1 : 1;
+      return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
+    });
   const designQueue = artworkOrders
     .filter((order) => String(order.department || "").toLowerCase().includes("design"))
     .sort((left, right) => {
@@ -154,6 +160,7 @@ export default function MorningHuddleTV({ setPage }) {
     })
     .slice(0, 12);
   const promotedArtwork = unduplicatedOrders
+    .filter((order) => !order.isSmallFabrication)
     .filter((order) => order.showOnHuddle || order.dueDate || Number(order.businessDaysInShop || 0) >= 12)
     .map((order) => ({
       ...order,
@@ -206,6 +213,10 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-panel tv-hot-artwork">
         <h2><IconClipboardCheck/> Design Queue — Easiest to Hardest</h2>
         {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=><div className="tv-item-card" key={`design-${x.id || i}`}><span className={`tv-workload ${x.designWorkColor || "gray"}`}>{x.designWorkLabel || "Design Work"}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · Fee {text(x.designFeeStatus,"Not Required")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
+      </div>
+      <div className="tv-panel tv-hot-artwork">
+        <h2><IconTool/> Small Fabrication & Repairs</h2>
+        {smallFabrication.length ? <><div className="tv-card-grid">{smallFabrication.slice(0,6).map((x,i)=><div className="tv-item-card" key={`small-fab-${x.id || i}`}><span className="tv-card-tag gray">{text(x.department,"Welding")}</span><strong>{text(x.title,"Small fabrication job")}</strong><small>{text(x.customer,"Customer")} · {text(x.owner,"Shop Team")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={smallFabrication.length} shown={6}/></>:<div className="tv-empty">No small fabrication or repair jobs are currently open.</div>}
       </div>
       <div className="tv-panel tv-outside">
         <h2><IconUsers/> Outside Projects</h2>
