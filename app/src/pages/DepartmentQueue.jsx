@@ -452,6 +452,7 @@ function DepartmentQueue({
     return [
       "Ready",
       "In Progress",
+      "Needs Plaque",
       "Blocked",
       ...(isDesignStation(workOrder) ? ["Awaiting Customer Approval"] : []),
       "Waiting for Customer Pickup",
