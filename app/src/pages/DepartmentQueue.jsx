@@ -288,9 +288,7 @@ function DepartmentQueue({
     return draft.stage !== stationFor(workOrder) || draft.status !== currentWorkflowStatus(workOrder);
   }
 
-  async function saveArtworkUpdate(workOrder) {
-    if (savingAction || movingStageId || !artworkDraftChanged(workOrder)) return;
-    const draft = artworkDraft(workOrder);
+  async function applyArtworkUpdate(workOrder, draft, blockedNote = "") {
     const currentStage = stationFor(workOrder);
     const currentStatus = currentWorkflowStatus(workOrder);
     const statusChanged = draft.status !== currentStatus;
@@ -302,31 +300,48 @@ function DepartmentQueue({
       "Completed — Shipped",
     ].includes(draft.status);
     const shouldSetStatus = statusChanged || (stageChanged && !terminalStatus && draft.status !== "Ready");
-    let note = `Status changed to ${draft.status} from the Artwork Workflow.`;
+    let targetWorkOrderId = workOrder.id;
 
-    if (shouldSetStatus && draft.status === "Blocked") {
-      note = window.prompt("Why is this artwork blocked?", "") || "";
-      if (!note.trim()) return;
+    if (stageChanged && !terminalStatus) {
+      const moveResult = await moveArtworkToStation(
+        workOrder.id,
+        draft.stage,
+        activeUser,
+        `Moved from ${currentStage} to ${draft.stage} from the Artwork Workflow.`
+      );
+      targetWorkOrderId = moveResult?.work_order_id || workOrder.id;
     }
-    if (statusChanged && ["Completed — Picked Up", "Completed — Shipped"].includes(draft.status) &&
+    if (shouldSetStatus) {
+      await setArtworkWorkflowStatus(
+        targetWorkOrderId,
+        draft.status,
+        activeUser,
+        draft.status === "Blocked"
+          ? blockedNote
+          : `Status changed to ${draft.status} from the Artwork Workflow.`
+      );
+    }
+
+    return { stageChanged, statusChanged };
+  }
+
+  async function saveArtworkUpdate(workOrder) {
+    if (savingAction || movingStageId || !artworkDraftChanged(workOrder)) return;
+    const draft = artworkDraft(workOrder);
+    const stageChanged = draft.stage !== stationFor(workOrder);
+    let blockedNote = "";
+
+    if (draft.status === "Blocked") {
+      blockedNote = window.prompt("Why is this artwork blocked?", "") || "";
+      if (!blockedNote.trim()) return;
+    }
+    if (["Completed — Picked Up", "Completed — Shipped"].includes(draft.status) &&
         !window.confirm(`Mark this artwork ${draft.status.toLowerCase()} and move it to the archive?`)) return;
 
     setSavingAction(true);
     setMovingStageId(stageChanged ? workOrder.id : null);
     try {
-      let targetWorkOrderId = workOrder.id;
-      if (stageChanged && !terminalStatus) {
-        const moveResult = await moveArtworkToStation(
-          workOrder.id,
-          draft.stage,
-          activeUser,
-          `Moved from ${currentStage} to ${draft.stage} from the Artwork Workflow.`
-        );
-        targetWorkOrderId = moveResult?.work_order_id || workOrder.id;
-      }
-      if (shouldSetStatus) {
-        await setArtworkWorkflowStatus(targetWorkOrderId, draft.status, activeUser, note);
-      }
+      await applyArtworkUpdate(workOrder, draft, blockedNote);
 
       notifications.show({
         title: "Artwork Updated",
@@ -363,6 +378,60 @@ function DepartmentQueue({
     } finally {
       setSavingAction(false);
       setMovingStageId(null);
+    }
+  }
+
+  async function saveAllArtworkUpdates() {
+    if (savingAction || movingStageId) return;
+    const changedOrders = workOrders.filter(artworkDraftChanged);
+    if (changedOrders.length === 0) return;
+
+    const completedCount = changedOrders.filter((workOrder) =>
+      ["Completed — Picked Up", "Completed — Shipped"].includes(artworkDraft(workOrder).status)
+    ).length;
+    if (completedCount > 0 && !window.confirm(
+      `${completedCount} item${completedCount === 1 ? " will" : "s will"} be marked completed and moved to the archive. Save all changes?`
+    )) return;
+
+    const blockedNotes = {};
+    for (const workOrder of changedOrders) {
+      if (artworkDraft(workOrder).status !== "Blocked") continue;
+      const reason = window.prompt(
+        `Why is ${workOrder.work_order_number || "this artwork"} blocked?`,
+        ""
+      ) || "";
+      if (!reason.trim()) return;
+      blockedNotes[workOrder.id] = reason.trim();
+    }
+
+    setSavingAction(true);
+    const successfulIds = [];
+    const failed = [];
+    for (const workOrder of changedOrders) {
+      try {
+        await applyArtworkUpdate(workOrder, artworkDraft(workOrder), blockedNotes[workOrder.id]);
+        successfulIds.push(workOrder.id);
+      } catch (error) {
+        failed.push({ workOrder, error });
+      }
+    }
+
+    try {
+      setArtworkDrafts((current) => {
+        const next = { ...current };
+        successfulIds.forEach((id) => delete next[id]);
+        return next;
+      });
+      await loadQueue();
+      notifications.show({
+        title: failed.length ? "Some Artwork Needs Attention" : "All Artwork Changes Saved",
+        message: failed.length
+          ? `${successfulIds.length} updated; ${failed.length} could not be updated and remain pending.`
+          : `${successfulIds.length} artwork item${successfulIds.length === 1 ? " was" : "s were"} updated together.`,
+        color: failed.length ? "orange" : "green",
+      });
+    } finally {
+      setSavingAction(false);
     }
   }
 
@@ -1247,6 +1316,9 @@ function DepartmentQueue({
   }
 
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
+  const pendingArtworkUpdates = unifiedArtwork
+    ? workOrders.filter(artworkDraftChanged)
+    : [];
 
   function renderWorkOrder(workOrder) {
     const detail = jobDetails[workOrder.production_job_id];
@@ -1784,6 +1856,49 @@ function DepartmentQueue({
           Add the customer request here. New artwork waits for the $50 design fee, Kory or the design team uploads the proof,
           an administrator records customer approval, and the approved job moves to Laser. Artwork already on file skips Design.
         </Alert>
+      )}
+
+      {unifiedArtwork && isAdministrator && pendingArtworkUpdates.length > 0 && (
+        <Paper
+          withBorder
+          radius="lg"
+          p="md"
+          mb="lg"
+          style={{
+            position: "sticky",
+            top: 12,
+            zIndex: 30,
+            borderColor: "var(--mantine-color-red-6)",
+            boxShadow: "0 10px 28px rgba(0, 0, 0, 0.28)",
+          }}
+        >
+          <Group justify="space-between" align="center" wrap="wrap">
+            <div>
+              <Text fw={900} c="red.4">
+                {pendingArtworkUpdates.length} Unsaved Change{pendingArtworkUpdates.length === 1 ? "" : "s"}
+              </Text>
+              <Text size="sm" c="dimmed">
+                Continue through the full list, then save every Stage and Status update together.
+              </Text>
+            </div>
+            <Group>
+              <Button
+                variant="default"
+                disabled={savingAction}
+                onClick={() => setArtworkDrafts({})}
+              >
+                Discard Changes
+              </Button>
+              <Button
+                color="red"
+                loading={savingAction}
+                onClick={saveAllArtworkUpdates}
+              >
+                Save All Changes ({pendingArtworkUpdates.length})
+              </Button>
+            </Group>
+          </Group>
+        </Paper>
       )}
 
       {unifiedArtwork && (
