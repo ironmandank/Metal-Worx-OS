@@ -1011,7 +1011,14 @@ function Dashboard({
   const hotArtwork = safeArray(dashboardData?.priorityFeed?.quickCommitments);
   const hotArtworkIds = new Set(hotArtwork.map((item) => String(item.sourceId || "")).filter(Boolean));
   const hotArtworkTitles = new Set(hotArtwork.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
+  const smallFabrication = artworkOrders
+    .filter((item) => item.isSmallFabrication)
+    .sort((left, right) => {
+      if (Boolean(left.dueDate) !== Boolean(right.dueDate)) return left.dueDate ? -1 : 1;
+      return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
+    });
   const regularArtwork = artworkOrders
+    .filter((item) => !item.isSmallFabrication)
     .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
     .filter((item) => Number(item.businessDaysInShop || 0) < 12)
     .sort((left, right) => {
@@ -1025,6 +1032,7 @@ function Dashboard({
     })
     .slice(0, 10);
   const agedArtwork = artworkOrders
+    .filter((item) => !item.isSmallFabrication)
     .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
     .filter((item) => Number(item.businessDaysInShop || 0) >= 12)
     .map((item) => ({ ...item, priority: "Critical", tag: "12+ Business Days" }));
@@ -1046,6 +1054,7 @@ function Dashboard({
   const todayGroups = {
     "Hot Today": hotItems,
     "Hot Artwork": artHotItems,
+    "Small Fabrication": smallFabrication,
     "Artwork Orders": regularArtwork,
     "Field Work": fieldItems,
     Blockers: riskItems,
