@@ -150,6 +150,7 @@ function DepartmentQueue({
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState([]);
   const [bulkStage, setBulkStage] = useState(null);
   const [bulkMoving, setBulkMoving] = useState(false);
+  const [artworkDrafts, setArtworkDrafts] = useState({});
   const [noteTarget, setNoteTarget] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [bypassTarget, setBypassTarget] = useState(null);
@@ -218,17 +219,26 @@ function DepartmentQueue({
       : rows;
 
     setWorkOrders(queue);
-    await Promise.all([
-      loadJobDetails(queue),
-      (department === "Design" || unifiedArtwork)
-        ? getTodaysHotTodayItems({ department: "Design" })
-            .then(setHotTodayItems)
-            .catch((hotError) => {
-              console.warn("Hot Today design ranking unavailable:", hotError);
-              setHotTodayItems([]);
-            })
-        : Promise.resolve(),
-    ]);
+    try {
+      await Promise.all([
+        loadJobDetails(queue),
+        (department === "Design" || unifiedArtwork)
+          ? getTodaysHotTodayItems({ department: "Design" })
+              .then(setHotTodayItems)
+              .catch((hotError) => {
+                console.warn("Hot Today design ranking unavailable:", hotError);
+                setHotTodayItems([]);
+              })
+          : Promise.resolve(),
+      ]);
+    } catch (detailError) {
+      console.error("Could not load queue details:", detailError);
+      notifications.show({
+        title: "Some Project Details Could Not Load",
+        message: "The queue is available. Refresh the page to try loading the remaining details again.",
+        color: "orange",
+      });
+    }
     setLoading(false);
   }
 
@@ -238,34 +248,6 @@ function DepartmentQueue({
 
   function isDesignStation(workOrder) {
     return stationFor(workOrder) === "Design";
-  }
-
-  async function changeArtworkStage(workOrder, nextStage) {
-    if (!nextStage || nextStage === stationFor(workOrder) || movingStageId) return;
-    setMovingStageId(workOrder.id);
-    try {
-      await moveArtworkToStation(
-        workOrder.id,
-        nextStage,
-        activeUser,
-        `Moved from ${stationFor(workOrder)} to ${nextStage} from the Artwork Workflow.`
-      );
-      notifications.show({
-        title: `Artwork Moved to ${nextStage}`,
-        message: "The existing job, images, files, notes, and history stayed together.",
-        color: "green",
-      });
-      setDetailTarget(null);
-      await loadQueue();
-    } catch (error) {
-      notifications.show({
-        title: "Artwork Could Not Be Moved",
-        message: error?.message || "The production route could not be updated.",
-        color: "red",
-      });
-    } finally {
-      setMovingStageId(null);
-    }
   }
 
   function currentWorkflowStatus(workOrder) {
@@ -279,35 +261,108 @@ function DepartmentQueue({
     return workOrder.status;
   }
 
-  async function changeArtworkStatus(workOrder, nextStatus) {
-    if (!nextStatus || nextStatus === currentWorkflowStatus(workOrder) || savingAction) return;
-    let note = `Status changed to ${nextStatus} from the Artwork Workflow.`;
-    if (nextStatus === "Blocked") {
+  function updateArtworkDraft(workOrder, field, value) {
+    setArtworkDrafts((current) => ({
+      ...current,
+      [workOrder.id]: {
+        stage: current[workOrder.id]?.stage ?? stationFor(workOrder),
+        status: current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder),
+        ...(field === "stage" && value !== "Design" &&
+          (current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder)) === "Awaiting Customer Approval"
+          ? { status: "Ready" }
+          : {}),
+        [field]: value,
+      },
+    }));
+  }
+
+  function artworkDraft(workOrder) {
+    return artworkDrafts[workOrder.id] || {
+      stage: stationFor(workOrder),
+      status: currentWorkflowStatus(workOrder),
+    };
+  }
+
+  function artworkDraftChanged(workOrder) {
+    const draft = artworkDraft(workOrder);
+    return draft.stage !== stationFor(workOrder) || draft.status !== currentWorkflowStatus(workOrder);
+  }
+
+  async function saveArtworkUpdate(workOrder) {
+    if (savingAction || movingStageId || !artworkDraftChanged(workOrder)) return;
+    const draft = artworkDraft(workOrder);
+    const currentStage = stationFor(workOrder);
+    const currentStatus = currentWorkflowStatus(workOrder);
+    const statusChanged = draft.status !== currentStatus;
+    const stageChanged = draft.stage !== currentStage;
+    const terminalStatus = [
+      "Waiting for Customer Pickup",
+      "Ready to Ship",
+      "Completed — Picked Up",
+      "Completed — Shipped",
+    ].includes(draft.status);
+    const shouldSetStatus = statusChanged || (stageChanged && !terminalStatus && draft.status !== "Ready");
+    let note = `Status changed to ${draft.status} from the Artwork Workflow.`;
+
+    if (shouldSetStatus && draft.status === "Blocked") {
       note = window.prompt("Why is this artwork blocked?", "") || "";
       if (!note.trim()) return;
     }
-    if (["Completed — Picked Up", "Completed — Shipped"].includes(nextStatus) &&
-        !window.confirm(`Mark this artwork ${nextStatus.toLowerCase()} and move it to the archive?`)) return;
+    if (statusChanged && ["Completed — Picked Up", "Completed — Shipped"].includes(draft.status) &&
+        !window.confirm(`Mark this artwork ${draft.status.toLowerCase()} and move it to the archive?`)) return;
+
     setSavingAction(true);
+    setMovingStageId(stageChanged ? workOrder.id : null);
     try {
-      await setArtworkWorkflowStatus(workOrder.id, nextStatus, activeUser, note);
-      notifications.show({ title: "Artwork Status Updated", message: `${nextStatus} is now shown everywhere this job appears.`, color: "green" });
+      let targetWorkOrderId = workOrder.id;
+      if (stageChanged && !terminalStatus) {
+        const moveResult = await moveArtworkToStation(
+          workOrder.id,
+          draft.stage,
+          activeUser,
+          `Moved from ${currentStage} to ${draft.stage} from the Artwork Workflow.`
+        );
+        targetWorkOrderId = moveResult?.work_order_id || workOrder.id;
+      }
+      if (shouldSetStatus) {
+        await setArtworkWorkflowStatus(targetWorkOrderId, draft.status, activeUser, note);
+      }
+
+      notifications.show({
+        title: "Artwork Updated",
+        message: "The stage and status were saved together. Images, files, notes, and history stayed with the job.",
+        color: "green",
+      });
       setDetailTarget(null);
-      if (nextStatus === "Waiting for Customer Pickup") {
+      setArtworkDrafts((current) => {
+        const next = { ...current };
+        delete next[workOrder.id];
+        return next;
+      });
+
+      if (draft.status === "Waiting for Customer Pickup") {
         setStageFilter("Waiting for Pickup");
         setQueueFilter("All");
-      } else if (nextStatus === "Ready to Ship") {
+      } else if (draft.status === "Ready to Ship") {
         setStageFilter("Ready to Ship");
         setQueueFilter("All");
-      } else if (["Completed — Picked Up", "Completed — Shipped"].includes(nextStatus)) {
+      } else if (["Completed — Picked Up", "Completed — Shipped"].includes(draft.status)) {
         setStageFilter("Completed / Archive");
         setQueueFilter("Completed / Archive");
+      } else if (stageChanged) {
+        setStageFilter(draft.stage);
+        setQueueFilter("All");
       }
       await loadQueue();
     } catch (error) {
-      notifications.show({ title: "Status Could Not Be Updated", message: error?.message || "Please try again.", color: "red" });
+      notifications.show({
+        title: "Artwork Could Not Be Updated",
+        message: error?.message || "Please try again.",
+        color: "red",
+      });
     } finally {
       setSavingAction(false);
+      setMovingStageId(null);
     }
   }
 
@@ -333,112 +388,74 @@ function DepartmentQueue({
       ),
     ];
 
+    if (productionJobIds.length === 0) {
+      setJobDetails({});
+      return;
+    }
+
+    const { data: jobs = [], error: jobsError } = await supabase
+      .from("production_jobs")
+      .select("*")
+      .in("id", productionJobIds);
+    if (jobsError) throw jobsError;
+
+    const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
+    const projectIds = [...new Set(jobs.map((job) => job.project_id).filter(Boolean))];
+    const materialSourceIds = [...new Set(jobs.flatMap((job) => [job.id, job.customer_order_id]).filter(Boolean).map(String))];
+
+    const [ordersResult, itemsResult, imagesResult, projectsResult, materialsResult] = await Promise.all([
+      orderIds.length ? supabase.from("customer_orders").select("*").in("id", orderIds) : Promise.resolve({ data: [], error: null }),
+      orderIds.length ? supabase.from("customer_order_items").select("*").in("order_id", orderIds) : Promise.resolve({ data: [], error: null }),
+      orderIds.length ? supabase.from("customer_order_reference_images").select("*").in("customer_order_id", orderIds).order("sort_order", { ascending: true }) : Promise.resolve({ data: [], error: null }),
+      projectIds.length ? supabase.from("projects").select("*").in("id", projectIds) : Promise.resolve({ data: [], error: null }),
+      materialSourceIds.length ? supabase.from("material_requests").select("*").in("source_id", materialSourceIds).order("created_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    ]);
+    const batchError = [ordersResult, itemsResult, imagesResult, projectsResult, materialsResult].find((result) => result.error)?.error;
+    if (batchError) throw batchError;
+
+    const orders = ordersResult.data || [];
+    const items = itemsResult.data || [];
+    const images = imagesResult.data || [];
+    const projects = projectsResult.data || [];
+    const materials = materialsResult.data || [];
+    const customerIds = [...new Set([
+      ...jobs.map((job) => job.customer_id),
+      ...orders.map((order) => order.customer_id),
+      ...projects.map((project) => project.customer_id),
+    ].filter(Boolean))];
+    const productIds = [...new Set(items.map((item) => item.product_template_id).filter(Boolean))];
+
+    const [customersResult, productsResult] = await Promise.all([
+      customerIds.length ? supabase.from("customers").select("*").in("id", customerIds) : Promise.resolve({ data: [], error: null }),
+      productIds.length ? supabase.from("product_templates").select("*").in("id", productIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    const relatedError = customersResult.error || productsResult.error;
+    if (relatedError) throw relatedError;
+
+    const byId = (rows) => Object.fromEntries((rows || []).map((row) => [String(row.id), row]));
+    const ordersById = byId(orders);
+    const projectsById = byId(projects);
+    const customersById = byId(customersResult.data);
+    const productsById = byId(productsResult.data);
     const details = {};
 
-    for (const productionJobId of productionJobIds) {
-      const { data: job } = await supabase
-        .from("production_jobs")
-        .select("*")
-        .eq("id", productionJobId)
-        .single();
-
-      if (!job) continue;
-
-      const [orderResult, itemsResult, imageResult] = await Promise.all([
-        job.customer_order_id
-          ? supabase
-              .from("customer_orders")
-              .select("*")
-              .eq("id", job.customer_order_id)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
-        job.customer_order_id
-          ? supabase
-              .from("customer_order_items")
-              .select("*")
-              .eq("order_id", job.customer_order_id)
-          : Promise.resolve({ data: [], error: null }),
-        job.customer_order_id
-          ? supabase
-              .from("customer_order_reference_images")
-              .select("*")
-              .eq("customer_order_id", job.customer_order_id)
-              .order("sort_order", { ascending: true })
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-
-      if (orderResult.error) console.error(orderResult.error);
-      if (itemsResult.error) console.error(itemsResult.error);
-
-      const order = orderResult.data || null;
-      const items = itemsResult.data || [];
-      const images = imageResult.data || [];
-      let project = null;
-      if (job.project_id) {
-        const { data: projectData, error: projectError } = await supabase
-          .from("projects")
-          .select("*")
-          .eq("id", job.project_id)
-          .maybeSingle();
-        if (projectError) console.error(projectError);
-        project = projectData || null;
-      }
-      const resolvedCustomerId =
-        job.customer_id || order?.customer_id || project?.customer_id;
-      let customer = null;
-
-      if (resolvedCustomerId) {
-        const { data: customerData, error: customerError } = await supabase
-          .from("customers")
-          .select("*")
-          .eq("id", resolvedCustomerId)
-          .maybeSingle();
-
-        if (customerError) console.error(customerError);
-        customer = customerData || null;
-      }
-
-      let products = [];
-      const { data: materialData, error: materialError } = await supabase
-        .from("material_requests")
-        .select("*")
-        .in(
-          "source_id",
-          [job.id, job.customer_order_id].filter(Boolean).map(String)
-        )
-        .order("created_at", { ascending: false });
-      if (materialError) console.error(materialError);
-
-      if (items.length) {
-        const productIds = [
-          ...new Set(
-            items
-              .map((item) => item.product_template_id)
-              .filter(Boolean)
-          ),
-        ];
-
-        if (productIds.length > 0) {
-          const { data: productData } = await supabase
-            .from("product_templates")
-            .select("*")
-            .in("id", productIds);
-
-          products = productData || [];
-        }
-      }
-
-      details[productionJobId] = {
+    jobs.forEach((job) => {
+      const order = ordersById[String(job.customer_order_id)] || null;
+      const project = projectsById[String(job.project_id)] || null;
+      const jobItems = items.filter((item) => String(item.order_id) === String(job.customer_order_id));
+      const resolvedCustomerId = job.customer_id || order?.customer_id || project?.customer_id;
+      const sourceIds = new Set([job.id, job.customer_order_id].filter(Boolean).map(String));
+      details[job.id] = {
         job,
-        customer,
+        customer: customersById[String(resolvedCustomerId)] || null,
         order,
-        items,
-        products,
+        items: jobItems,
+        products: jobItems.map((item) => productsById[String(item.product_template_id)]).filter(Boolean),
         project,
-        images,
-        materials: materialData || [],
+        images: images.filter((image) => String(image.customer_order_id) === String(job.customer_order_id)),
+        materials: materials.filter((material) => sourceIds.has(String(material.source_id))),
       };
-    }
+    });
 
     setJobDetails(details);
   }
@@ -1296,24 +1313,38 @@ function DepartmentQueue({
           </Title>
 
           {unifiedArtwork && (
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <Select
-                label="Current Stage"
-                description="Move the same job; no duplicate is created"
-                data={SHOP_STATIONS}
-                value={stationFor(workOrder)}
-                disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
-                onChange={(value) => changeArtworkStage(workOrder, value)}
-              />
-              <Select
-                label="Workflow Status"
-                description="Includes pickup, shipping, and archive"
-                data={artworkStatusOptions(workOrder)}
-                value={currentWorkflowStatus(workOrder)}
-                disabled={!isAdministrator || savingAction}
-                onChange={(value) => changeArtworkStatus(workOrder, value)}
-              />
-            </SimpleGrid>
+            <Paper withBorder radius="md" p="sm">
+              <Stack gap="sm">
+                <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+                  <Select
+                    label="Stage"
+                    description="Choose where the job belongs"
+                    data={SHOP_STATIONS}
+                    value={artworkDraft(workOrder).stage}
+                    disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
+                    onChange={(value) => updateArtworkDraft(workOrder, "stage", value)}
+                  />
+                  <Select
+                    label="Status"
+                    description="Choose its current work or delivery status"
+                    data={artworkStatusOptions({ ...workOrder, department: artworkDraft(workOrder).stage })}
+                    value={artworkDraft(workOrder).status}
+                    disabled={!isAdministrator || savingAction}
+                    onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
+                  />
+                </SimpleGrid>
+                {isAdministrator && workflowStage(workOrder) !== "Completed / Archive" && (
+                  <Button
+                    color="red"
+                    loading={savingAction || movingStageId === workOrder.id}
+                    disabled={!artworkDraftChanged(workOrder)}
+                    onClick={() => saveArtworkUpdate(workOrder)}
+                  >
+                    Update Stage & Status
+                  </Button>
+                )}
+              </Stack>
+            </Paper>
           )}
 
           <Stack gap={2}>
@@ -1628,26 +1659,39 @@ function DepartmentQueue({
           </div>
 
           {unifiedArtwork && (
-            <SimpleGrid cols={2} spacing="xs">
-              <Select
-                size="xs"
-                label="Stage"
-                data={SHOP_STATIONS}
-                value={stationFor(workOrder)}
-                disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(value) => changeArtworkStage(workOrder, value)}
-              />
-              <Select
-                size="xs"
-                label="Status"
-                data={artworkStatusOptions(workOrder)}
-                value={currentWorkflowStatus(workOrder)}
-                disabled={!isAdministrator || savingAction}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(value) => changeArtworkStatus(workOrder, value)}
-              />
-            </SimpleGrid>
+            <Paper withBorder radius="md" p="xs" onClick={(event) => event.stopPropagation()}>
+              <Stack gap="xs">
+                <SimpleGrid cols={2} spacing="xs">
+                  <Select
+                    size="xs"
+                    label="Stage"
+                    data={SHOP_STATIONS}
+                    value={artworkDraft(workOrder).stage}
+                    disabled={!isAdministrator || Boolean(movingStageId) || workflowStage(workOrder) === "Completed / Archive"}
+                    onChange={(value) => updateArtworkDraft(workOrder, "stage", value)}
+                  />
+                  <Select
+                    size="xs"
+                    label="Status"
+                    data={artworkStatusOptions({ ...workOrder, department: artworkDraft(workOrder).stage })}
+                    value={artworkDraft(workOrder).status}
+                    disabled={!isAdministrator || savingAction}
+                    onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
+                  />
+                </SimpleGrid>
+                {isAdministrator && workflowStage(workOrder) !== "Completed / Archive" && (
+                  <Button
+                    size="xs"
+                    color="red"
+                    loading={savingAction || movingStageId === workOrder.id}
+                    disabled={!artworkDraftChanged(workOrder)}
+                    onClick={() => saveArtworkUpdate(workOrder)}
+                  >
+                    Update Stage & Status
+                  </Button>
+                )}
+              </Stack>
+            </Paper>
           )}
 
           <Progress value={job?.progress_percent || 0} color="red" size="sm" radius="xl" />
