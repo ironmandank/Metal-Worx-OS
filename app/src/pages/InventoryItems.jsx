@@ -300,6 +300,16 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
+function getFinish(item) {
+  return String(item?.notes || "")
+    .split("\n")
+    .find((line) => line.trim().toLowerCase().startsWith("finish:"))
+    ?.split(":")
+    .slice(1)
+    .join(":")
+    .trim() || "";
+}
+
 function InventoryItems({
   setPage,
   setSelectedInventoryItem,
@@ -1451,12 +1461,14 @@ function InventoryItems({
                     background: "#151214",
                     boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
                     zIndex: 3,
+                    textAlign: "left",
                   },
                   td: {
                     borderBottom:
                       "1px solid rgba(255,255,255,0.055)",
                     verticalAlign:
                       "middle",
+                    textAlign: "left",
                   },
                 }}
               >
@@ -1572,6 +1584,9 @@ function InventoryItems({
                       const itemGroup =
                         getItemGroup(item);
 
+                      const itemFinish =
+                        getFinish(item);
+
                       const crateAllocations =
                         crateAllocationsByItem.get(item.inventory_item_id) || [];
 
@@ -1662,6 +1677,21 @@ function InventoryItems({
                                   >
                                     {item.dimensions}
                                   </Text>
+                                )}
+
+                                {(itemFinish || item.color_name) && (
+                                  <Group gap={6} mt={6} wrap="wrap" justify="flex-start">
+                                    {itemFinish && (
+                                      <Badge color="orange" variant="light" size="sm">
+                                        Finish: {itemFinish}
+                                      </Badge>
+                                    )}
+                                    {item.color_name && clean(item.color_name).toLowerCase() !== clean(itemFinish).toLowerCase() && (
+                                      <Badge color="gray" variant="outline" size="sm">
+                                        Color: {item.color_name}
+                                      </Badge>
+                                    )}
+                                  </Group>
                                 )}
                               </Box>
                             </Group>
