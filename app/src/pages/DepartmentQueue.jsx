@@ -1805,13 +1805,13 @@ function DepartmentQueue({
           : department === "Design"
           ? "Add customer design work, track Kory's progress, and hold finished proofs for customer approval."
           : `Only work currently ready or in progress for ${department}.`}
-        buttonText={(department === "Design" || unifiedArtwork) ? "Add Artwork" : "Production Control"}
+        buttonText={(department === "Design" || unifiedArtwork) ? "Add Artwork / Small Job" : "Production Control"}
         onButtonClick={(department === "Design" || unifiedArtwork) ? onCreateDesign : () => setPage("productionControl")}
       />
 
       {unifiedArtwork ? (
         <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="One job, one record">
-          Images, files, customer details, notes, and history stay attached to the original job. Changing Stage moves that job; changing Status records whether it is active, blocked, awaiting approval, waiting for pickup, shipped, or completed.
+          Artwork and small fabrication jobs stay together here. Images, files, customer details, notes, and history remain attached while Stage and Status move the job through the shop.
         </Alert>
       ) : department === "Design" && (
         <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="How design work moves">
