@@ -1365,6 +1365,9 @@ function InventoryItems({
                 </Button>
               </Group>
             </Group>
+            <Text size="xs" c="gray.5">
+              Scroll left or right inside the catalog to view every column. Item names, categories, and storage locations now show their full details.
+            </Text>
           </Stack>
 
           {filteredItems.length === 0 ? (
@@ -1381,19 +1384,20 @@ function InventoryItems({
             />
           ) : (
             <ScrollArea
-              type="auto"
+              type="always"
               offsetScrollbars
-              scrollbarSize={8}
+              scrollbarSize={12}
+              h="min(68vh, 720px)"
             >
               <Table
                 verticalSpacing="md"
                 horizontalSpacing="md"
                 highlightOnHover
                 withRowBorders
-                miw={1040}
+                miw={1500}
                 styles={{
                   table: {
-                    tableLayout: "fixed",
+                    tableLayout: "auto",
                   },
                   th: {
                     color:
@@ -1428,7 +1432,8 @@ function InventoryItems({
                     </Table.Th>
                     <Table.Th
                       style={{
-                        width: 270,
+                        width: 320,
+                        minWidth: 320,
                       }}
                     >
                       Item
@@ -1436,7 +1441,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 120,
+                        width: 140,
+                        minWidth: 140,
                       }}
                     >
                       Group
@@ -1444,7 +1450,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 150,
+                        width: 210,
+                        minWidth: 210,
                       }}
                     >
                       Category
@@ -1452,7 +1459,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 90,
+                        width: 95,
+                        minWidth: 95,
                       }}
                     >
                       On Hand
@@ -1460,7 +1468,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 90,
+                        width: 100,
+                        minWidth: 100,
                       }}
                     >
                       Available
@@ -1468,7 +1477,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 145,
+                        width: 245,
+                        minWidth: 245,
                       }}
                     >
                       Storage
@@ -1476,7 +1486,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 120,
+                        width: 145,
+                        minWidth: 145,
                       }}
                     >
                       Status
@@ -1484,7 +1495,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 90,
+                        width: 105,
+                        minWidth: 105,
                       }}
                     >
                       QR
@@ -1492,7 +1504,8 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
-                        width: 125,
+                        width: 135,
+                        minWidth: 135,
                       }}
                     >
                       Actions
@@ -1559,7 +1572,7 @@ function InventoryItems({
                                   fw={850}
                                   size="sm"
                                   c="gray.1"
-                                  lineClamp={1}
+                                  lineClamp={2}
                                 >
                                   {item.name}
                                 </Text>
@@ -1634,7 +1647,7 @@ function InventoryItems({
                               size="sm"
                               fw={700}
                               c="gray.3"
-                              lineClamp={2}
+                              style={{ whiteSpace: "normal" }}
                             >
                               {item.category_name ||
                                 "Uncategorized"}
@@ -1717,25 +1730,30 @@ function InventoryItems({
                               <Box
                                 style={{
                                   minWidth: 0,
+                                  width: "100%",
                                 }}
                               >
                                 <Text
                                   size="sm"
                                   fw={700}
                                   c="gray.3"
-                                  lineClamp={1}
+                                  style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
                                 >
-                                  {item.default_bin_name ||
-                                    "Unassigned"}
+                                  {item.default_bin_code && item.default_bin_name
+                                    ? `${item.default_bin_code} — ${item.default_bin_name}`
+                                    : item.default_bin_name || item.default_bin_code || "Unassigned"}
                                 </Text>
 
-                                {item.default_bin_code && (
+                                {(item.default_bin_zone || item.default_bin_description) && (
                                   <Text
                                     size="xs"
                                     c="gray.6"
                                     mt={2}
+                                    style={{ whiteSpace: "normal" }}
                                   >
-                                    {item.default_bin_code}
+                                    {[item.default_bin_zone, item.default_bin_description]
+                                      .filter(Boolean)
+                                      .join(" · ")}
                                   </Text>
                                 )}
                               </Box>
