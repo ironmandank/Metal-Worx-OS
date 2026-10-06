@@ -236,6 +236,10 @@ function ShowSales({ setPage, activeUser }) {
     () => snapshots.reduce((sum, row) => sum + Number(row.starting_quantity || 0), 0),
     [snapshots]
   );
+  const artworkDesigns = useMemo(
+    () => snapshots.filter((row) => Number(row.starting_quantity || 0) > 0 && /^(CR|LG)-/i.test(String(row.bin_code || ""))).length,
+    [snapshots]
+  );
   const expectedUnits = useMemo(
     () => snapshots.reduce((sum, row) => sum + Number(row.expected_quantity || 0), 0),
     [snapshots]
@@ -517,7 +521,7 @@ function ShowSales({ setPage, activeUser }) {
       if (error) throw error;
       notifications.show({
         title: "Show Started",
-        message: `${data?.total_units || 0} units were captured for the show.`,
+        message: `${data?.inventory_positions || 0} artwork designs were captured (${data?.total_units || 0} physical pieces).`,
         color: "green",
       });
       await loadData();
@@ -945,10 +949,11 @@ function ShowSales({ setPage, activeUser }) {
             </Group>
           </Card>
 
-          <SimpleGrid cols={{ base: 2, md: 4 }}>
+          <SimpleGrid cols={{ base: 2, md: 5 }}>
             {[
-              ["Starting Units", startingUnits, "blue", IconShoppingCart],
-              ["Units Remaining", expectedUnits, "orange", IconScan],
+              ["Artwork Designs", artworkDesigns, "blue", IconShoppingCart],
+              ["Physical Pieces Loaded", startingUnits, "cyan", IconTruckDelivery],
+              ["Pieces Remaining", expectedUnits, "orange", IconScan],
               ["Completed Sales", completedSales.length, "green", IconCheck],
               ["Sales Total", money(salesTotal), "red", IconCash],
             ].map(([label, value, color, Icon]) => (
