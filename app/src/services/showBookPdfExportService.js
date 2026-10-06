@@ -250,11 +250,12 @@ async function prepareShowRows({ snapshots, items, images, bins }) {
       price: item.show_price ?? item.selling_price ?? 0,
       isInventoryItemActive: Boolean(item.id) && item.is_active !== false,
       crateLabel: [crateCode, crateName].filter(Boolean).join(" ") || "Unassigned Crate",
+      isShowCrate: /^(CR|LG)-/i.test(crateCode),
       imageUrl: item.primary_image_url || imageMap.get(snapshot.inventory_item_id) || null,
       imageData: null,
     };
   })
-    .filter((row) => row.inventory_item_id && row.item_name && row.isInventoryItemActive);
+    .filter((row) => row.inventory_item_id && row.item_name && row.isInventoryItemActive && row.isShowCrate);
 
   await Promise.all(rows.map(async (row) => {
     if (!row.imageUrl) return;
@@ -295,7 +296,7 @@ function drawMasterSummaryLandscape(doc, event, groupedRows, startIndex = 0, pag
   doc.text(`${event.venue_name || "Mobile sales event"}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}`, LANDSCAPE.left, 78);
   doc.setFont("ShowBook", "bold");
   doc.setTextColor(...COLORS.red);
-  doc.text(`${groupedRows.length} crates  •  ${totalProducts} item lines  •  ${totalPieces} total pieces`, LANDSCAPE.width - LANDSCAPE.right, 62, { align: "right" });
+  doc.text(`${groupedRows.length} crates  •  ${totalProducts} artwork designs  •  ${totalPieces} physical pieces`, LANDSCAPE.width - LANDSCAPE.right, 62, { align: "right" });
   doc.setFont("ShowBook", "normal");
   doc.setTextColor(...COLORS.gray);
   doc.text(`Page ${pageNumber}`, LANDSCAPE.width - LANDSCAPE.right, 38, { align: "right" });
@@ -347,7 +348,7 @@ function drawMasterSalesHeader(doc, event, pageNumber) {
   doc.text(`Page ${pageNumber}`, LANDSCAPE.width - LANDSCAPE.right, 31, { align: "right" });
 
   const headers = [
-    ["PHOTO", 24], ["ITEM", 84], ["FINISH", 249], ["CRATE", 314], ["START", 424], ["PRICE", 472], ["SOLD", 530], ["LEFT", 701],
+    ["PHOTO", 24], ["ARTWORK", 84], ["FINISH", 249], ["CRATE", 314], ["QTY", 424], ["PRICE", 472], ["SOLD QTY", 530], ["LEFT", 701],
   ];
   doc.setFillColor(...COLORS.ink);
   doc.rect(LANDSCAPE.left, 60, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 24, "F");
