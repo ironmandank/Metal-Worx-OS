@@ -26,6 +26,7 @@ import { notifyTeam } from "../../services/teamNotificationService";
 import { uploadOrderImages } from "../../services/orderImageService";
 
 const DEFAULT_FORM = {
+  jobType: "Artwork",
   customerName: "",
   phone: "",
   email: "",
@@ -135,8 +136,22 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
     setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index));
   }
 
-  const needsDesign = form.designSource !== "Design Already on File";
-  const feeRequired = form.designSource === "New Design Required";
+  const isSmallFabrication = form.jobType === "Small Fabrication / Repair";
+  const needsDesign = !isSmallFabrication && form.designSource !== "Design Already on File";
+  const feeRequired = !isSmallFabrication && form.designSource === "New Design Required";
+
+  function updateJobType(value) {
+    const jobType = value || "Artwork";
+    setForm((current) => ({
+      ...current,
+      jobType,
+      designSource: jobType === "Small Fabrication / Repair"
+        ? "Small Fabrication / Repair"
+        : "New Design Required",
+      assignedDesigner: jobType === "Small Fabrication / Repair" ? "Shop Team" : "Kory",
+      designFeePaid: false,
+    }));
+  }
 
   async function findOrCreateCustomer() {
     let customer = null;
@@ -188,7 +203,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       });
       return;
     }
-    if (!clean(form.phone) && !clean(form.email)) {
+    if (!isSmallFabrication && !clean(form.phone) && !clean(form.email)) {
       notifications.show({
         title: "Contact Information Required",
         message: "Enter a phone number or email address.",
@@ -200,7 +215,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
     setSaving(true);
     try {
       const customer = await findOrCreateCustomer();
-      const startingDepartment = needsDesign ? "Design" : "Laser";
+      const startingDepartment = isSmallFabrication ? "Welding" : needsDesign ? "Design" : "Laser";
       const orderNumber = `MW-${new Date().getFullYear()}-${Date.now()}`;
       const designFileName = clean(form.designFileName) || files[0]?.name || "";
       const { data: order, error: orderError } = await supabase
@@ -218,7 +233,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           total_amount: 0,
           deposit_received: false,
           deposit_amount: 0,
-          order_type: "Custom Artwork",
+          order_type: isSmallFabrication ? "Small Fabrication" : "Custom Artwork",
           order_owner: clean(form.assignedDesigner) || "Kory",
           design_needed: needsDesign,
           design_fee_required: feeRequired,
@@ -234,6 +249,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           ].filter(Boolean).join("\n"),
           starting_department: startingDepartment,
           fulfillment_method: "Pickup",
+          show_on_huddle: isSmallFabrication,
         })
         .select()
         .single();
@@ -270,15 +286,17 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       await notifyTeam({
         names: needsDesign ? ["Kory"] : [],
         departments: [startingDepartment],
-        title: needsDesign ? "New Design Work Is Ready" : "Artwork Order Released to Laser",
+        title: isSmallFabrication ? "New Small Fabrication Job" : needsDesign ? "New Design Work Is Ready" : "Artwork Order Released to Laser",
         message: `${form.projectName} for ${form.customerName} is ready in ${startingDepartment}.`,
         sourceId: order.id,
-        targetPage: needsDesign ? "designQueue" : "laserQueue",
+        targetPage: "designQueue",
         priority: form.rush ? "High" : "Medium",
       }).catch((notificationError) => console.warn("Design handoff notification failed", notificationError));
       notifications.show({
-        title: needsDesign ? "Added to Design Queue" : "Released to Laser",
-        message: needsDesign
+        title: isSmallFabrication ? "Added to Small Fabrication" : needsDesign ? "Added to Design Queue" : "Released to Laser",
+        message: isSmallFabrication
+          ? `${form.projectName} is ready in Welding and will appear on the Morning Huddle.`
+          : needsDesign
           ? `${form.projectName} is ready for Kory or the design team.`
           : `${form.projectName} uses artwork on file and skipped Design.`,
         color: "green",
@@ -297,12 +315,20 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add Design Work" size="xl" centered>
+    <Modal opened={opened} onClose={onClose} title="Add Artwork or Small Fabrication" size="xl" centered>
       <Stack>
         <Alert icon={<IconInfoCircle />} color="blue">
-          Start here for new artwork, changes to an existing design, or a customer-supplied file.
-          Choose <b>Design Already on File</b> when the approved cut file already exists; that sends the order directly to Laser.
+          Add artwork orders or quick shop work such as a small weld, wheel repair, bracket repair, or similar fabrication job.
+          Small fabrication starts in Welding and is automatically shown on the Morning Huddle.
         </Alert>
+
+        <Select
+          label="Job Type"
+          data={["Artwork", "Small Fabrication / Repair"]}
+          value={form.jobType}
+          onChange={updateJobType}
+          allowDeselect={false}
+        />
 
         <SimpleGrid cols={{ base: 1, md: 3 }}>
           <TextInput label="Customer Name" required value={form.customerName} onChange={(event) => update("customerName", event.currentTarget.value)} />
@@ -320,7 +346,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         <Textarea label="Special Instructions" minRows={2} value={form.specialInstructions} onChange={(event) => update("specialInstructions", event.currentTarget.value)} />
 
         <SimpleGrid cols={{ base: 1, md: 2 }}>
-          <Select
+          {!isSmallFabrication && <Select
             label="Artwork / Design Source"
             data={[
               "New Design Required",
@@ -331,8 +357,8 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             ]}
             value={form.designSource}
             onChange={(value) => update("designSource", value || "New Design Required")}
-          />
-          <Select label="Assigned Designer" data={["Kory", "Design Team", "Dan"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || "Kory")} />
+          />}
+          <Select label={isSmallFabrication ? "Assigned To" : "Assigned Designer"} data={["Kory", "Design Team", "Dan", "Chad", "Shop Team"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || (isSmallFabrication ? "Shop Team" : "Kory"))} />
         </SimpleGrid>
 
         {form.designSource === "Existing Logo — Placement Only" && (
@@ -341,17 +367,17 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           </Alert>
         )}
 
-        <TextInput
+        {!isSmallFabrication && <TextInput
           label="Existing File Name / Search Name"
           description="Optional: enter the CorelDRAW filename, Google Drive filename, logo name, or folder reference Kory should search for."
           placeholder="Example: SOCOM-logo-final.cdr or Flags / Military / SOCOM"
           value={form.designFileName}
           onChange={(event) => update("designFileName", event.currentTarget.value)}
-        />
+        />}
 
         <Stack gap={6}>
           <Text size="sm" fw={700}>
-            {needsDesign ? "Customer Reference Images / Files" : "Existing Design Reference (Optional)"}
+            {isSmallFabrication ? "Repair / Fabrication Photos" : needsDesign ? "Customer Reference Images / Files" : "Existing Design Reference (Optional)"}
           </Text>
           <Group gap="sm" align="center">
             <FileButton
@@ -402,15 +428,15 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
               <Select label="Payment Method" data={["Cash", "Card", "Check", "ACH", "Other"]} value={form.paymentMethod} onChange={(value) => update("paymentMethod", value || "Other")} />
             )}
           </Stack>
-        ) : (
+        ) : !isSmallFabrication ? (
           <Text size="sm" c="dimmed">No design fee will be charged for this artwork source.</Text>
-        )}
+        ) : null}
 
         <Checkbox label="Rush / priority order" checked={form.rush} onChange={(event) => update("rush", event.currentTarget.checked)} />
 
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancel</Button>
-          <Button color="red" loading={saving} onClick={saveIntake}>Add to Workflow</Button>
+          <Button color="red" loading={saving} onClick={saveIntake}>{isSmallFabrication ? "Add Small Fabrication Job" : "Add to Workflow"}</Button>
         </Group>
       </Stack>
     </Modal>
