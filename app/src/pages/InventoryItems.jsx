@@ -1429,6 +1429,8 @@ function InventoryItems({
                 horizontalSpacing="md"
                 highlightOnHover
                 withRowBorders
+                stickyHeader
+                stickyHeaderOffset={0}
                 miw={1500}
                 styles={{
                   table: {
@@ -1446,6 +1448,9 @@ function InventoryItems({
                     borderBottom:
                       "1px solid rgba(255,255,255,0.08)",
                     whiteSpace: "nowrap",
+                    background: "#151214",
+                    boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
+                    zIndex: 3,
                   },
                   td: {
                     borderBottom:
