@@ -121,27 +121,14 @@ function addContainedImage(doc, imageData, x, y, width, height) {
   }
 }
 
-function drawSaleMarks(doc, quantity, x, y, maxWidth) {
-  const units = Math.max(0, Math.round(Number(quantity || 0)));
+function drawSaleMarks(doc, x, y, maxWidth) {
   doc.setFont("ShowBook", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLORS.ink);
   doc.text("SOLD", x, y);
-  const startX = x + 31;
-  const boxSize = 10;
-  const gap = 5;
-  const maxBoxes = Math.max(1, Math.floor((maxWidth - 31) / (boxSize + gap)));
-  if (units > maxBoxes) {
-    doc.setFont("ShowBook", "normal");
-    doc.setFontSize(9);
-    doc.text(`_____ of ${units}`, startX, y);
-    return;
-  }
   doc.setDrawColor(...COLORS.gray);
   doc.setLineWidth(0.8);
-  for (let index = 0; index < units; index += 1) {
-    doc.rect(startX + index * (boxSize + gap), y - 9, boxSize, boxSize);
-  }
+  doc.line(x + 34, y + 1, x + maxWidth, y + 1);
 }
 
 function drawProductCard(doc, row, x, y, width, height) {
@@ -177,7 +164,7 @@ function drawProductCard(doc, row, x, y, width, height) {
   doc.text(`Loaded ${Number(row.starting_quantity || 0)}`, x + width - 11, cursorY, { align: "right" });
   cursorY += 18;
 
-  drawSaleMarks(doc, row.starting_quantity, contentX, cursorY, width - 22);
+  drawSaleMarks(doc, contentX, cursorY, width - 22);
   cursorY += 22;
   doc.setFont("ShowBook", "normal");
   doc.setFontSize(8.5);
@@ -247,7 +234,9 @@ async function prepareShowRows({ snapshots, items, images, bins }) {
     }
   });
 
-  const rows = (snapshots || []).map((snapshot) => {
+  const rows = (snapshots || [])
+    .filter((snapshot) => Number(snapshot.starting_quantity || 0) > 0)
+    .map((snapshot) => {
     const item = itemMap.get(snapshot.inventory_item_id) || {};
     const bin = binMap.get(snapshot.bin_id) || {};
     const crateCode = bin.code || snapshot.bin_code || "";
@@ -259,11 +248,13 @@ async function prepareShowRows({ snapshots, items, images, bins }) {
       color: item.color_name || "",
       finish: finishFromItem(item),
       price: item.show_price ?? item.selling_price ?? 0,
+      isInventoryItemActive: Boolean(item.id) && item.is_active !== false,
       crateLabel: [crateCode, crateName].filter(Boolean).join(" ") || "Unassigned Crate",
       imageUrl: item.primary_image_url || imageMap.get(snapshot.inventory_item_id) || null,
       imageData: null,
     };
-  });
+  })
+    .filter((row) => row.inventory_item_id && row.item_name && row.isInventoryItemActive);
 
   await Promise.all(rows.map(async (row) => {
     if (!row.imageUrl) return;
@@ -356,7 +347,7 @@ function drawMasterSalesHeader(doc, event, pageNumber) {
   doc.text(`Page ${pageNumber}`, LANDSCAPE.width - LANDSCAPE.right, 31, { align: "right" });
 
   const headers = [
-    ["PHOTO", 24], ["ITEM", 84], ["FINISH", 249], ["CRATE", 314], ["START", 424], ["PRICE", 472], ["SOLD — HASH MARKS", 530], ["LEFT", 701],
+    ["PHOTO", 24], ["ITEM", 84], ["FINISH", 249], ["CRATE", 314], ["START", 424], ["PRICE", 472], ["SOLD", 530], ["LEFT", 701],
   ];
   doc.setFillColor(...COLORS.ink);
   doc.rect(LANDSCAPE.left, 60, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 24, "F");
@@ -393,7 +384,7 @@ function drawMasterSalesRow(doc, row, y, alternate) {
   doc.text(money(row.price), 472, y + 30);
   doc.setFont("ShowBook", "normal");
   doc.setFontSize(9);
-  doc.text("|  |  |  |  |     |  |  |  |  |", 530, y + 30);
+  doc.text("____________________", 530, y + 30);
   doc.text("______", 701, y + 30);
 }
 
@@ -403,7 +394,7 @@ function drawMasterSalesPage(doc, event, rows, pageNumber) {
   doc.setFont("ShowBook", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...COLORS.gray);
-  doc.text("Use one hash mark for each item sold. Enter the remaining physical quantity in LEFT at the end of the show.", LANDSCAPE.left, 596);
+  doc.text("Record sales during the show. Enter the remaining physical quantity in LEFT at the end of the show.", LANDSCAPE.left, 596);
 }
 
 export async function downloadShowBookPdf({ event, snapshots, items, images, bins }) {
