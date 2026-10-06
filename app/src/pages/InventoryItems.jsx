@@ -316,6 +316,9 @@ function InventoryItems({
   const [bins, setBins] =
     useState([]);
 
+  const [stockBalances, setStockBalances] =
+    useState([]);
+
   const [labels, setLabels] =
     useState([]);
 
@@ -360,6 +363,7 @@ function InventoryItems({
         categoriesResult,
         binsResult,
         labelsResult,
+        stockResult,
       ] = await Promise.all([
         supabase
           .from(
@@ -416,6 +420,11 @@ function InventoryItems({
           `)
           .eq("label_type", "item")
           .eq("is_active", true),
+
+        supabase
+          .from("inventory_stock")
+          .select("inventory_item_id,bin_id,quantity_on_hand")
+          .gt("quantity_on_hand", 0),
       ]);
 
       const failedResult = [
@@ -423,6 +432,7 @@ function InventoryItems({
         categoriesResult,
         binsResult,
         labelsResult,
+        stockResult,
       ].find(
         (result) => result.error
       );
@@ -437,6 +447,7 @@ function InventoryItems({
       );
       setBins(binsResult.data || []);
       setLabels(labelsResult.data || []);
+      setStockBalances(stockResult.data || []);
     } catch (error) {
       console.error(
         "Inventory items load error:",
@@ -572,17 +583,18 @@ function InventoryItems({
         return false;
       }
 
-      if (
-        storageFilter === "unassigned" &&
-        item.default_bin_id
-      ) {
+      const actualBinIds = stockBalances
+        .filter((balance) => balance.inventory_item_id === item.inventory_item_id)
+        .map((balance) => balance.bin_id);
+
+      if (storageFilter === "unassigned" && actualBinIds.length > 0) {
         return false;
       }
 
       if (
         storageFilter !== "all" &&
         storageFilter !== "unassigned" &&
-        item.default_bin_id !== storageFilter
+        !actualBinIds.includes(storageFilter)
       ) {
         return false;
       }
@@ -621,7 +633,30 @@ function InventoryItems({
     categoryFilter,
     statusFilter,
     storageFilter,
+    stockBalances,
   ]);
+
+  const crateAllocationsByItem = useMemo(() => {
+    const binMap = new Map(bins.map((bin) => [bin.id, bin]));
+    const allocationMap = new Map();
+
+    stockBalances.forEach((balance) => {
+      const bin = binMap.get(balance.bin_id);
+      const itemAllocations = allocationMap.get(balance.inventory_item_id) || [];
+      itemAllocations.push({
+        ...balance,
+        code: bin?.code || "Unknown",
+        name: bin?.name || "Storage location",
+      });
+      allocationMap.set(balance.inventory_item_id, itemAllocations);
+    });
+
+    allocationMap.forEach((allocations) => {
+      allocations.sort((a, b) => a.code.localeCompare(b.code));
+    });
+
+    return allocationMap;
+  }, [bins, stockBalances]);
 
   const displayedIds = filteredItems.map((item) => item.inventory_item_id);
   const allDisplayedSelected =
@@ -1532,6 +1567,9 @@ function InventoryItems({
                       const itemGroup =
                         getItemGroup(item);
 
+                      const crateAllocations =
+                        crateAllocationsByItem.get(item.inventory_item_id) || [];
+
                       return (
                         <Table.Tr
                           key={
@@ -1715,10 +1753,7 @@ function InventoryItems({
                           </Table.Td>
 
                           <Table.Td>
-                            <Group
-                              gap="xs"
-                              wrap="nowrap"
-                            >
+                            <Group gap="xs" wrap="nowrap" align="flex-start">
                               <IconMapPin
                                 size={15}
                                 color="var(--mantine-color-gray-6)"
@@ -1727,36 +1762,20 @@ function InventoryItems({
                                 }}
                               />
 
-                              <Box
-                                style={{
-                                  minWidth: 0,
-                                  width: "100%",
-                                }}
-                              >
-                                <Text
-                                  size="sm"
-                                  fw={700}
-                                  c="gray.3"
-                                  style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}
-                                >
-                                  {item.default_bin_code && item.default_bin_name
-                                    ? `${item.default_bin_code} — ${item.default_bin_name}`
-                                    : item.default_bin_name || item.default_bin_code || "Unassigned"}
-                                </Text>
-
-                                {(item.default_bin_zone || item.default_bin_description) && (
-                                  <Text
-                                    size="xs"
-                                    c="gray.6"
-                                    mt={2}
-                                    style={{ whiteSpace: "normal" }}
-                                  >
-                                    {[item.default_bin_zone, item.default_bin_description]
-                                      .filter(Boolean)
-                                      .join(" · ")}
-                                  </Text>
+                              <Stack gap={5} style={{ minWidth: 0, width: "100%" }}>
+                                {crateAllocations.length > 0 ? crateAllocations.map((allocation) => (
+                                  <Box key={allocation.bin_id}>
+                                    <Text size="sm" fw={800} c="gray.2" style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>
+                                      {allocation.code} — {allocation.name}
+                                    </Text>
+                                    <Text size="xs" c="blue.3">
+                                      Quantity in this crate: {formatNumber(allocation.quantity_on_hand)}
+                                    </Text>
+                                  </Box>
+                                )) : (
+                                  <Text size="sm" fw={700} c="gray.5">No active crate assigned</Text>
                                 )}
-                              </Box>
+                              </Stack>
                             </Group>
                           </Table.Td>
 
