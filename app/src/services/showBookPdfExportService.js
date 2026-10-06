@@ -3,6 +3,7 @@ import quoteFontRegular from "../assets/fonts/DejaVuSans-Quote.ttf?url";
 import quoteFontBold from "../assets/fonts/DejaVuSans-Quote-Bold.ttf?url";
 
 const PAGE = { width: 612, height: 792, left: 30, right: 30, top: 30, bottom: 30 };
+const LANDSCAPE = { width: 792, height: 612, left: 24, right: 24, top: 24, bottom: 24 };
 const COLORS = {
   red: [166, 12, 30],
   ink: [28, 31, 35],
@@ -253,6 +254,9 @@ async function prepareShowRows({ snapshots, items, images, bins }) {
     const crateName = bin.name || "";
     return {
       ...snapshot,
+      sku: item.sku || "",
+      dimensions: item.dimensions || "",
+      color: item.color_name || "",
       finish: finishFromItem(item),
       price: item.show_price ?? item.selling_price ?? 0,
       crateLabel: [crateCode, crateName].filter(Boolean).join(" ") || "Unassigned Crate",
@@ -285,95 +289,204 @@ function groupShowRows(rows) {
   return Array.from(grouped.entries());
 }
 
+function drawMasterSummaryLandscape(doc, event, groupedRows, startIndex = 0, pageNumber = 1) {
+  const totalProducts = groupedRows.reduce((sum, [, rows]) => sum + rows.length, 0);
+  const totalPieces = groupedRows.reduce((sum, [, rows]) => sum + rows.reduce((crateSum, row) => crateSum + Number(row.starting_quantity || 0), 0), 0);
+  doc.setFont("ShowBook", "bold");
+  doc.setTextColor(...COLORS.ink);
+  doc.setFontSize(22);
+  doc.text(startIndex === 0 ? "MASTER SHOW INVENTORY" : "MASTER CRATE SUMMARY", LANDSCAPE.left, 38);
+  doc.setFontSize(14);
+  doc.text(event.event_name, LANDSCAPE.left, 62);
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COLORS.gray);
+  doc.text(`${event.venue_name || "Mobile sales event"}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}`, LANDSCAPE.left, 78);
+  doc.setFont("ShowBook", "bold");
+  doc.setTextColor(...COLORS.red);
+  doc.text(`${groupedRows.length} crates  •  ${totalProducts} item lines  •  ${totalPieces} total pieces`, LANDSCAPE.width - LANDSCAPE.right, 62, { align: "right" });
+  doc.setFont("ShowBook", "normal");
+  doc.setTextColor(...COLORS.gray);
+  doc.text(`Page ${pageNumber}`, LANDSCAPE.width - LANDSCAPE.right, 38, { align: "right" });
+  doc.setDrawColor(...COLORS.red);
+  doc.setLineWidth(2);
+  doc.line(LANDSCAPE.left, 90, LANDSCAPE.width - LANDSCAPE.right, 90);
+
+  const columns = [
+    ["CRATE", 24], ["DESCRIPTION", 150], ["ITEMS", 490], ["PIECES", 565], ["FINAL COUNT", 650],
+  ];
+  doc.setFillColor(...COLORS.ink);
+  doc.rect(LANDSCAPE.left, 104, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 24, "F");
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  columns.forEach(([label, x]) => doc.text(label, x, 120));
+  let y = 128;
+  groupedRows.slice(startIndex, startIndex + 17).forEach(([crate, rows], index) => {
+    const pieces = rows.reduce((sum, row) => sum + Number(row.starting_quantity || 0), 0);
+    const firstSpace = crate.indexOf(" ");
+    const code = firstSpace > 0 ? crate.slice(0, firstSpace) : crate;
+    const name = firstSpace > 0 ? crate.slice(firstSpace + 1) : "";
+    if (index % 2 === 0) {
+      doc.setFillColor(...COLORS.pale);
+      doc.rect(LANDSCAPE.left, y, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 25, "F");
+    }
+    doc.setFont("ShowBook", "bold");
+    doc.setTextColor(...COLORS.ink);
+    doc.setFontSize(8.5);
+    doc.text(code, 24, y + 16);
+    doc.setFont("ShowBook", "normal");
+    doc.text(doc.splitTextToSize(name, 325)[0] || "—", 150, y + 16);
+    doc.text(String(rows.length), 490, y + 16);
+    doc.text(String(pieces), 565, y + 16);
+    doc.text("__________", 650, y + 16);
+    y += 25;
+  });
+}
+
+function drawMasterSalesHeader(doc, event, pageNumber) {
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(...COLORS.ink);
+  doc.text("MASTER SALES TALLY", LANDSCAPE.left, 31);
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COLORS.gray);
+  doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}`, LANDSCAPE.left, 48);
+  doc.text(`Page ${pageNumber}`, LANDSCAPE.width - LANDSCAPE.right, 31, { align: "right" });
+
+  const headers = [
+    ["PHOTO", 24], ["ITEM", 84], ["FINISH", 249], ["CRATE", 314], ["START", 424], ["PRICE", 472], ["SOLD — HASH MARKS", 530], ["LEFT", 701],
+  ];
+  doc.setFillColor(...COLORS.ink);
+  doc.rect(LANDSCAPE.left, 60, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 24, "F");
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  headers.forEach(([label, x]) => doc.text(label, x, 76));
+}
+
+function drawMasterSalesRow(doc, row, y, alternate) {
+  if (alternate) {
+    doc.setFillColor(...COLORS.pale);
+    doc.rect(LANDSCAPE.left, y, LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right, 58, "F");
+  }
+  doc.setDrawColor(...COLORS.line);
+  doc.line(LANDSCAPE.left, y + 58, LANDSCAPE.width - LANDSCAPE.right, y + 58);
+  addContainedImage(doc, row.imageData, 28, y + 5, 48, 48);
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...COLORS.ink);
+  const itemLines = doc.splitTextToSize(row.item_name || "Unnamed item", 155).slice(0, 2);
+  doc.text(itemLines, 84, y + 15, { lineHeightFactor: 1.05 });
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...COLORS.gray);
+  doc.text(row.item_number || row.sku || "No item number", 84, y + 48);
+  doc.setTextColor(...COLORS.ink);
+  doc.setFontSize(8);
+  doc.text(doc.splitTextToSize(row.finish || row.color || "—", 58)[0], 249, y + 28);
+  doc.text(doc.splitTextToSize(row.crateLabel || "—", 102).slice(0, 2), 314, y + 20, { lineHeightFactor: 1.1 });
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(10);
+  doc.text(String(Number(row.starting_quantity || 0)), 424, y + 30);
+  doc.text(money(row.price), 472, y + 30);
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(9);
+  doc.text("|  |  |  |  |     |  |  |  |  |", 530, y + 30);
+  doc.text("______", 701, y + 30);
+}
+
+function drawMasterSalesPage(doc, event, rows, pageNumber) {
+  drawMasterSalesHeader(doc, event, pageNumber);
+  rows.forEach((row, index) => drawMasterSalesRow(doc, row, 84 + index * 62, index % 2 === 1));
+  doc.setFont("ShowBook", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...COLORS.gray);
+  doc.text("Use one hash mark for each item sold. Enter the remaining physical quantity in LEFT at the end of the show.", LANDSCAPE.left, 596);
+}
+
 export async function downloadShowBookPdf({ event, snapshots, items, images, bins }) {
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter", compress: true });
   await registerFonts(doc);
   const rows = await prepareShowRows({ snapshots, items, images, bins });
   const groupedRows = groupShowRows(rows);
 
-  drawSummaryPage(doc, event, groupedRows);
-  let pageNumber = 1;
-  const cardWidth = 267;
-  const cardHeight = 322;
-  const positions = [
-    [30, 82],
-    [315, 82],
-    [30, 419],
-    [315, 419],
-  ];
-
-  groupedRows.forEach(([crate, crateRows]) => {
-    for (let start = 0; start < crateRows.length; start += 4) {
-      doc.addPage();
-      pageNumber += 1;
-      addPageHeader(doc, event, crate, pageNumber);
-      crateRows.slice(start, start + 4).forEach((row, index) => {
-        const [x, y] = positions[index];
-        drawProductCard(doc, row, x, y, cardWidth, cardHeight);
-      });
-    }
-  });
+  const summaryPageCount = Math.max(1, Math.ceil(groupedRows.length / 17));
+  for (let start = 0; start < groupedRows.length; start += 17) {
+    if (start > 0) doc.addPage();
+    drawMasterSummaryLandscape(doc, event, groupedRows, start, Math.floor(start / 17) + 1);
+  }
+  const pageRows = groupedRows.flatMap(([, crateRows]) => crateRows);
+  for (let start = 0; start < pageRows.length; start += 8) {
+    doc.addPage();
+    drawMasterSalesPage(doc, event, pageRows.slice(start, start + 8), summaryPageCount + Math.floor(start / 8) + 1);
+  }
 
   doc.save(`${safeName(event.event_name)}-Master-Show-Inventory-Book.pdf`);
 }
 
 function drawCrateManifestRow(doc, row, y) {
-  const left = PAGE.left;
-  const width = PAGE.width - PAGE.left - PAGE.right;
-  const rowHeight = 101;
+  const left = LANDSCAPE.left;
+  const width = LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right;
+  const rowHeight = 58;
   doc.setDrawColor(...COLORS.line);
   doc.setLineWidth(0.7);
   doc.roundedRect(left, y, width, rowHeight, 4, 4, "S");
-  addContainedImage(doc, row.imageData, left + 8, y + 8, 92, 85);
+  addContainedImage(doc, row.imageData, left + 6, y + 6, 52, 46);
 
-  const textX = left + 112;
+  const textX = left + 70;
   doc.setFont("ShowBook", "bold");
-  doc.setFontSize(11.5);
+  doc.setFontSize(10.5);
   doc.setTextColor(...COLORS.ink);
-  const nameLines = doc.splitTextToSize(row.item_name || "Unnamed item", 255).slice(0, 2);
-  doc.text(nameLines, textX, y + 22, { lineHeightFactor: 1.08 });
+  const nameLines = doc.splitTextToSize(row.item_name || "Unnamed item", 350).slice(0, 2);
+  doc.text(nameLines, textX, y + 17, { lineHeightFactor: 1.05 });
   doc.setFont("ShowBook", "normal");
-  doc.setFontSize(8.5);
+  doc.setFontSize(8);
   doc.setTextColor(...COLORS.gray);
-  doc.text(row.item_number || "No item number", textX, y + 52);
-  doc.text(`Finish: ${row.finish || "—"}  •  Price: ${money(row.price)}`, textX, y + 69);
+  doc.text([row.item_number || row.sku || "No item number", row.dimensions].filter(Boolean).join("  •  "), textX, y + 47);
 
   doc.setFont("ShowBook", "bold");
-  doc.setFontSize(17);
+  doc.setFontSize(9);
   doc.setTextColor(...COLORS.ink);
-  doc.text(`QTY ${Number(row.starting_quantity || 0)}`, left + width - 12, y + 28, { align: "right" });
-  doc.setFontSize(8.5);
-  doc.text("LOADED  □", left + width - 12, y + 56, { align: "right" });
-  doc.text("RETURNED  □", left + width - 12, y + 76, { align: "right" });
+  doc.text("FINISH / COLOR", left + 485, y + 16);
+  doc.setFont("ShowBook", "normal");
+  doc.text(row.finish || row.color || "—", left + 485, y + 35);
+  doc.setFont("ShowBook", "bold");
+  doc.setFontSize(15);
+  doc.text(`QTY ${Number(row.starting_quantity || 0)}`, left + width - 14, y + 34, { align: "right" });
 }
 
 export async function downloadCrateSheetsPdf({ event, snapshots, items, images, bins }) {
-  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter", compress: true });
   await registerFonts(doc);
   const rows = await prepareShowRows({ snapshots, items, images, bins });
   const groupedRows = groupShowRows(rows);
   let firstPage = true;
 
   groupedRows.forEach(([crate, crateRows]) => {
-    for (let start = 0; start < crateRows.length; start += 6) {
+    const cratePieces = crateRows.reduce((sum, row) => sum + Number(row.starting_quantity || 0), 0);
+    const cratePages = Math.ceil(crateRows.length / 8);
+    for (let start = 0; start < crateRows.length; start += 8) {
       if (!firstPage) doc.addPage();
       firstPage = false;
       doc.setFont("ShowBook", "bold");
       doc.setFontSize(20);
       doc.setTextColor(...COLORS.ink);
-      doc.text(crate, PAGE.left, 39);
+      doc.text(crate, LANDSCAPE.left, 34);
       doc.setFontSize(9);
       doc.setTextColor(...COLORS.red);
-      doc.text("PLACE THIS SHEET INSIDE THE CRATE", PAGE.width - PAGE.right, 39, { align: "right" });
+      doc.text("COMPLETE CRATE CONTENTS", LANDSCAPE.width - LANDSCAPE.right, 34, { align: "right" });
       doc.setFont("ShowBook", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(...COLORS.gray);
-      doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}  •  Page ${Math.floor(start / 6) + 1}`, PAGE.left, 56);
+      doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}  •  ${crateRows.length} items  •  ${cratePieces} pieces`, LANDSCAPE.left, 51);
+      doc.text(`Page ${Math.floor(start / 8) + 1} of ${cratePages}`, LANDSCAPE.width - LANDSCAPE.right, 51, { align: "right" });
       doc.setDrawColor(...COLORS.red);
       doc.setLineWidth(2);
-      doc.line(PAGE.left, 67, PAGE.width - PAGE.right, 67);
-      crateRows.slice(start, start + 6).forEach((row, index) => {
-        drawCrateManifestRow(doc, row, 79 + index * 111);
+      doc.line(LANDSCAPE.left, 61, LANDSCAPE.width - LANDSCAPE.right, 61);
+      crateRows.slice(start, start + 8).forEach((row, index) => {
+        drawCrateManifestRow(doc, row, 72 + index * 63);
       });
     }
   });
