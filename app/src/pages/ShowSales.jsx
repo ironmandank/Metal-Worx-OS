@@ -534,8 +534,9 @@ function ShowSales({ setPage, activeUser }) {
       const [itemResult, imageResult, binResult] = await Promise.all([
         supabase
           .from("inventory_items")
-          .select("id,name,item_number,sku,color_name,dimensions,notes,selling_price,show_price,primary_image_url")
-          .in("id", itemIds),
+          .select("id,name,item_number,sku,color_name,dimensions,notes,selling_price,show_price,primary_image_url,is_active")
+          .in("id", itemIds)
+          .eq("is_active", true),
         supabase
           .from("inventory_item_images")
           .select("inventory_item_id,public_url,is_primary,is_active,sort_order")
