@@ -30,6 +30,7 @@ import {
   IconCash,
   IconCheck,
   IconPlus,
+  IconPrinter,
   IconRefresh,
   IconScan,
   IconSettings,
@@ -40,6 +41,7 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { downloadShowBookPdf } from "../services/showBookPdfExportService";
 
 const PAYMENT_METHODS = [
   "Cash",
@@ -91,6 +93,7 @@ function makeEventCode(name) {
 function ShowSales({ setPage, activeUser }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [printingBook, setPrintingBook] = useState(false);
   const [events, setEvents] = useState([]);
   const [showSummaries, setShowSummaries] = useState([]);
   const [allProductPerformance, setAllProductPerformance] = useState([]);
@@ -501,6 +504,48 @@ function ShowSales({ setPage, activeUser }) {
     }
   }
 
+  async function printShowBook() {
+    if (!activeEvent || !snapshots.length) return;
+    setPrintingBook(true);
+    try {
+      const itemIds = Array.from(new Set(snapshots.map((row) => row.inventory_item_id).filter(Boolean)));
+      const [itemResult, imageResult] = await Promise.all([
+        supabase
+          .from("inventory_items")
+          .select("id,name,item_number,color_name,notes,selling_price,show_price,primary_image_url")
+          .in("id", itemIds),
+        supabase
+          .from("inventory_item_images")
+          .select("inventory_item_id,public_url,is_primary,is_active,sort_order")
+          .in("inventory_item_id", itemIds)
+          .eq("is_active", true)
+          .order("is_primary", { ascending: false })
+          .order("sort_order", { ascending: true }),
+      ]);
+      if (itemResult.error) throw itemResult.error;
+      if (imageResult.error) throw imageResult.error;
+      await downloadShowBookPdf({
+        event: activeEvent,
+        snapshots,
+        items: itemResult.data || [],
+        images: imageResult.data || [],
+      });
+      notifications.show({
+        title: "Show Book Downloaded",
+        message: "The printable crate book uses four photo products per page to conserve paper and ink.",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Show Book Could Not Be Created",
+        message: error.message,
+        color: "red",
+      });
+    } finally {
+      setPrintingBook(false);
+    }
+  }
+
   function addResolvedItemToCart(item, position) {
     const itemId = getItemId(item);
     setCart((current) => {
@@ -822,6 +867,9 @@ function ShowSales({ setPage, activeUser }) {
               </div>
               <Stack align="flex-end" gap="sm">
                 <ThemeIcon color="red" size={52} radius="lg"><IconTruckDelivery size={28} /></ThemeIcon>
+                <Button color="red" leftSection={<IconPrinter size={18} />} loading={printingBook} onClick={printShowBook}>
+                  Download Show Book PDF
+                </Button>
                 <Button color="orange" variant="light" leftSection={<IconCheck size={18} />} onClick={openReconciliation}>
                   Close & Reconcile
                 </Button>
