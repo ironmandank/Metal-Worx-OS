@@ -39,6 +39,7 @@ import {
   IconMapPin,
   IconMail,
   IconFileInvoice,
+  IconDownload,
   IconNotes,
   IconPackage,
   IconPhone,
@@ -62,6 +63,7 @@ import { releaseProject } from "../lib/productionWorkflow";
 import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../lib/calendar";
 import { OUTSIDE_PHASES, getOutsideNextDate, getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
+import { exportProjectBillingStatement } from "../services/projectBillingStatementService";
 
 const CALENDAR_TYPES = [
   { label: "Railings & Handrails", color: "#1677c8", terms: ["rail", "handrail"] },
@@ -268,6 +270,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [selectedAlertKey, setSelectedAlertKey] = useState(null);
   const [billingDrafts, setBillingDrafts] = useState({});
   const [savingBillingProjectId, setSavingBillingProjectId] = useState(null);
+  const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -757,6 +760,30 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     });
     notifications.show({ title: "Project Updated", message: `${row.identity} now reflects the revised status and amounts.`, color: "green" });
     await loadProjects(false);
+  }
+
+  async function downloadBillingStatement(row) {
+    setDownloadingStatementProjectId(row.project.id);
+    try {
+      const { data: payments, error } = await supabase
+        .from("project_payments")
+        .select("id,payment_type,amount,payment_method,payment_date,reference_number,notes,created_at")
+        .eq("project_id", row.project.id)
+        .order("payment_date", { ascending: true });
+      if (error) throw error;
+      exportProjectBillingStatement({
+        project: row.project,
+        customer: row.customer,
+        quote: row.approvedQuote,
+        invoices: row.invoices,
+        payments: payments || [],
+      });
+      notifications.show({ title: "Statement Downloaded", message: `${row.identity} billing statement is ready to send.`, color: "green" });
+    } catch (error) {
+      notifications.show({ title: "Statement Could Not Be Created", message: error.message, color: "red" });
+    } finally {
+      setDownloadingStatementProjectId(null);
+    }
   }
 
   const projectAlertGroups = useMemo(() => {
@@ -1622,6 +1649,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           <Button size="compact-xs" color="red" variant="light" onClick={() => openProjectBilling(row.project)}>Open Billing</Button>
                           <Button size="compact-xs" variant="default" onClick={() => openBillingDocument(row)}>{row.latestInvoice ? "Open Invoice" : row.approvedQuote ? "Open Quote" : "Start Quote"}</Button>
                         </Group>
+                        <Button size="compact-xs" color="blue" variant="light" leftSection={<IconDownload size={14} />} loading={downloadingStatementProjectId === row.project.id} onClick={() => downloadBillingStatement(row)}>Download Statement</Button>
                       </Stack>
                     </Table.Td>
                   </Table.Tr>
