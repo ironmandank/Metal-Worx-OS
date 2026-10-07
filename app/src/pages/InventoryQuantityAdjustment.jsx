@@ -78,6 +78,7 @@ const REASON_OPTIONS = {
     "Opening balance",
     "Count correction",
   ],
+  transfer: ["Move to another crate"],
 };
 
 function InventoryQuantityAdjustment({
@@ -93,6 +94,7 @@ function InventoryQuantityAdjustment({
   const [balances, setBalances] = useState([]);
   const [operation, setOperation] = useState("set");
   const [binId, setBinId] = useState("");
+  const [destinationBinId, setDestinationBinId] = useState("");
   const [quantity, setQuantity] = useState(0);
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -180,6 +182,7 @@ function InventoryQuantityAdjustment({
   useEffect(() => {
     setReason("");
     setQuantity(0);
+    setDestinationBinId("");
   }, [operation]);
 
   const selectedBin = useMemo(
@@ -199,7 +202,7 @@ function InventoryQuantityAdjustment({
   const projectedQuantity = useMemo(() => {
     const entered = numberValue(quantity);
     if (operation === "add") return currentQuantity + entered;
-    if (operation === "remove") return currentQuantity - entered;
+    if (operation === "remove" || operation === "transfer") return currentQuantity - entered;
     return entered;
   }, [currentQuantity, operation, quantity]);
 
@@ -229,6 +232,7 @@ function InventoryQuantityAdjustment({
   const canSave =
     Boolean(itemId) &&
     Boolean(binId) &&
+    (operation !== "transfer" || (Boolean(destinationBinId) && destinationBinId !== binId)) &&
     Boolean(reason) &&
     !invalidProjectedQuantity &&
     (operation === "set" ? numberValue(quantity) >= 0 : numberValue(quantity) > 0) &&
@@ -240,23 +244,35 @@ function InventoryQuantityAdjustment({
     setSaving(true);
 
     try {
-      const { data, error } = await supabase.rpc(
-        "mw_adjust_inventory_quantity",
-        {
+      if (operation === "transfer") {
+        const { error: transferError } = await supabase.rpc("mw_transfer_inventory_quantity", {
           p_inventory_item_id: itemId,
-          p_bin_id: binId,
-          p_operation: operation,
+          p_from_bin_id: binId,
+          p_to_bin_id: destinationBinId,
           p_quantity: numberValue(quantity),
-          p_reason: reason,
           p_notes: notes.trim() || null,
-          p_reference_type: "Manual Inventory Adjustment",
-          p_reference_id: null,
-          p_reference_number: null,
           p_performed_by: activeUser || null,
-        }
-      );
+        });
+        if (transferError) throw transferError;
+      } else {
+        const { error } = await supabase.rpc(
+          "mw_adjust_inventory_quantity",
+          {
+            p_inventory_item_id: itemId,
+            p_bin_id: binId,
+            p_operation: operation,
+            p_quantity: numberValue(quantity),
+            p_reason: reason,
+            p_notes: notes.trim() || null,
+            p_reference_type: "Manual Inventory Adjustment",
+            p_reference_id: null,
+            p_reference_number: null,
+            p_performed_by: activeUser || null,
+          }
+        );
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       const { data: refreshedItem, error: refreshError } = await supabase
         .from("inventory_item_availability")
@@ -269,10 +285,10 @@ function InventoryQuantityAdjustment({
       setSelectedInventoryItem?.(refreshedItem || item);
 
       notifications.show({
-        title: "Inventory Quantity Updated",
-        message: `${item?.name || "Inventory item"} changed from ${formatNumber(
-          data?.quantity_before ?? currentQuantity
-        )} to ${formatNumber(data?.quantity_after ?? projectedQuantity)}.`,
+        title: operation === "transfer" ? "Item Moved to New Crate" : "Inventory Quantity Updated",
+        message: operation === "transfer"
+          ? `${formatNumber(quantity)} ${item?.name || "item"} moved to ${bins.find((bin) => bin.id === destinationBinId)?.code || "the selected crate"}.`
+          : `${item?.name || "Inventory item"} changed from ${formatNumber(currentQuantity)} to ${formatNumber(projectedQuantity)}.`,
         color: "green",
         icon: <IconCheck size={18} />,
       });
@@ -413,9 +429,10 @@ function InventoryQuantityAdjustment({
                 },
               }}
               data={[
-                { value: "set", label: "Set Exact Count" },
+                { value: "set", label: "Set Count" },
                 { value: "add", label: "Add Stock" },
                 { value: "remove", label: "Remove Stock" },
+                { value: "transfer", label: "Move Crate" },
               ]}
             />
 
@@ -432,13 +449,30 @@ function InventoryQuantityAdjustment({
               size="md"
             />
 
+            {operation === "transfer" && (
+              <Select
+                label="Move To Crate"
+                description="The new physical crate or storage position"
+                placeholder="Choose the destination crate"
+                data={binOptions.filter((option) => option.value !== binId)}
+                value={destinationBinId}
+                onChange={(value) => setDestinationBinId(value || "")}
+                searchable
+                required
+                leftSection={<IconMapPin size={18} />}
+                size="md"
+              />
+            )}
+
             <NumberInput
               label={
                 operation === "set"
                   ? "Counted Quantity"
                   : operation === "add"
                     ? "Quantity to Add"
-                    : "Quantity to Remove"
+                    : operation === "transfer"
+                      ? "Quantity to Move"
+                      : "Quantity to Remove"
               }
               description={
                 operation === "set"
@@ -454,7 +488,7 @@ function InventoryQuantityAdjustment({
               leftSection={
                 operation === "add" ? (
                   <IconArrowUp size={18} />
-                ) : operation === "remove" ? (
+                ) : operation === "remove" || operation === "transfer" ? (
                   <IconArrowDown size={18} />
                 ) : (
                   <IconClipboardCheck size={18} />
@@ -507,6 +541,20 @@ function InventoryQuantityAdjustment({
                   <Text fw={850} ta="right">{item.name}</Text>
                 </Group>
                 <Divider />
+                {operation === "transfer" && (
+                  <>
+                    <Group justify="space-between">
+                      <Text c="dimmed" fw={700}>Move To</Text>
+                      <Text fw={850} ta="right">
+                        {[
+                          bins.find((bin) => bin.id === destinationBinId)?.code,
+                          bins.find((bin) => bin.id === destinationBinId)?.name,
+                        ].filter(Boolean).join(" · ") || "Not selected"}
+                      </Text>
+                    </Group>
+                    <Divider />
+                  </>
+                )}
                 <Group justify="space-between">
                   <Text c="dimmed" fw={700}>Storage Position</Text>
                   <Text fw={850} ta="right">
@@ -520,8 +568,11 @@ function InventoryQuantityAdjustment({
                 </Group>
                 <Group justify="space-between">
                   <Text c="dimmed" fw={700}>Operation</Text>
-                  <Badge color={operation === "add" ? "green" : operation === "remove" ? "orange" : "blue"} variant="light">
-                    {operation === "add" ? "Add Stock" : operation === "remove" ? "Remove Stock" : "Set Exact Count"}
+                  <Badge
+                    color={operation === "add" ? "green" : operation === "remove" ? "orange" : operation === "transfer" ? "violet" : "blue"}
+                    variant="light"
+                  >
+                    {operation === "add" ? "Add Stock" : operation === "remove" ? "Remove Stock" : operation === "transfer" ? "Move Crate" : "Set Count"}
                   </Badge>
                 </Group>
                 <Group justify="space-between">
@@ -532,7 +583,7 @@ function InventoryQuantityAdjustment({
                 <Group justify="space-between" align="flex-end">
                   <Box>
                     <Text size="xs" c="dimmed" fw={800} tt="uppercase">
-                      New Position Balance
+                      {operation === "transfer" ? "Current Crate Balance After Move" : "New Position Balance"}
                     </Text>
                     <Text size="xs" c="dimmed" mt={3}>
                       Saved with a movement-history record
