@@ -28,6 +28,14 @@ export default function ManualLibrary({ activeUser }) {
   const [manufacturer, setManufacturer] = useState("");
   const [description, setDescription] = useState("");
 
+  useEffect(() => {
+    const requestedManual = sessionStorage.getItem("mwKnowledgeManualSearch");
+    if (requestedManual) {
+      setSearch(requestedManual);
+      sessionStorage.removeItem("mwKnowledgeManualSearch");
+    }
+  }, []);
+
   async function loadManuals() {
     setLoading(true);
     const { data, error } = await supabase.from("knowledge_manuals").select("*").order("title");
