@@ -393,7 +393,10 @@ function App() {
       openInventoryBin(result.record);
       return;
     }
-    if (result.type === "manual") setPage("knowledgeCenter");
+    if (result.type === "manual") {
+      sessionStorage.setItem("mwKnowledgeManualSearch", result.title || "");
+      setPage("knowledgeCenter");
+    }
   }
 
   function renderPage() {
