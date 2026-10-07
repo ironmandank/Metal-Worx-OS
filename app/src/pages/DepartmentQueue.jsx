@@ -1031,7 +1031,7 @@ function DepartmentQueue({
         .eq("id", detail.order.id);
       if (error) throw error;
       await notifyTeam({
-        names: ["Kory"],
+        names: [detail.order.order_owner || "Kory"],
         departments: ["Design"],
         title: "Artwork Changes Requested",
         message: `${detail.order.order_number || "Artwork order"} was returned for customer changes.`,
@@ -1041,7 +1041,7 @@ function DepartmentQueue({
       }).catch(console.warn);
       notifications.show({
         title: "Returned to Design",
-        message: "The order is back in Kory's In Progress queue.",
+        message: `The order is back in ${detail.order.order_owner || "Kory"}'s In Progress queue.`,
         color: "orange",
       });
       await loadQueue();
@@ -2132,14 +2132,16 @@ function DepartmentQueue({
               }))}
               allowDeselect={false}
             />
-            <TextInput
+            <Select
               label="Assigned To"
-              placeholder="Kory or design team member"
+              placeholder="Select designer"
+              data={["Kory", "Lori", "Design Team", "Dan", "Chad", "Shop Team"]}
               value={designDraft.assignedTo}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setDesignDraft((current) => ({ ...current, assignedTo: value }));
+              onChange={(value) => {
+                setDesignDraft((current) => ({ ...current, assignedTo: value || "" }));
               }}
+              searchable
+              clearable
             />
             <TextInput
               label="Customer Phone"
