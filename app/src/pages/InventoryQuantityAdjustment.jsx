@@ -63,6 +63,7 @@ const REASON_OPTIONS = {
     "Other adjustment",
   ],
   remove: [
+    "Sold / Sale",
     "Used in production",
     "Damaged",
     "Scrapped",
