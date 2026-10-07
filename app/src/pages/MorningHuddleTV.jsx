@@ -187,9 +187,9 @@ export default function MorningHuddleTV({ setPage }) {
     <section className="tv-kpis">
       <div className="tv-kpi danger"><span>Hot Items This Week</span><strong>{priorities.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
+      <div className="tv-kpi warn"><span>Small Fabrication</span><strong>{smallFabrication.length}</strong></div>
       <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
       <div className="tv-kpi warn"><span>Open Site Visits</span><strong>{siteVisits.length}</strong></div>
-      <div className="tv-kpi good"><span>Field Today</span><strong>{summary.todayFieldWork || 0}</strong></div>
       <div className="tv-kpi danger"><span>Needs Attention</span><strong>{Number(summary.blockers || blockers.length) + Number(summary.overdueActions || 0)}</strong></div>
     </section>
     <section className="tv-pipeline">
@@ -207,16 +207,16 @@ export default function MorningHuddleTV({ setPage }) {
     </section>
     <section className="tv-grid">
       <div className="tv-panel tv-hot-artwork">
+        <h2><IconTool/> Small Fabrication & Repairs</h2>
+        {smallFabrication.length ? <><div className="tv-card-grid">{smallFabrication.slice(0,6).map((x,i)=><div className="tv-item-card" key={`small-fab-${x.id || i}`}><span className="tv-card-tag gray">{text(x.department,"Welding")}</span><strong>{text(x.title,"Small fabrication job")}</strong><small>{text(x.customer,"Customer")} · {text(x.owner,"Shop Team")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={smallFabrication.length} shown={6}/></>:<div className="tv-empty">No small fabrication or repair jobs are currently open. Add one from Artwork / Small Job.</div>}
+      </div>
+      <div className="tv-panel tv-hot-artwork">
         <h2><IconClipboardCheck/> Hot Items This Week</h2>
         {priorities.length ? <><div className="tv-card-grid">{priorities.slice(0,6).map((x,i)=><div className="tv-item-card urgent" key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><span className="tv-card-tag">{text(x.hotReasonCategory,"Priority")}</span><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop<br/>{text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></div>)}</div><MoreCount total={priorities.length} shown={6}/></>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}
       </div>
       <div className="tv-panel tv-hot-artwork">
         <h2><IconClipboardCheck/> Design Queue — Easiest to Hardest</h2>
         {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=><div className="tv-item-card" key={`design-${x.id || i}`}><span className={`tv-workload ${x.designWorkColor || "gray"}`}>{x.designWorkLabel || "Design Work"}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · Fee {text(x.designFeeStatus,"Not Required")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
-      </div>
-      <div className="tv-panel tv-hot-artwork">
-        <h2><IconTool/> Small Fabrication & Repairs</h2>
-        {smallFabrication.length ? <><div className="tv-card-grid">{smallFabrication.slice(0,6).map((x,i)=><div className="tv-item-card" key={`small-fab-${x.id || i}`}><span className="tv-card-tag gray">{text(x.department,"Welding")}</span><strong>{text(x.title,"Small fabrication job")}</strong><small>{text(x.customer,"Customer")} · {text(x.owner,"Shop Team")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={smallFabrication.length} shown={6}/></>:<div className="tv-empty">No small fabrication or repair jobs are currently open.</div>}
       </div>
       <div className="tv-panel tv-outside">
         <h2><IconUsers/> Outside Projects</h2>
