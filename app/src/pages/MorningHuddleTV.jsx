@@ -41,12 +41,15 @@ const styles = `
   .tv-pipeline-head svg { color:#ff3445; }
   .tv-pipeline-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
   .tv-pipeline-stage { min-width:0; min-height:118px; padding:10px 11px; border:1px solid #343e45; border-radius:8px; background:#171e23; }
+  .tv-pipeline-stage.expandable { cursor:pointer; transition:border-color .15s ease,background .15s ease; }
+  .tv-pipeline-stage.expandable:hover,.tv-pipeline-stage.expandable:focus-visible { border-color:#a53a43; background:#1d252a; outline:none; }
   .tv-pipeline-stage-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .tv-pipeline-stage-head span { color:#cbd2d7; font-size:12px; font-weight:900; line-height:1.15; text-transform:uppercase; }
   .tv-pipeline-stage-head strong { color:#fff; font-size:28px; line-height:1; }
   .tv-pipeline-jobs { display:grid; gap:5px; margin-top:8px; }
   .tv-pipeline-job { padding-top:5px; border-top:1px solid #303a41; color:#fff; font-size:11px; font-weight:800; line-height:1.2; overflow-wrap:anywhere; }
   .tv-pipeline-job small { display:block; margin-top:2px; color:#99a4ab; font-size:10px; font-weight:600; }
+  .tv-pipeline-toggle { width:100%; padding:7px 4px 1px; border:0; border-top:1px solid #3a464d; color:#fff; background:transparent; font:inherit; font-size:11px; font-weight:900; cursor:pointer; }
   .tv-pipeline-none { margin-top:10px; color:#7f8a91; font-size:11px; }
   .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
   .tv-pipeline-stage.attention .tv-pipeline-stage-head strong { color:#ff5965; }
@@ -123,6 +126,7 @@ export default function MorningHuddleTV({ setPage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [siteVisits, setSiteVisits] = useState([]);
+  const [expandedStages, setExpandedStages] = useState({});
 
   async function load() {
     try {
@@ -184,6 +188,7 @@ export default function MorningHuddleTV({ setPage }) {
   const artworkPipeline = huddle.artworkPipeline || [];
 
   async function fullscreen() { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); else await document.exitFullscreen(); }
+  function toggleStage(stageName) { setExpandedStages((current) => ({ ...current, [stageName]: !current[stageName] })); }
 
   return <div className="tv-board"><style>{styles}</style>
     <header className="tv-head">
@@ -205,11 +210,16 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-pipeline-grid">
         {artworkPipeline.map((stage) => (
           <div
-            className={`tv-pipeline-stage ${["Customer Approval", "Waiting for Pickup", "Ready to Ship"].includes(stage.name) && Number(stage.count || 0) > 0 ? "attention" : ""}`}
+            className={`tv-pipeline-stage ${stage.items?.length > 3 ? "expandable" : ""} ${["Customer Approval", "Waiting for Pickup", "Ready to Ship"].includes(stage.name) && Number(stage.count || 0) > 0 ? "attention" : ""}`}
             key={stage.name}
+            role={stage.items?.length > 3 ? "button" : undefined}
+            tabIndex={stage.items?.length > 3 ? 0 : undefined}
+            aria-expanded={stage.items?.length > 3 ? Boolean(expandedStages[stage.name]) : undefined}
+            onClick={stage.items?.length > 3 ? () => toggleStage(stage.name) : undefined}
+            onKeyDown={stage.items?.length > 3 ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleStage(stage.name); } } : undefined}
           >
             <div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.count || 0}</strong></div>
-            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}</small></div>)}{stage.items.length > 3 && <div className="tv-pipeline-job">+ {stage.items.length - 3} more</div>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
+            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stage.name] ? stage.items.length : 3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}</small></div>)}{stage.items.length > 3 && <button className="tv-pipeline-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleStage(stage.name); }}>{expandedStages[stage.name] ? "Show less" : `+ ${stage.items.length - 3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
           </div>
         ))}
       </div>
