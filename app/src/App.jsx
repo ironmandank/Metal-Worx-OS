@@ -360,6 +360,42 @@ function App() {
     setPage("inventoryStorage");
   }
 
+  function openGlobalSearchResult(result) {
+    if (!result?.record) return;
+    if (result.type === "customer") {
+      setSelectedCustomer(result.record);
+      setPage("customerDetails");
+      return;
+    }
+    if (result.type === "order") {
+      openCustomerOrder(result.record);
+      return;
+    }
+    if (result.type === "project") {
+      openProject(result.record);
+      return;
+    }
+    if (result.type === "quote") {
+      setSelectedQuote(result.record);
+      setPage("quoteBuilder");
+      return;
+    }
+    if (result.type === "productionJob") {
+      setSelectedProductionJob(result.record);
+      setPage("productionJobDetails");
+      return;
+    }
+    if (result.type === "inventory") {
+      openInventoryItem(result.record);
+      return;
+    }
+    if (result.type === "crate") {
+      openInventoryBin(result.record);
+      return;
+    }
+    if (result.type === "manual") setPage("knowledgeCenter");
+  }
+
   function renderPage() {
     const administratorOnlyPages = new Set([
       "employeeLogins",
@@ -436,7 +472,7 @@ function App() {
     }
 
     if (page === "myTasks") {
-      return <MyTasks setPage={setPage} />;
+      return <MyTasks setPage={setPage} authenticatedProfile={authenticatedProfile} />;
     }
 
     if (page === "callbacks") {
@@ -892,6 +928,7 @@ function App() {
       setPage={setPage}
       setSelectedDepartment={setSelectedDepartment}
       openCallback={openCallback}
+      openGlobalSearchResult={openGlobalSearchResult}
       selectedInventoryItem={selectedInventoryItem}
       selectedInventoryBin={selectedInventoryBin}
       openInventoryItem={openInventoryItem}
