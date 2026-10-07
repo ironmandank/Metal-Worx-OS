@@ -1730,7 +1730,7 @@ export async function getDashboardData() {
       artworkPipelineItems[stage].push({
         id: order?.id || job?.id || representative.id,
         title: itemName || order?.order_number || job?.production_job_number || representative.work_order_number || "Artwork job",
-        customer: order ? getCustomerName(order.customer_id) : "Customer",
+        customer: order ? getArtworkCustomerName(order) : "Customer",
         owner: order?.order_owner || representative.assigned_to || "Unassigned",
       });
     }
