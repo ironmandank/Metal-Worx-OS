@@ -373,6 +373,8 @@ export async function getActionCenterData() {
     projectsResult,
     customersResult,
     orderItemsResult,
+    productionJobsResult,
+    workOrdersResult,
     callbacks,
   ] = await Promise.all([
     supabase
@@ -390,6 +392,14 @@ export async function getActionCenterData() {
     supabase
       .from("customer_order_items")
       .select("*"),
+
+    supabase
+      .from("production_jobs")
+      .select("id,production_job_number,status,current_department,due_date,is_active"),
+
+    supabase
+      .from("work_orders")
+      .select("id,production_job_id,work_order_number,department,status,is_active,step_order"),
 
     getOpenCallbacks(),
   ]);
@@ -410,6 +420,9 @@ export async function getActionCenterData() {
     throw orderItemsResult.error;
   }
 
+  if (productionJobsResult.error) throw productionJobsResult.error;
+  if (workOrdersResult.error) throw workOrdersResult.error;
+
   const customerOrders =
     customerOrdersResult.data || [];
 
@@ -421,6 +434,8 @@ export async function getActionCenterData() {
 
   const orderItems =
     orderItemsResult.data || [];
+  const productionJobs = productionJobsResult.data || [];
+  const workOrders = workOrdersResult.data || [];
 
   const templateIds = [
     ...new Set(
@@ -524,6 +539,47 @@ export async function getActionCenterData() {
   }
 
   const actions = [];
+
+  /* =====================================================
+     DATA QUALITY
+     SURFACE RECORDS THAT CAN MAKE SCREENS DISAGREE
+  ===================================================== */
+
+  const openWorkOrdersByJob = new Map();
+  workOrders
+    .filter((workOrder) => workOrder.is_active !== false && !isClosedStatus(workOrder.status))
+    .sort((left, right) => Number(left.step_order || 0) - Number(right.step_order || 0))
+    .forEach((workOrder) => {
+      const key = String(workOrder.production_job_id || "");
+      if (!key) return;
+      const current = openWorkOrdersByJob.get(key) || [];
+      current.push(workOrder);
+      openWorkOrdersByJob.set(key, current);
+    });
+
+  productionJobs
+    .filter((job) => job.is_active !== false && !isClosedStatus(job.status))
+    .forEach((job) => {
+      const route = openWorkOrdersByJob.get(String(job.id)) || [];
+      const currentWorkOrder = route.find((workOrder) => String(workOrder.status || "").toLowerCase() !== "pending") || route[0];
+      if (!currentWorkOrder?.department || !job.current_department) return;
+      if (String(currentWorkOrder.department).trim().toLowerCase() === String(job.current_department).trim().toLowerCase()) return;
+      actions.push({
+        id: `quality-job-stage-${job.id}`,
+        sourceId: job.id,
+        sourceType: "productionJob",
+        category: "Data Quality",
+        priority: "High",
+        title: job.production_job_number || "Production job",
+        customer: "Stage mismatch",
+        reference: currentWorkOrder.work_order_number || "Work order",
+        reason: `Stations shows ${currentWorkOrder.department}, but the production job still shows ${job.current_department}.`,
+        nextAction: "Open the production job and correct its current stage.",
+        owner: "Operations",
+        dueDate: "Now",
+        sortDate: 0,
+      });
+    });
 
   /* =====================================================
      CUSTOMER ORDERS
@@ -822,6 +878,12 @@ export async function getActionCenterData() {
       actions.filter(
         (item) =>
           item.sourceType === "callback"
+      ).length,
+
+    dataQuality:
+      actions.filter(
+        (item) =>
+          item.category === "Data Quality"
       ).length,
   };
 
