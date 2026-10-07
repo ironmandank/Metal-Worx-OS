@@ -29,6 +29,7 @@ import {
   IconCalendarEvent,
   IconCash,
   IconCheck,
+  IconDownload,
   IconPlus,
   IconPrinter,
   IconRefresh,
@@ -319,6 +320,41 @@ function ShowSales({ setPage, activeUser }) {
         .includes(term);
     });
   }, [selectedSummaryProducts, summaryProductFilter, summaryProductSearch]);
+  const restockRecommendations = useMemo(() => selectedSummaryProducts
+    .filter((product) => Number(product.units_sold) > 0)
+    .map((product) => {
+      const ending = Number(product.actual_ending_quantity || 0);
+      const sold = Number(product.units_sold || 0);
+      const sellThrough = Number(product.sell_through_percent || 0);
+      const recommended = Math.max(sold, ending <= 1 ? 2 : 0);
+      return { ...product, ending, sold, sellThrough, recommended };
+    })
+    .filter((product) => product.ending <= 1 || product.sellThrough >= 50)
+    .sort((left, right) => right.sellThrough - left.sellThrough || right.sold - left.sold), [selectedSummaryProducts]);
+
+  function downloadRestockList() {
+    if (!selectedSummary || !restockRecommendations.length) return;
+    const rows = [
+      ["Item Number", "Item", "Units Sold", "Ending Quantity", "Sell-Through", "Recommended Restock"],
+      ...restockRecommendations.map((product) => [
+        product.item_number || "",
+        product.item_name || "",
+        product.sold,
+        product.ending,
+        `${product.sellThrough.toFixed(1)}%`,
+        product.recommended,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${String(selectedSummary.event_name || "show").replace(/[^a-z0-9]+/gi, "-")}-restock-list.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
   const filteredCatalogItems = useMemo(() => {
     const term = catalogSearch.trim().toLowerCase();
     return catalogItems.filter((item) => {
@@ -1332,6 +1368,27 @@ function ShowSales({ setPage, activeUser }) {
                   </Table.Tbody>
                 </Table>
               </Table.ScrollContainer>
+              )}
+            </Card>
+
+            <Card withBorder radius="lg" p="lg">
+              <Group justify="space-between" align="flex-start" mb="md">
+                <div><Title order={4} c="white">Restock Recommendations</Title><Text size="sm" c="dimmed">Items with at least 50% sell-through or one unit remaining are highlighted for the next show.</Text></div>
+                <Button size="xs" variant="light" color="blue" leftSection={<IconDownload size={15} />} disabled={!restockRecommendations.length} onClick={downloadRestockList}>Download Restock List</Button>
+              </Group>
+              {!restockRecommendations.length ? <Alert color="green">No immediate restock recommendations were found from this show.</Alert> : (
+                <Table.ScrollContainer minWidth={650}>
+                  <Table striped>
+                    <Table.Thead><Table.Tr><Table.Th>Product</Table.Th><Table.Th ta="right">Sold</Table.Th><Table.Th ta="right">Remaining</Table.Th><Table.Th ta="right">Sell-through</Table.Th><Table.Th ta="right">Restock</Table.Th></Table.Tr></Table.Thead>
+                    <Table.Tbody>{restockRecommendations.map((product) => <Table.Tr key={`restock-${product.inventory_item_id}`}>
+                      <Table.Td><Text fw={900}>{product.item_name}</Text><Text size="xs" c="dimmed">{product.item_number || "No item number"}</Text></Table.Td>
+                      <Table.Td ta="right">{product.sold}</Table.Td>
+                      <Table.Td ta="right">{product.ending}</Table.Td>
+                      <Table.Td ta="right"><Badge color="green" variant="light">{product.sellThrough.toFixed(1)}%</Badge></Table.Td>
+                      <Table.Td ta="right"><Text fw={900} c="orange">{product.recommended}</Text></Table.Td>
+                    </Table.Tr>)}</Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
               )}
             </Card>
 
