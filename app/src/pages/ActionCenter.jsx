@@ -24,6 +24,7 @@ import {
   IconPhone,
   IconRefresh,
   IconSearch,
+  IconShieldCheck,
   IconTool,
 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -82,6 +83,12 @@ const FILTERS = [
     icon: IconPhone,
     color: "cyan",
   },
+  {
+    label: "Data Quality",
+    countKey: "dataQuality",
+    icon: IconShieldCheck,
+    color: "pink",
+  },
 ];
 
 function priorityColor(priority) {
@@ -117,6 +124,7 @@ function getSourceLabel(sourceType) {
   if (sourceType === "project") return "Outside Project";
   if (sourceType === "callback") return "Callback";
   if (sourceType === "productionJob") return "Production Job";
+  if (sourceType === "dataQuality") return "Data Check";
   return "Operational Action";
 }
 
@@ -306,7 +314,7 @@ function ActionCenter({
         subtitle={`${data.counts.all || 0} total open actions`}
         icon={IconSearch}
       >
-        <SimpleGrid cols={{ base: 2, sm: 4, xl: 8 }} spacing="sm">
+        <SimpleGrid cols={{ base: 2, sm: 3, xl: 5 }} spacing="sm">
           {FILTERS.map((filter) => {
             const Icon = filter.icon;
             const active = activeFilter === filter.label;
