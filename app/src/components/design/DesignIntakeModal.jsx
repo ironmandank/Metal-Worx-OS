@@ -195,10 +195,12 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   }
 
   async function saveIntake() {
-    if (!clean(form.customerName) || !clean(form.projectName) || !clean(form.description)) {
+    if ((!isSmallFabrication && !clean(form.customerName)) || !clean(form.projectName) || !clean(form.description)) {
       notifications.show({
         title: "Missing Required Information",
-        message: "Customer name, project name, and project description are required.",
+        message: isSmallFabrication
+          ? "Project name and project description are required."
+          : "Customer name, project name, and project description are required.",
         color: "red",
       });
       return;
@@ -214,7 +216,8 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
 
     setSaving(true);
     try {
-      const customer = await findOrCreateCustomer();
+      const enteredCustomerName = clean(form.customerName);
+      const customer = enteredCustomerName ? await findOrCreateCustomer() : null;
       const startingDepartment = isSmallFabrication ? "Welding" : needsDesign ? "Design" : "Laser";
       const orderNumber = `MW-${new Date().getFullYear()}-${Date.now()}`;
       const designFileName = clean(form.designFileName) || files[0]?.name || "";
@@ -222,7 +225,8 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         .from("customer_orders")
         .insert({
           order_number: orderNumber,
-          customer_id: customer.id,
+          customer_id: customer?.id || null,
+          artwork_customer_name: enteredCustomerName || (isSmallFabrication ? "Customer not entered" : null),
           status: needsDesign ? "Design Needed" : "Ready for Production",
           due_date: dateValue(form.dateRequested),
           rush: form.rush,
@@ -287,7 +291,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         names: needsDesign && ["Kory", "Lori"].includes(clean(form.assignedDesigner)) ? [clean(form.assignedDesigner)] : [],
         departments: [startingDepartment],
         title: isSmallFabrication ? "New Small Fabrication Job" : needsDesign ? "New Design Work Is Ready" : "Artwork Order Released to Laser",
-        message: `${form.projectName} for ${form.customerName} is ready in ${startingDepartment}.`,
+        message: `${form.projectName} for ${enteredCustomerName || "an internal or walk-in customer"} is ready in ${startingDepartment}.`,
         sourceId: order.id,
         targetPage: "designQueue",
         priority: form.rush ? "High" : "Medium",
@@ -331,7 +335,13 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         />
 
         <SimpleGrid cols={{ base: 1, md: 3 }}>
-          <TextInput label="Customer Name" required value={form.customerName} onChange={(event) => update("customerName", event.currentTarget.value)} />
+          <TextInput
+            label={isSmallFabrication ? "Customer / Requester" : "Customer Name"}
+            description={isSmallFabrication ? "Optional—leave blank for internal or walk-in work" : undefined}
+            required={!isSmallFabrication}
+            value={form.customerName}
+            onChange={(event) => update("customerName", event.currentTarget.value)}
+          />
           <TextInput label="Phone" value={form.phone} onChange={(event) => update("phone", event.currentTarget.value)} />
           <TextInput label="Email" type="email" value={form.email} onChange={(event) => update("email", event.currentTarget.value)} />
         </SimpleGrid>
