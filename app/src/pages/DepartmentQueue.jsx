@@ -64,6 +64,20 @@ function referenceImageLabel(image, index) {
   return image?.caption || image?.image_type || `Reference image ${index + 1}`;
 }
 
+function selectCurrentRouteWorkOrder(route) {
+  const openRoute = route.filter((row) => ![
+    "completed",
+    "complete",
+    "closed",
+    "cancelled",
+    "canceled",
+  ].includes(String(row.status || "").trim().toLowerCase()));
+
+  return openRoute.find((row) => String(row.status || "").trim().toLowerCase() !== "pending")
+    || openRoute[0]
+    || [...route].reverse().find((row) => ["completed", "complete"].includes(String(row.status || "").trim().toLowerCase()));
+}
+
 async function downloadReferenceImage(image, index) {
   const fileName = referenceImageLabel(image, index);
   try {
@@ -214,7 +228,7 @@ function DepartmentQueue({
           return groups;
         }, {}))
           .filter((route) => route.some((row) => canonicalStation(row.department) === "Design"))
-          .map((route) => route.find((row) => ["Ready", "In Progress", "Blocked"].includes(row.status)) || [...route].reverse().find((row) => row.status === "Completed"))
+          .map(selectCurrentRouteWorkOrder)
           .filter(Boolean)
       : rows;
 
@@ -1152,6 +1166,7 @@ function DepartmentQueue({
     if (order?.status === "Ready for Pickup") return "Waiting for Pickup";
     if (["Ready to Ship", "Ready for Installation"].includes(order?.status)) return "Ready to Ship";
     if (order?.design_status === "Awaiting Customer Approval") return "Customer Approval";
+    if (currentWorkflowStatus(workOrder) === "Needs Plaque") return "Needs Plaque";
     return stationFor(workOrder);
   }
 
@@ -1188,6 +1203,9 @@ function DepartmentQueue({
   const blockedOrders = displayedWorkOrders.filter(
     (workOrder) => workOrder.status === "Blocked"
   );
+  const needsPlaqueOrders = displayedWorkOrders.filter(
+    (workOrder) => currentWorkflowStatus(workOrder) === "Needs Plaque"
+  );
 
   const waitingPickupOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Waiting for Customer Pickup");
   const readyToShipOrders = workOrders.filter((workOrder) => currentWorkflowStatus(workOrder) === "Ready to Ship");
@@ -1199,6 +1217,7 @@ function DepartmentQueue({
       stage,
       workOrders.filter((workOrder) => workflowStage(workOrder) === stage).length,
     ]),
+    ["Needs Plaque", workOrders.filter((workOrder) => workflowStage(workOrder) === "Needs Plaque").length],
     ["Customer Approval", allAwaitingApprovalOrders.length],
     ["Waiting for Pickup", waitingPickupOrders.length],
     ["Ready to Ship", readyToShipOrders.length],
@@ -1882,9 +1901,13 @@ function DepartmentQueue({
                     color={label === "Completed / Archive" ? "gray" : "red"}
                     variant={selected ? "filled" : "light"}
                     h="auto"
-                    mih={42}
-                    py={8}
-                    styles={{ label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center" } }}
+                    mih={50}
+                    py={9}
+                    px={8}
+                    styles={{
+                      root: { minWidth: 0 },
+                      label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center", overflow: "visible" },
+                    }}
                     onClick={() => selectStageOverview(label)}
                   >
                     {label} ({count})
@@ -1946,7 +1969,7 @@ function DepartmentQueue({
             <Text fw={800}>{unifiedArtwork ? "Work Status" : "Queue View"}</Text>
             <Text size="sm" c="dimmed">{unifiedArtwork ? "Narrow the selected stage by its current work status." : "Focus the station team on the work that needs attention now."}</Text>
           </Stack>
-          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" style={{ flex: "1 1 520px" }}>
+          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="xs" style={{ flex: "1 1 620px" }}>
             {[
               ["All", displayedWorkOrders.length],
               ["Ready", readyOrders.length],
@@ -1959,8 +1982,16 @@ function DepartmentQueue({
               <Button
                 key={label}
                 size="sm"
+                h="auto"
+                mih={46}
+                py={8}
+                px={8}
                 color={label === "Blocked" && count > 0 ? "orange" : "red"}
                 variant={queueFilter === label ? "filled" : "light"}
+                styles={{
+                  root: { minWidth: 0 },
+                  label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center", overflow: "visible" },
+                }}
                 onClick={() => setQueueFilter(label)}
               >
                 {label} ({count})
@@ -1996,6 +2027,14 @@ function DepartmentQueue({
             <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderQueueCard)}
+              </SimpleGrid>
+            </MWSection>
+          )}
+
+          {unifiedArtwork && queueFilter === "All" && needsPlaqueOrders.length > 0 && (
+            <MWSection title="Needs Plaque" subtitle={`${needsPlaqueOrders.length} item${needsPlaqueOrders.length === 1 ? "" : "s"} waiting for a plaque`}>
+              <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
+                {needsPlaqueOrders.map(renderQueueCard)}
               </SimpleGrid>
             </MWSection>
           )}
