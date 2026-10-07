@@ -1693,6 +1693,7 @@ export async function getDashboardData() {
 
   const artworkPipelineStages = [
     ...departmentStages,
+    "Needs Plaque",
     "Customer Approval",
     "Waiting for Pickup",
     "Ready to Ship",
@@ -1714,17 +1715,18 @@ export async function getDashboardData() {
 
     const expectedStage = getCanonicalShopStage(job) || getCustomerOrderShopStage(order);
     const openRoute = route.filter((workOrder) => !isClosedStatus(workOrder.status));
+    // Match the Stations screen: the open, non-pending work order is the
+    // authoritative current location. Job/order stage fields are fallbacks only.
     const representative = openRoute.find(
-      (workOrder) => expectedStage && getCanonicalShopStage(workOrder) === expectedStage
-    ) || openRoute.find(
       (workOrder) => normalizeStatus(workOrder.status) !== "pending"
     ) || openRoute[0] || [...route].reverse().find((workOrder) => isClosedStatus(workOrder.status));
     if (!representative) return;
 
-    let stage = expectedStage || getCanonicalShopStage(representative);
+    let stage = getCanonicalShopStage(representative) || expectedStage;
     if (normalizeStatus(order?.status) === "ready for pickup") stage = "Waiting for Pickup";
     else if (["ready to ship", "ready for installation"].includes(normalizeStatus(order?.status))) stage = "Ready to Ship";
     else if (normalizeStatus(order?.design_status) === "awaiting customer approval") stage = "Customer Approval";
+    else if (normalizeStatus(representative.status) === "needs plaque") stage = "Needs Plaque";
 
     if (stage && Object.prototype.hasOwnProperty.call(artworkPipelineCounts, stage)) {
       artworkPipelineCounts[stage] += 1;
