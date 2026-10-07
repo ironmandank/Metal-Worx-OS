@@ -40,11 +40,16 @@ const styles = `
   .tv-pipeline-head { display:flex; align-items:center; gap:9px; margin-bottom:11px; color:#f6f7f8; font-size:clamp(16px,1.15vw,21px); font-weight:900; text-transform:uppercase; }
   .tv-pipeline-head svg { color:#ff3445; }
   .tv-pipeline-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
-  .tv-pipeline-stage { display:flex; min-width:0; min-height:64px; padding:9px 11px; border:1px solid #343e45; border-radius:8px; background:#171e23; align-items:center; justify-content:space-between; gap:8px; }
-  .tv-pipeline-stage span { color:#cbd2d7; font-size:12px; font-weight:900; line-height:1.15; text-transform:uppercase; }
-  .tv-pipeline-stage strong { color:#fff; font-size:28px; line-height:1; }
+  .tv-pipeline-stage { min-width:0; min-height:118px; padding:10px 11px; border:1px solid #343e45; border-radius:8px; background:#171e23; }
+  .tv-pipeline-stage-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .tv-pipeline-stage-head span { color:#cbd2d7; font-size:12px; font-weight:900; line-height:1.15; text-transform:uppercase; }
+  .tv-pipeline-stage-head strong { color:#fff; font-size:28px; line-height:1; }
+  .tv-pipeline-jobs { display:grid; gap:5px; margin-top:8px; }
+  .tv-pipeline-job { padding-top:5px; border-top:1px solid #303a41; color:#fff; font-size:11px; font-weight:800; line-height:1.2; overflow-wrap:anywhere; }
+  .tv-pipeline-job small { display:block; margin-top:2px; color:#99a4ab; font-size:10px; font-weight:600; }
+  .tv-pipeline-none { margin-top:10px; color:#7f8a91; font-size:11px; }
   .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
-  .tv-pipeline-stage.attention strong { color:#ff5965; }
+  .tv-pipeline-stage.attention .tv-pipeline-stage-head strong { color:#ff5965; }
   .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
   .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
@@ -84,7 +89,7 @@ const styles = `
     .tv-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tv-clock{grid-column:1/-1;min-width:0;text-align:center}.tv-btn{justify-content:center;min-width:0;padding:0 8px}.tv-btn.red{grid-column:1/-1}
     .tv-summary{padding:10px 12px}.tv-summary p{font-size:15px;line-height:1.3}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
-    .tv-pipeline{padding:11px}.tv-pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.tv-pipeline-stage{min-height:58px;padding:8px}.tv-pipeline-stage span{font-size:11px}.tv-pipeline-stage strong{font-size:24px}
+    .tv-pipeline{padding:11px}.tv-pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.tv-pipeline-stage{min-height:108px;padding:8px}.tv-pipeline-stage-head span{font-size:11px}.tv-pipeline-stage-head strong{font-size:24px}
     .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel.tv-hot-artwork,.tv-panel.tv-outside{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-card-grid,.tv-card-grid.wide{grid-template-columns:1fr;padding:8px}.tv-item-card{min-height:0;padding:10px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
@@ -200,7 +205,8 @@ export default function MorningHuddleTV({ setPage }) {
             className={`tv-pipeline-stage ${["Customer Approval", "Waiting for Pickup", "Ready to Ship"].includes(stage.name) && Number(stage.count || 0) > 0 ? "attention" : ""}`}
             key={stage.name}
           >
-            <span>{stage.name}</span><strong>{stage.count || 0}</strong>
+            <div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.count || 0}</strong></div>
+            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}</small></div>)}{stage.items.length > 3 && <div className="tv-pipeline-job">+ {stage.items.length - 3} more</div>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
           </div>
         ))}
       </div>
