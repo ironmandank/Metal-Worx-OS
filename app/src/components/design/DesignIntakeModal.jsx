@@ -284,7 +284,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
 
       await releaseCustomerOrder(order.id, startingDepartment, activeUser || "Design Intake");
       await notifyTeam({
-        names: needsDesign ? ["Kory"] : [],
+        names: needsDesign && ["Kory", "Lori"].includes(clean(form.assignedDesigner)) ? [clean(form.assignedDesigner)] : [],
         departments: [startingDepartment],
         title: isSmallFabrication ? "New Small Fabrication Job" : needsDesign ? "New Design Work Is Ready" : "Artwork Order Released to Laser",
         message: `${form.projectName} for ${form.customerName} is ready in ${startingDepartment}.`,
@@ -297,7 +297,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         message: isSmallFabrication
           ? `${form.projectName} is ready in Welding and will appear on the Morning Huddle.`
           : needsDesign
-          ? `${form.projectName} is ready for Kory or the design team.`
+          ? `${form.projectName} is ready for ${clean(form.assignedDesigner) || "the design team"}.`
           : `${form.projectName} uses artwork on file and skipped Design.`,
         color: "green",
       });
@@ -358,7 +358,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             value={form.designSource}
             onChange={(value) => update("designSource", value || "New Design Required")}
           />}
-          <Select label={isSmallFabrication ? "Assigned To" : "Assigned Designer"} data={["Kory", "Design Team", "Dan", "Chad", "Shop Team"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || (isSmallFabrication ? "Shop Team" : "Kory"))} />
+          <Select label={isSmallFabrication ? "Assigned To" : "Assigned Designer"} data={["Kory", "Lori", "Design Team", "Dan", "Chad", "Shop Team"]} value={form.assignedDesigner} onChange={(value) => update("assignedDesigner", value || (isSmallFabrication ? "Shop Team" : "Kory"))} />
         </SimpleGrid>
 
         {form.designSource === "Existing Logo — Placement Only" && (
