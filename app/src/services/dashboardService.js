@@ -1705,18 +1705,23 @@ export async function getDashboardData() {
   );
 
   artworkRoutes.forEach((route) => {
-    const representative = route.find((workOrder) =>
-      ["ready", "in progress", "blocked", "on hold"].includes(normalizeStatus(workOrder.status))
-    ) || [...route].reverse().find((workOrder) => isClosedStatus(workOrder.status));
-    if (!representative) return;
-
-    const job = productionJobMap.get(String(representative.production_job_id));
+    const routeJobId = route.find((workOrder) => workOrder.production_job_id)?.production_job_id;
+    const job = productionJobMap.get(String(routeJobId));
     const order = job?.customer_order_id
       ? customerOrderMap.get(String(job.customer_order_id))
       : null;
     if (isClosedStatus(order?.status) || order?.fulfillment_completed) return;
 
-    let stage = getCanonicalShopStage(representative);
+    const expectedStage = getCanonicalShopStage(job) || getCustomerOrderShopStage(order);
+    const openRoute = route.filter((workOrder) => !isClosedStatus(workOrder.status));
+    const representative = openRoute.find(
+      (workOrder) => expectedStage && getCanonicalShopStage(workOrder) === expectedStage
+    ) || openRoute.find(
+      (workOrder) => normalizeStatus(workOrder.status) !== "pending"
+    ) || openRoute[0] || [...route].reverse().find((workOrder) => isClosedStatus(workOrder.status));
+    if (!representative) return;
+
+    let stage = expectedStage || getCanonicalShopStage(representative);
     if (normalizeStatus(order?.status) === "ready for pickup") stage = "Waiting for Pickup";
     else if (["ready to ship", "ready for installation"].includes(normalizeStatus(order?.status))) stage = "Ready to Ship";
     else if (normalizeStatus(order?.design_status) === "awaiting customer approval") stage = "Customer Approval";
