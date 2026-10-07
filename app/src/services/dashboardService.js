@@ -548,10 +548,31 @@ function buildPriorityRow(record, sourceType) {
 
 function buildPriorityFeed(
   hotTodayRecords,
-  quickCommitmentRecords
+  quickCommitmentRecords,
+  sourceRecords = {}
 ) {
+  const openSourceIds = {
+    customerOrder: new Set((sourceRecords.customerOrders || []).filter(isOrderOpen).map((item) => String(item.id))),
+    productionJob: new Set((sourceRecords.productionJobs || []).filter(isProductionJobOpen).map((item) => String(item.id))),
+    workOrder: new Set((sourceRecords.workOrders || []).filter(isWorkOrderOpen).map((item) => String(item.id))),
+    project: new Set((sourceRecords.projects || []).filter(isProjectOpen).map((item) => String(item.id))),
+  };
+
+  const hasOpenSource = (record) => {
+    const sourceId = record?.source_id;
+    if (!sourceId) return true;
+
+    const sourceType = normalizeStatus(record?.source_type).replace(/[^a-z]/g, "");
+    if (sourceType.includes("customerorder")) return openSourceIds.customerOrder.has(String(sourceId));
+    if (sourceType.includes("productionjob")) return openSourceIds.productionJob.has(String(sourceId));
+    if (sourceType.includes("workorder")) return openSourceIds.workOrder.has(String(sourceId));
+    if (sourceType === "project" || sourceType.includes("outsideproject")) return openSourceIds.project.has(String(sourceId));
+    return true;
+  };
+
   const hotToday = hotTodayRecords
     .filter(isActivePriorityRecord)
+    .filter(hasOpenSource)
     .map((record) =>
       buildPriorityRow(record, "hotToday")
     );
@@ -559,6 +580,7 @@ function buildPriorityFeed(
   const quickCommitments =
     quickCommitmentRecords
       .filter(isActivePriorityRecord)
+      .filter(hasOpenSource)
       .map((record) =>
         buildPriorityRow(
           record,
@@ -1438,7 +1460,8 @@ export async function getDashboardData() {
 
   const priorityFeed = buildPriorityFeed(
     hotTodayResult.data || [],
-    quickCommitmentsResult.data || []
+    quickCommitmentsResult.data || [],
+    { customerOrders, productionJobs, workOrders, projects }
   );
 
   const customerMap = new Map(
