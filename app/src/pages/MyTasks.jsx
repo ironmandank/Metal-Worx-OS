@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 import { supabase } from "../lib/supabase";
+import { createNotificationForProfile } from "../services/notificationService";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"];
 
@@ -63,9 +64,11 @@ function priorityColor(priority) {
   return "blue";
 }
 
-export default function MyTasks({ setPage }) {
+export default function MyTasks({ setPage, authenticatedProfile }) {
   const [tasks, setTasks] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [userId, setUserId] = useState("");
+  const [viewOwnerId, setViewOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
@@ -75,7 +78,9 @@ export default function MyTasks({ setPage }) {
     priority: "Normal",
     due_date: localDateKey(),
     due_time: "",
+    owner_user_id: "",
   });
+  const isAdministrator = String(authenticatedProfile?.access_level || "").toLowerCase().includes("admin");
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -86,46 +91,50 @@ export default function MyTasks({ setPage }) {
       setUserId(currentUserId);
       if (!currentUserId) throw new Error("Your employee session could not be found. Please sign in again.");
 
-      const { data, error } = await supabase
+      const tasksQuery = supabase
         .from("personal_follow_ups")
         .select("id,owner_user_id,owner_name,title,details,note_type,priority,due_at,status,completed_at,created_at,updated_at")
-        .eq("owner_user_id", currentUserId)
         .order("status", { ascending: false })
         .order("due_at", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
+      const [{ data, error }, { data: profileRows, error: profilesError }] = await Promise.all([
+        isAdministrator ? tasksQuery : tasksQuery.eq("owner_user_id", currentUserId),
+        supabase.from("employee_profiles").select("id,auth_user_id,display_name,role_title,is_active").eq("is_active", true).not("auth_user_id", "is", null).order("display_name"),
+      ]);
       if (error) throw error;
+      if (profilesError) throw profilesError;
       setTasks(data || []);
+      setProfiles(profileRows || []);
+      setViewOwnerId((current) => current || currentUserId);
+      setForm((current) => ({ ...current, owner_user_id: current.owner_user_id || currentUserId }));
     } catch (error) {
       notifications.show({ title: "Tasks Could Not Be Loaded", message: error.message, color: "red" });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdministrator]);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
   const today = localDateKey();
-  const openTasks = useMemo(() => tasks.filter((task) => task.status !== "Completed"), [tasks]);
+  const visibleTasks = useMemo(() => isAdministrator && viewOwnerId === "all" ? tasks : tasks.filter((task) => task.owner_user_id === (viewOwnerId || userId)), [isAdministrator, tasks, userId, viewOwnerId]);
+  const openTasks = useMemo(() => visibleTasks.filter((task) => task.status !== "Completed"), [visibleTasks]);
   const todayTasks = useMemo(() => openTasks.filter((task) => localDateKey(task.due_at) === today), [openTasks, today]);
   const overdueTasks = useMemo(() => openTasks.filter((task) => task.due_at && localDateKey(task.due_at) < today), [openTasks, today]);
   const laterTasks = useMemo(() => openTasks.filter((task) => !task.due_at || localDateKey(task.due_at) > today), [openTasks, today]);
-  const completedToday = useMemo(() => tasks.filter((task) => task.status === "Completed" && localDateKey(task.completed_at) === today), [tasks, today]);
+  const completedToday = useMemo(() => visibleTasks.filter((task) => task.status === "Completed" && localDateKey(task.completed_at) === today), [visibleTasks, today]);
 
   async function addTask(event) {
     event.preventDefault();
     if (!form.title.trim() || !userId || saving) return;
     setSaving(true);
     try {
-      const { data: profile, error: profileError } = await supabase
-        .from("employee_profiles")
-        .select("display_name")
-        .eq("auth_user_id", userId)
-        .maybeSingle();
-      if (profileError) throw profileError;
+      const ownerUserId = isAdministrator ? (form.owner_user_id || userId) : userId;
+      const profile = profiles.find((item) => item.auth_user_id === ownerUserId);
 
       const { error } = await supabase.from("personal_follow_ups").insert({
-        owner_user_id: userId,
-        owner_name: profile?.display_name || "Team Member",
+        owner_user_id: ownerUserId,
+        owner_name: profile?.display_name || authenticatedProfile?.display_name || "Team Member",
         title: form.title.trim(),
         details: form.details.trim() || null,
         note_type: "Task",
@@ -134,10 +143,20 @@ export default function MyTasks({ setPage }) {
         created_by: userId,
       });
       if (error) throw error;
-      setForm({ title: "", details: "", priority: "Normal", due_date: localDateKey(), due_time: "" });
+      if (profile?.id && ownerUserId !== userId) {
+        await createNotificationForProfile({
+          recipientProfileId: profile.id,
+          notificationType: "Task",
+          title: "New Task Assigned",
+          message: form.title.trim(),
+          targetPage: "myTasks",
+          priority: form.priority === "Urgent" ? "High" : form.priority,
+        });
+      }
+      setForm({ title: "", details: "", priority: "Normal", due_date: localDateKey(), due_time: "", owner_user_id: ownerUserId });
       setTaskOpen(false);
       await loadTasks();
-      notifications.show({ title: "Task Added", message: "The task is on your daily list.", color: "green" });
+      notifications.show({ title: "Task Added", message: `The task is on ${profile?.display_name || "the employee"}'s list.`, color: "green" });
     } catch (error) {
       notifications.show({ title: "Task Could Not Be Added", message: error.message, color: "red" });
     } finally {
@@ -150,7 +169,7 @@ export default function MyTasks({ setPage }) {
       status: completed ? "Completed" : "Open",
       completed_at: completed ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
-    }).eq("id", task.id).eq("owner_user_id", userId);
+    }).eq("id", task.id);
     if (error) {
       notifications.show({ title: "Task Could Not Be Updated", message: error.message, color: "red" });
       return;
@@ -165,7 +184,7 @@ export default function MyTasks({ setPage }) {
 
   async function deleteTask(task) {
     if (!window.confirm(`Delete “${task.title}”?`)) return;
-    const { error } = await supabase.from("personal_follow_ups").delete().eq("id", task.id).eq("owner_user_id", userId);
+    const { error } = await supabase.from("personal_follow_ups").delete().eq("id", task.id);
     if (error) notifications.show({ title: "Task Could Not Be Deleted", message: error.message, color: "red" });
     else await loadTasks();
   }
@@ -177,6 +196,7 @@ export default function MyTasks({ setPage }) {
         <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="wrap">
             <Text fw={900} td={completed ? "line-through" : undefined} c={completed ? "dimmed" : undefined}>{task.title}</Text>
+            {isAdministrator && <Badge size="sm" color="grape" variant="light">{task.owner_name || "Unassigned"}</Badge>}
             <Badge size="sm" color={priorityColor(task.priority)} variant="light">{task.priority}</Badge>
             {overdue && <Badge size="sm" color="red">Overdue</Badge>}
           </Group>
@@ -203,9 +223,12 @@ export default function MyTasks({ setPage }) {
       <Card withBorder radius="lg" p="lg"><Group><ThemeIcon color="green" variant="light" size="lg"><IconCheck size={22}/></ThemeIcon><div><Text size="xs" c="dimmed" fw={800}>DONE TODAY</Text><Title order={2}>{completedToday.length}</Title></div></Group></Card>
     </SimpleGrid>
 
-    <Group justify="space-between">
+    <Group justify="space-between" align="flex-end" wrap="wrap">
       <Button color="red" size="md" leftSection={<IconPlus size={18}/>} onClick={() => setTaskOpen(true)}>Add Today’s Task</Button>
-      <Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadTasks}>Refresh</Button>
+      <Group align="flex-end">
+        {isAdministrator && <Select label="View Task List" w={220} value={viewOwnerId} onChange={(value) => setViewOwnerId(value || userId)} data={[{ value: "all", label: "All Team Tasks" }, ...profiles.map((profile) => ({ value: profile.auth_user_id, label: profile.display_name }))]}/>}
+        <Button variant="light" color="gray" leftSection={<IconRefresh size={17}/>} onClick={loadTasks}>Refresh</Button>
+      </Group>
     </Group>
 
     {overdueTasks.length > 0 && <MWPanel title="Needs Attention" subtitle="These tasks are past due and remain open." icon={IconClock} color="orange"><Stack gap="sm">{overdueTasks.map((task) => <TaskCard key={task.id} task={task}/>)}</Stack></MWPanel>}
@@ -223,6 +246,7 @@ export default function MyTasks({ setPage }) {
     <Modal opened={taskOpen} onClose={() => setTaskOpen(false)} title="Add a Task" centered>
       <form onSubmit={addTask}><Stack>
         <TextInput label="Task" placeholder="What needs to be completed?" value={form.title} onChange={(event) => setForm({ ...form, title: event.currentTarget.value })} required autoFocus/>
+        {isAdministrator && <Select label="Assign To" searchable allowDeselect={false} data={profiles.map((profile) => ({ value: profile.auth_user_id, label: profile.display_name }))} value={form.owner_user_id || userId} onChange={(value) => setForm({ ...form, owner_user_id: value || userId })}/>}
         <Textarea label="Details" placeholder="Optional notes or next step" minRows={3} value={form.details} onChange={(event) => setForm({ ...form, details: event.currentTarget.value })}/>
         <Select label="Priority" data={PRIORITIES} value={form.priority} onChange={(value) => setForm({ ...form, priority: value || "Normal" })}/>
         <SimpleGrid cols={2}>
