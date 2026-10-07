@@ -1660,6 +1660,9 @@ export async function getDashboardData() {
   const artworkPipelineCounts = Object.fromEntries(
     artworkPipelineStages.map((stage) => [stage, 0])
   );
+  const artworkPipelineItems = Object.fromEntries(
+    artworkPipelineStages.map((stage) => [stage, []])
+  );
 
   artworkRoutes.forEach((route) => {
     const representative = route.find((workOrder) =>
@@ -1680,12 +1683,23 @@ export async function getDashboardData() {
 
     if (stage && Object.prototype.hasOwnProperty.call(artworkPipelineCounts, stage)) {
       artworkPipelineCounts[stage] += 1;
+      const orderItems = Array.isArray(order?.customer_order_items) ? order.customer_order_items : [];
+      const itemName = orderItems
+        .map((item) => String(item.item_name || item.description || "").trim())
+        .find(Boolean);
+      artworkPipelineItems[stage].push({
+        id: order?.id || job?.id || representative.id,
+        title: itemName || order?.order_number || job?.production_job_number || representative.work_order_number || "Artwork job",
+        customer: order ? getCustomerName(order.customer_id) : "Customer",
+        owner: order?.order_owner || representative.assigned_to || "Unassigned",
+      });
     }
   });
 
   const artworkPipeline = artworkPipelineStages.map((name) => ({
     name,
     count: artworkPipelineCounts[name],
+    items: artworkPipelineItems[name],
   }));
 
   /* =====================================================
