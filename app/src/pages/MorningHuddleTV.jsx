@@ -36,21 +36,21 @@ const styles = `
   .tv-kpi span { display:flex; width:100%; min-height:48px; align-items:flex-start; justify-content:center; color:#d3d9dd !important; font-size:13px; font-weight:900; line-height:1.2; text-transform:uppercase; }
   .tv-kpi strong { display:flex; min-height:58px; margin-top:auto; align-items:center; justify-content:center; color:#fff; font-size:clamp(30px,3vw,52px); line-height:1; }
   .tv-kpi.danger strong { color:#ff4050; } .tv-kpi.warn strong { color:#ffb22d; } .tv-kpi.good strong { color:#83dc4d; }
-  .tv-pipeline { margin-top:14px; padding:14px; border:1px solid #354047; border-radius:10px; background:#10161a; }
-  .tv-pipeline-head { display:flex; align-items:center; gap:9px; margin-bottom:11px; color:#f6f7f8; font-size:clamp(16px,1.15vw,21px); font-weight:900; text-transform:uppercase; }
+  .tv-pipeline { margin-top:14px; padding:18px; border:1px solid #354047; border-radius:10px; background:#10161a; }
+  .tv-pipeline-head { display:flex; align-items:center; gap:11px; margin-bottom:15px; color:#f6f7f8; font-size:clamp(22px,1.45vw,30px); font-weight:900; text-transform:uppercase; }
   .tv-pipeline-head svg { color:#ff3445; }
-  .tv-pipeline-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
-  .tv-pipeline-stage { min-width:0; min-height:118px; padding:10px 11px; border:1px solid #343e45; border-radius:8px; background:#171e23; }
+  .tv-pipeline-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; }
+  .tv-pipeline-stage { min-width:0; min-height:185px; padding:14px 15px; border:1px solid #343e45; border-radius:10px; background:#171e23; }
   .tv-pipeline-stage.expandable { cursor:pointer; transition:border-color .15s ease,background .15s ease; }
   .tv-pipeline-stage.expandable:hover,.tv-pipeline-stage.expandable:focus-visible { border-color:#a53a43; background:#1d252a; outline:none; }
   .tv-pipeline-stage-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .tv-pipeline-stage-head span { color:#cbd2d7; font-size:12px; font-weight:900; line-height:1.15; text-transform:uppercase; }
-  .tv-pipeline-stage-head strong { color:#fff; font-size:28px; line-height:1; }
-  .tv-pipeline-jobs { display:grid; gap:5px; margin-top:8px; }
-  .tv-pipeline-job { padding-top:5px; border-top:1px solid #303a41; color:#fff; font-size:11px; font-weight:800; line-height:1.2; overflow-wrap:anywhere; }
-  .tv-pipeline-job small { display:block; margin-top:2px; color:#99a4ab; font-size:10px; font-weight:600; }
-  .tv-pipeline-toggle { width:100%; padding:7px 4px 1px; border:0; border-top:1px solid #3a464d; color:#fff; background:transparent; font:inherit; font-size:11px; font-weight:900; cursor:pointer; }
-  .tv-pipeline-none { margin-top:10px; color:#7f8a91; font-size:11px; }
+  .tv-pipeline-stage-head span { color:#cbd2d7; font-size:clamp(15px,1vw,20px); font-weight:900; line-height:1.15; text-transform:uppercase; }
+  .tv-pipeline-stage-head strong { color:#fff; font-size:clamp(34px,2.4vw,48px); line-height:1; }
+  .tv-pipeline-jobs { display:grid; gap:8px; margin-top:11px; }
+  .tv-pipeline-job { padding-top:8px; border-top:1px solid #303a41; color:#fff; font-size:clamp(14px,.92vw,18px); font-weight:850; line-height:1.22; overflow-wrap:anywhere; }
+  .tv-pipeline-job small { display:block; margin-top:4px; color:#aeb8be; font-size:clamp(12px,.76vw,15px); font-weight:650; line-height:1.25; }
+  .tv-pipeline-toggle { width:100%; padding:10px 4px 2px; border:0; border-top:1px solid #3a464d; color:#fff; background:transparent; font:inherit; font-size:clamp(13px,.82vw,16px); font-weight:900; cursor:pointer; }
+  .tv-pipeline-none { margin-top:16px; color:#929da4; font-size:clamp(13px,.82vw,16px); }
   .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
   .tv-pipeline-stage.attention .tv-pipeline-stage-head strong { color:#ff5965; }
   .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
@@ -60,14 +60,14 @@ const styles = `
   .tv-panel.tv-outside { grid-column:1 / -1; }
   .tv-panel.tv-production { grid-column:span 6; }
   .tv-panel.tv-field { grid-column:span 6; }
-  .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:13px 16px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(17px,1.25vw,24px); line-height:1.2; text-transform:uppercase; }
+  .tv-panel h2 { display:flex; align-items:center; gap:9px; margin:0; padding:15px 18px; border-bottom:1px solid #354047; color:#f6f7f8 !important; font-size:clamp(20px,1.4vw,28px); line-height:1.2; text-transform:uppercase; }
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
   .tv-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding:11px; }
   .tv-card-grid.wide { grid-template-columns:repeat(4,minmax(0,1fr)); }
-  .tv-item-card { min-width:0; min-height:92px; padding:11px 12px; border:1px solid #303a41; border-radius:9px; background:#161d21; }
+  .tv-item-card { min-width:0; min-height:110px; padding:14px 15px; border:1px solid #303a41; border-radius:9px; background:#161d21; }
   .tv-item-card.urgent { border-color:#8f252e; background:linear-gradient(135deg,#291216,#171d21); }
-  .tv-item-card strong { display:block; color:#fff; font-size:clamp(14px,.95vw,18px); line-height:1.18; overflow-wrap:anywhere; }
-  .tv-item-card small { display:block; margin-top:6px; color:#aab3b9; font-size:clamp(11px,.72vw,14px); line-height:1.28; overflow-wrap:anywhere; }
+  .tv-item-card strong { display:block; color:#fff; font-size:clamp(17px,1.05vw,21px); line-height:1.2; overflow-wrap:anywhere; }
+  .tv-item-card small { display:block; margin-top:7px; color:#b5bec4; font-size:clamp(13px,.82vw,16px); line-height:1.3; overflow-wrap:anywhere; }
   .tv-card-tag { display:inline-block; margin-bottom:7px; padding:3px 7px; border-radius:999px; color:#fff; background:#9b0010; font-size:10px; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
   .tv-card-tag.gray { color:#dce2e5; background:#364047; }
   .tv-card-tag.green { color:#c8f8d2; background:#14532d; }
