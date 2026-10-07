@@ -29,7 +29,6 @@ import {
   IconPhone,
   IconPrinter,
   IconScan,
-  IconSearch,
   IconSettings,
   IconShieldCheck,
   IconShoppingCart,
@@ -49,6 +48,7 @@ import {
   markNotificationRead,
 } from "../../services/notificationService";
 import AnimatedWalkthrough from "../AnimatedWalkthrough";
+import SearchBar from "../SearchBar";
 import SparkyAssistant from "../SparkyAssistant";
 
 const GLOBAL_STATUS_STYLES = `
@@ -391,6 +391,7 @@ function AppLayout({
   setPage,
   setSelectedDepartment,
   openCallback,
+  openGlobalSearchResult,
 }) {
   const activePage = page || currentPage || "dashboard";
   const [notifications, setNotifications] = useState([]);
@@ -744,10 +745,7 @@ function AppLayout({
             <IconMenu2 />
             <span>Menu</span>
           </button>
-          <div className="mw-topbar-search" data-tour="global-search">
-            <IconSearch />
-            <input placeholder="Search orders, customers, jobs, projects, inventory..." />
-          </div>
+          <SearchBar onOpenResult={openGlobalSearchResult} />
 
           <div className="mw-topbar-actions">
             {isReadOnly && <div className="mw-readonly-indicator">View Only</div>}
