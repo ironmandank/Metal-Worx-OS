@@ -4,6 +4,7 @@ import quoteFontBold from "../assets/fonts/DejaVuSans-Quote-Bold.ttf?url";
 
 const PAGE = { width: 612, height: 792, left: 30, right: 30, top: 30, bottom: 30 };
 const LANDSCAPE = { width: 792, height: 612, left: 24, right: 24, top: 24, bottom: 24 };
+const CRATE_SHEET = { width: 576, height: 720, left: 24, right: 24, top: 24, bottom: 24 };
 const COLORS = {
   red: [166, 12, 30],
   ink: [28, 31, 35],
@@ -224,7 +225,7 @@ function drawSummaryPage(doc, event, groupedRows) {
   }
 }
 
-async function prepareShowRows({ snapshots, items, images, bins }) {
+async function prepareShowRows({ snapshots, items, images, bins, loadImages = true }) {
   const itemMap = new Map((items || []).map((item) => [item.id, item]));
   const binMap = new Map((bins || []).map((bin) => [bin.id, bin]));
   const imageMap = new Map();
@@ -257,7 +258,7 @@ async function prepareShowRows({ snapshots, items, images, bins }) {
   })
     .filter((row) => row.inventory_item_id && row.item_name && row.isInventoryItemActive && row.isShowCrate);
 
-  await Promise.all(rows.map(async (row) => {
+  if (loadImages) await Promise.all(rows.map(async (row) => {
     if (!row.imageUrl) return;
     try {
       row.imageData = await urlToDataUrl(row.imageUrl);
@@ -419,40 +420,38 @@ export async function downloadShowBookPdf({ event, snapshots, items, images, bin
 }
 
 function drawCrateManifestRow(doc, row, y) {
-  const left = LANDSCAPE.left;
-  const width = LANDSCAPE.width - LANDSCAPE.left - LANDSCAPE.right;
-  const rowHeight = 58;
+  const left = CRATE_SHEET.left;
+  const width = CRATE_SHEET.width - CRATE_SHEET.left - CRATE_SHEET.right;
+  const rowHeight = 72;
   doc.setDrawColor(...COLORS.line);
   doc.setLineWidth(0.7);
   doc.roundedRect(left, y, width, rowHeight, 4, 4, "S");
-  addContainedImage(doc, row.imageData, left + 6, y + 6, 52, 46);
-
-  const textX = left + 70;
+  const textX = left + 10;
   doc.setFont("ShowBook", "bold");
   doc.setFontSize(10.5);
   doc.setTextColor(...COLORS.ink);
-  const nameLines = doc.splitTextToSize(row.item_name || "Unnamed item", 350).slice(0, 2);
+  const nameLines = doc.splitTextToSize(row.item_name || "Unnamed item", 315).slice(0, 2);
   doc.text(nameLines, textX, y + 17, { lineHeightFactor: 1.05 });
   doc.setFont("ShowBook", "normal");
   doc.setFontSize(8);
   doc.setTextColor(...COLORS.gray);
-  doc.text([row.item_number || row.sku || "No item number", row.dimensions].filter(Boolean).join("  •  "), textX, y + 47);
+  doc.text([row.item_number || row.sku || "No item number", row.dimensions].filter(Boolean).join("  •  "), textX, y + 58);
 
   doc.setFont("ShowBook", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...COLORS.ink);
-  doc.text("FINISH / COLOR", left + 485, y + 16);
+  doc.text("FINISH / COLOR", left + 340, y + 16);
   doc.setFont("ShowBook", "normal");
-  doc.text(row.finish || row.color || "—", left + 485, y + 35);
+  doc.text(doc.splitTextToSize(row.finish || row.color || "—", 95).slice(0, 2), left + 340, y + 35, { lineHeightFactor: 1.05 });
   doc.setFont("ShowBook", "bold");
   doc.setFontSize(15);
   doc.text(`QTY ${Number(row.starting_quantity || 0)}`, left + width - 14, y + 34, { align: "right" });
 }
 
 export async function downloadCrateSheetsPdf({ event, snapshots, items, images, bins }) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter", compress: true });
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: [CRATE_SHEET.width, CRATE_SHEET.height], compress: true });
   await registerFonts(doc);
-  const rows = await prepareShowRows({ snapshots, items, images, bins });
+  const rows = await prepareShowRows({ snapshots, items, images, bins, loadImages: false });
   const groupedRows = groupShowRows(rows);
   let firstPage = true;
 
@@ -465,20 +464,20 @@ export async function downloadCrateSheetsPdf({ event, snapshots, items, images, 
       doc.setFont("ShowBook", "bold");
       doc.setFontSize(20);
       doc.setTextColor(...COLORS.ink);
-      doc.text(crate, LANDSCAPE.left, 34);
+      doc.text(crate, CRATE_SHEET.left, 34);
       doc.setFontSize(9);
       doc.setTextColor(...COLORS.red);
-      doc.text("COMPLETE CRATE CONTENTS", LANDSCAPE.width - LANDSCAPE.right, 34, { align: "right" });
+      doc.text("COMPLETE CRATE CONTENTS", CRATE_SHEET.width - CRATE_SHEET.right, 34, { align: "right" });
       doc.setFont("ShowBook", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(...COLORS.gray);
-      doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}  •  ${crateRows.length} items  •  ${cratePieces} pieces`, LANDSCAPE.left, 51);
-      doc.text(`Page ${Math.floor(start / 8) + 1} of ${cratePages}`, LANDSCAPE.width - LANDSCAPE.right, 51, { align: "right" });
+      doc.text(`${event.event_name}  •  ${formatDate(event.start_date)}–${formatDate(event.end_date)}  •  ${crateRows.length} items  •  ${cratePieces} pieces`, CRATE_SHEET.left, 51);
+      doc.text(`Page ${Math.floor(start / 8) + 1} of ${cratePages}`, CRATE_SHEET.width - CRATE_SHEET.right, 51, { align: "right" });
       doc.setDrawColor(...COLORS.red);
       doc.setLineWidth(2);
-      doc.line(LANDSCAPE.left, 61, LANDSCAPE.width - LANDSCAPE.right, 61);
+      doc.line(CRATE_SHEET.left, 61, CRATE_SHEET.width - CRATE_SHEET.right, 61);
       crateRows.slice(start, start + 8).forEach((row, index) => {
-        drawCrateManifestRow(doc, row, 72 + index * 63);
+        drawCrateManifestRow(doc, row, 72 + index * 77);
       });
     }
   });
