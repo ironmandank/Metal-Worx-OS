@@ -1135,6 +1135,31 @@ function getOutsideProjectPriority(project) {
   return 7;
 }
 
+function getOutsideProjectProgress(project) {
+  const complete = (value) => ["complete", "completed", "approved", "received", "paid"].includes(normalizeStatus(value));
+  const milestones = [
+    project.site_visit_required && ["Site Visit", project.site_visit_status],
+    project.measurements_required && ["Measurements", project.measurements_status],
+    project.quote_required && ["Quote", project.quote_status],
+    project.customer_approval_required !== false && ["Approval", project.approval_status],
+    project.down_payment_required && ["Deposit", project.down_payment_status],
+    project.design_required && ["Design", project.design_status],
+    project.fabrication_required && ["Materials", project.material_status],
+    project.fabrication_required && ["Fabrication", project.fabrication_status],
+    project.test_fit_required && ["Test Fit", project.test_fit_status],
+    project.finish_required && ["Finish", project.finish_status],
+    project.assembly_required && ["Assembly", project.assembly_status],
+    project.install_required && ["Installation", project.install_status],
+    project.install_required && ["Final Inspection", project.final_inspection_status],
+  ].filter(Boolean);
+  const completed = milestones.filter(([, status]) => complete(status)).length;
+  return {
+    progressPercent: milestones.length ? Math.round((completed / milestones.length) * 100) : 0,
+    milestonesCompleted: completed,
+    milestonesTotal: milestones.length,
+  };
+}
+
 function buildOutsideProjectRow(
   project,
   customerName
@@ -1147,6 +1172,7 @@ function buildOutsideProjectRow(
 
   const total =
     getProjectTotal(project);
+  const progress = getOutsideProjectProgress(project);
 
   return {
     id: project.id,
@@ -1217,6 +1243,11 @@ function buildOutsideProjectRow(
 
     priority:
       getOutsideProjectPriority(project),
+
+    progressPercent: progress.progressPercent,
+    milestonesCompleted: progress.milestonesCompleted,
+    milestonesTotal: progress.milestonesTotal,
+    targetDate: project.install_start || project.install_date || project.target_completion_date || project.due_date || null,
   };
 }
 
@@ -1503,6 +1534,15 @@ export async function getDashboardData() {
     );
   }
 
+  function getArtworkCustomerName(order) {
+    const artworkName = String(order?.artwork_customer_name || "").trim();
+    if (artworkName) return artworkName;
+    const linkedName = getCustomerName(order?.customer_id);
+    return normalizeStatus(linkedName) === "thomas kelleher"
+      ? "Customer name needs review"
+      : linkedName;
+  }
+
   const openOrders =
     customerOrders.filter(isOrderOpen);
 
@@ -1523,7 +1563,7 @@ export async function getDashboardData() {
       sourceId: order.id,
       sourceType: "customerOrder",
       title: [order.order_number, itemSummary || order.title || order.order_type].filter(Boolean).join(" — ") || `Artwork Order #${order.id}`,
-      customer: getCustomerName(order.customer_id),
+      customer: getArtworkCustomerName(order),
       owner: order.order_owner || order.assigned_to || "Unassigned",
       department: getCustomerOrderShopStage(order) || "Not released",
       receivedDate,
