@@ -21,6 +21,10 @@ type SparkyAction = {
   design_source?: string;
   order_id?: number;
   show_on_huddle?: boolean;
+  title?: string;
+  details?: string;
+  priority?: string;
+  due_at?: string | null;
 };
 type RequestBody = { question?: string; page?: string; history?: ChatMessage[]; action?: SparkyAction; confirmed?: boolean };
 
@@ -134,6 +138,27 @@ function huddleChange(question: string) {
   const match = question.match(/\b(add|put|show|remove|take)\s+(.+?)\s+(?:on|to|from|off)\s+(?:the\s+)?(?:morning\s+)?huddle\b/i);
   if (!match) return null;
   return { show: !/remove|take/i.test(match[1]), target: cleanText(match[2], 160) };
+}
+
+function wantsPersonalTask(question: string) {
+  return /\b(?:create|add|make)\b[\s\S]{0,30}\btask\b|\bremind me\b/i.test(question)
+    || /^\s*task\s*:/im.test(question);
+}
+
+function parsePersonalTask(text: string) {
+  const labeledTitle = labeledValue(text, ["task", "title", "reminder"]);
+  const naturalTitle = text.match(/\b(?:create|add|make)\s+(?:a\s+)?task\s+(?:for\s+me\s+)?(?:to\s+)?(.+?)(?=\s+(?:due|by|on)\s+\d{4}-\d{2}-\d{2}|[.\n]|$)/i)?.[1]
+    || text.match(/\bremind\s+me\s+(?:to\s+)?(.+?)(?=\s+(?:due|by|on)\s+\d{4}-\d{2}-\d{2}|[.\n]|$)/i)?.[1];
+  const dueDate = labeledValue(text, ["due", "due date", "date"])
+    || text.match(/\b(?:due|by|on)\s+(\d{4}-\d{2}-\d{2})\b/i)?.[1]
+    || "";
+  const details = labeledValue(text, ["details", "notes", "description"]);
+  return {
+    title: cleanText(labeledTitle || naturalTitle, 180),
+    details: cleanText(details, 1000),
+    priority: /\burgent\b/i.test(text) ? "Urgent" : /\bhigh(?: priority)?\b/i.test(text) ? "High" : /\blow(?: priority)?\b/i.test(text) ? "Low" : "Normal",
+    dueAt: /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? `${dueDate}T17:00:00-04:00` : null,
+  };
 }
 
 function searchTerm(question: string) {
@@ -289,6 +314,33 @@ Deno.serve(async (request: Request) => {
       const { data: order, error: actionError } = await callerClient.from("customer_orders").update({ show_on_huddle: Boolean(body.action.show_on_huddle) }).eq("id", orderId).select("order_number,show_on_huddle").single();
       if (actionError) return json({ error: actionError.message }, 409);
       return json({ answer: `${order.order_number} ${order.show_on_huddle ? "will now appear" : "was removed from the manual Huddle list"}. Dated or aging work may still appear automatically.`, action_executed: true, result: order, open_page: "morningHuddleTV" });
+    }
+
+    if (body.confirmed && body.action?.type === "create_personal_task") {
+      const title = cleanText(body.action.title, 180);
+      const priority = ["Low", "Normal", "High", "Urgent"].includes(String(body.action.priority)) ? body.action.priority : "Normal";
+      if (!title) return json({ error: "The task title is missing. Ask Sparky to prepare it again." }, 400);
+      const { data: task, error: actionError } = await callerClient.from("personal_follow_ups").insert({
+        owner_user_id: user.id,
+        owner_name: employee.display_name,
+        title,
+        details: cleanText(body.action.details, 1000) || null,
+        note_type: "Task",
+        priority,
+        due_at: body.action.due_at || null,
+        created_by: user.id,
+      }).select("id,title,priority,due_at,status").single();
+      if (actionError) return json({ error: actionError.message }, 409);
+      return json({ answer: `Done. “${task.title}” is now on your task list${task.due_at ? ` for ${new Date(task.due_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}` : ""}.`, action_executed: true, result: task, open_page: "myTasks" });
+    }
+
+    if (wantsPersonalTask(question)) {
+      const task = parsePersonalTask(question);
+      if (!task.title) return json({ answer: "I can add that to your personal task list. Send it like this:\n\nTask: Call customer about final approval\nDue date: 2026-10-08\nPriority: High\nDetails: Confirm the plaque wording" });
+      return json({
+        answer: `I prepared this task for ${employee.display_name}:\n\nTask: ${task.title}\nPriority: ${task.priority}\nDue: ${task.dueAt ? new Date(task.dueAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "No date entered"}${task.details ? `\nDetails: ${task.details}` : ""}\n\nConfirming will add it to your My Tasks list.`,
+        proposed_action: { type: "create_personal_task", label: `Add Task — ${task.title}`, title: task.title, details: task.details, priority: task.priority, due_at: task.dueAt },
+      });
     }
 
     if (wantsArtworkOrder(question)) {
