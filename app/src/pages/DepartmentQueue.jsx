@@ -51,6 +51,7 @@ import {
   SHOP_STATIONS,
   startProductionStep,
 } from "../lib/productionWorkflow";
+import { selectCurrentArtworkWorkOrder } from "../lib/artworkRoute";
 import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { getTodaysHotTodayItems } from "../services/hotTodayService";
@@ -62,20 +63,6 @@ import {
 
 function referenceImageLabel(image, index) {
   return image?.caption || image?.image_type || `Reference image ${index + 1}`;
-}
-
-function selectCurrentRouteWorkOrder(route) {
-  const openRoute = route.filter((row) => ![
-    "completed",
-    "complete",
-    "closed",
-    "cancelled",
-    "canceled",
-  ].includes(String(row.status || "").trim().toLowerCase()));
-
-  return openRoute.find((row) => String(row.status || "").trim().toLowerCase() !== "pending")
-    || openRoute[0]
-    || [...route].reverse().find((row) => ["completed", "complete"].includes(String(row.status || "").trim().toLowerCase()));
 }
 
 async function downloadReferenceImage(image, index) {
@@ -228,7 +215,7 @@ function DepartmentQueue({
           return groups;
         }, {}))
           .filter((route) => route.some((row) => canonicalStation(row.department) === "Design"))
-          .map(selectCurrentRouteWorkOrder)
+          .map(selectCurrentArtworkWorkOrder)
           .filter(Boolean)
       : rows;
 
