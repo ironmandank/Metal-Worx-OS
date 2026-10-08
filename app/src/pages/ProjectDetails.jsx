@@ -58,6 +58,12 @@ import {
 import { supabase } from "../lib/supabase";
 import { releaseProject } from "../lib/productionWorkflow";
 import { getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
+import {
+  buildStageAdvanceUpdates,
+  findOutOfSequenceStages,
+  getStageDates,
+  PROJECT_STAGE_ACTIONS,
+} from "../lib/projectWorkflowTimeline";
 
 import MWActionBar from "../components/ui/MWActionBar";
 import MWCommandCenter from "../components/ui/MWCommandCenter";
@@ -248,17 +254,17 @@ function stageColor(stage) {
   return statusColor(stage?.status);
 }
 
-function WorkflowStageCard({ stage, index }) {
+function WorkflowStageRow({ stage, index, nextStage, onComplete, onRoute, saving }) {
   const color = stageColor(stage);
+  const actionable = Boolean(PROJECT_STAGE_ACTIONS[stage.key]);
 
   return (
-    <Card
+    <Paper
       withBorder
-      radius="lg"
-      p="lg"
+      radius="md"
+      p={stage.current ? "lg" : "md"}
       style={{
         position: "relative",
-        minHeight: 175,
         overflow: "hidden",
         borderColor: stage.current
           ? "var(--mantine-color-red-7)"
@@ -282,15 +288,16 @@ function WorkflowStageCard({ stage, index }) {
         }}
       />
 
-      <Stack justify="space-between" h="100%" gap="lg">
-        <Group justify="space-between" align="flex-start">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <Group gap="md" wrap="nowrap" style={{ flex: 1, minWidth: 240 }}>
           <ThemeIcon
             color={color}
             variant={stage.current ? "filled" : "light"}
-            radius="lg"
-            size={44}
+            radius="xl"
+            size={stage.current ? 46 : 36}
             style={{
               border: "1px solid rgba(255,255,255,0.08)",
+              flexShrink: 0,
             }}
           >
             {stage.complete ? (
@@ -300,56 +307,58 @@ function WorkflowStageCard({ stage, index }) {
             )}
           </ThemeIcon>
 
-          {stage.current && (
-            <MWStatusBadge
-              status="In Progress"
-              label="Current Stage"
-              color="red"
-              size="sm"
-              variant="filled"
-            />
-          )}
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap="xs" wrap="wrap">
+              <Text fw={850} size={stage.current ? "lg" : "md"} c="gray.0">
+                {stage.label}
+              </Text>
+              {stage.current && <Badge color="red" variant="filled">Current Stage</Badge>}
+              {stage.outOfSequence && <Badge color="orange" variant="light">Review Sequence</Badge>}
+            </Group>
+            <Group gap="xs" mt={4} wrap="wrap">
+              <Group gap={5} wrap="nowrap">
+                <IconUser size={14} color="var(--mantine-color-gray-5)" />
+                <Text size="xs" c="gray.5">{stage.owner}</Text>
+              </Group>
+              <Text size="xs" c="gray.6">•</Text>
+              <Text size="xs" c="gray.5">
+                Started: {stage.startedAt ? formatDateTime(stage.startedAt) : "Not recorded"}
+              </Text>
+              {stage.complete && (
+                <>
+                  <Text size="xs" c="gray.6">•</Text>
+                  <Text size="xs" c="gray.5">
+                    Completed: {stage.completedAt ? formatDateTime(stage.completedAt) : "Before date tracking"}
+                  </Text>
+                </>
+              )}
+            </Group>
+            {stage.current && stage.startedBy && (
+              <Text size="xs" c="gray.6" mt={4}>Started by {stage.startedBy}</Text>
+            )}
+          </Box>
         </Group>
 
-        <Box>
-          <Text
-            fw={850}
-            size="lg"
-            c="gray.0"
-            style={{
-              lineHeight: 1.25,
-              letterSpacing: "-0.015em",
-              textAlign: "left",
-            }}
-          >
-            {stage.label}
-          </Text>
-
-          <Group gap={6} mt={7} wrap="nowrap">
-            <IconUser size={14} color="var(--mantine-color-gray-5)" />
-
-            <Text
-              size="xs"
-              c="gray.5"
-              style={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                textAlign: "left",
-              }}
+        <Group gap="sm" wrap="wrap" justify="flex-end">
+          <MWStatusBadge status={stage.complete ? "Complete" : stage.status} color={color} size="sm" />
+          {stage.current && actionable && (
+            <Button
+              color="red"
+              loading={saving}
+              rightSection={<IconArrowRight size={16} />}
+              onClick={() => onComplete(stage, nextStage)}
             >
-              {stage.owner}
-            </Text>
-          </Group>
-        </Box>
-
-        <MWStatusBadge
-          status={stage.complete ? "Complete" : stage.status}
-          color={color}
-          size="sm"
-        />
-      </Stack>
-    </Card>
+              Complete &amp; Move{nextStage ? ` to ${nextStage.label}` : ""}
+            </Button>
+          )}
+          {stage.current && !actionable && onRoute && (
+            <Button variant="light" color="red" onClick={() => onRoute(stage)}>
+              {stage.routeLabel || "Open Stage Controls"}
+            </Button>
+          )}
+        </Group>
+      </Group>
+    </Paper>
   );
 }
 
@@ -955,10 +964,10 @@ function ProjectDetails({
     }
 
     let currentFound = false;
-
-    return stages.map((stage) => {
+    const datedStages = stages.map((stage) => {
       const complete = stage.complete || stage.status === "Not Required";
       const current = !currentFound && !complete;
+      const dates = getStageDates(projectData, stage.key);
 
       if (current) {
         currentFound = true;
@@ -968,8 +977,27 @@ function ProjectDetails({
         ...stage,
         complete,
         current,
+        ...dates,
       };
     });
+
+    const outOfSequenceKeys = new Set(
+      findOutOfSequenceStages(datedStages).map((stage) => stage.key),
+    );
+
+    return datedStages.map((stage) => ({
+      ...stage,
+      outOfSequence: outOfSequenceKeys.has(stage.key),
+      routeLabel: {
+        pricing: "Open Material Pricing",
+        quote: "Open Quote",
+        approval: "Review Approval",
+        downPayment: "Record Down Payment",
+        orderMaterials: "Open Material Orders",
+        receiveMaterials: "Open Receiving",
+        balance: "Record Final Payment",
+      }[stage.key],
+    }));
   }
 
   function calculateProgress(projectData, requests = materialRequests) {
@@ -1153,7 +1181,7 @@ function ProjectDetails({
     return "Project workflow is complete";
   }
 
-  async function updateProject(updates) {
+  async function updateProject(updates, feedback = {}) {
     if (!project?.id) {
       return;
     }
@@ -1208,18 +1236,20 @@ function ProjectDetails({
       }
 
       notifications.show({
-        title: "Project Updated",
-        message: "Project information was saved.",
+        title: feedback.title || "Project Updated",
+        message: feedback.message || "Project information was saved.",
         color: "green",
       });
 
       await loadProject();
+      return true;
     } catch (error) {
       notifications.show({
         title: "Update Failed",
         message: error.message || "Unable to update the project.",
         color: "red",
       });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1264,6 +1294,62 @@ function ProjectDetails({
   const nextActionText = project
     ? calculateNextAction(project, materialRequests)
     : "No next action";
+
+  const currentStageIndex = workflowStages.findIndex((stage) => stage.current);
+  const nextWorkflowStage = currentStageIndex >= 0
+    ? workflowStages[currentStageIndex + 1] || null
+    : null;
+  const sequenceIssues = workflowStages.filter((stage) => stage.outOfSequence);
+  const currentStageDays = currentStage?.current && currentStage.startedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(currentStage.startedAt).getTime()) / 86400000))
+    : null;
+
+  async function completeAndMoveStage(stage, nextStage) {
+    if (!project?.id || saving) return;
+
+    const updates = buildStageAdvanceUpdates({
+      project,
+      currentStage: stage,
+      nextStage,
+      actor: activeUser || project.assigned_to || project.intake_owner,
+    });
+
+    if (!updates) return;
+
+    await updateProject(updates, {
+      title: `${stage.label} Completed`,
+      message: nextStage
+        ? `${stage.label} was completed and the project moved to ${nextStage.label}.`
+        : `${stage.label} was completed.`,
+    });
+  }
+
+  function routeCurrentStage(stage) {
+    if (["pricing", "orderMaterials", "receiveMaterials"].includes(stage.key)) {
+      openWorkspace("procurement");
+      return;
+    }
+
+    if (stage.key === "quote") {
+      setPage("quoteBuilder");
+      return;
+    }
+
+    if (stage.key === "downPayment") {
+      openPaymentModal("Down Payment");
+      return;
+    }
+
+    if (stage.key === "balance") {
+      openPaymentModal("Final Payment");
+      return;
+    }
+
+    document.getElementById("project-commercial-controls")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
 
   const phaseForNavigation = project
     ? getOutsidePhase(
@@ -2510,24 +2596,42 @@ function ProjectDetails({
                   countLabel="Stages"
                 />
 
-                <SimpleGrid
-                  cols={{
-                    base: 1,
-                    sm: 2,
-                    lg: 3,
-                    xl: 4,
-                  }}
-                  spacing="lg"
-                  mt="lg"
-                >
+                <Paper withBorder radius="md" p="md" mt="lg">
+                  <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                    <Box>
+                      <Text size="xs" tt="uppercase" fw={800} c="gray.5">Current responsibility</Text>
+                      <Text fw={900} size="xl" c="gray.0">{currentStage?.current ? currentStage.label : "Workflow complete"}</Text>
+                      <Text size="sm" c="gray.5">
+                        {currentStage?.current ? currentStage.owner : "No active stage"}
+                        {currentStageDays !== null ? ` • ${currentStageDays} day${currentStageDays === 1 ? "" : "s"} in stage` : ""}
+                      </Text>
+                    </Box>
+                    <Box style={{ minWidth: 250 }}>
+                      <Text size="xs" tt="uppercase" fw={800} c="gray.5">Next required action</Text>
+                      <Text fw={750} c="gray.1">{nextActionText}</Text>
+                    </Box>
+                  </Group>
+                </Paper>
+
+                {sequenceIssues.length > 0 && (
+                  <Alert color="orange" variant="light" mt="md" icon={<IconFlag size={18} />} title="Workflow sequence needs review">
+                    {sequenceIssues.map((stage) => stage.label).join(", ")} {sequenceIssues.length === 1 ? "is" : "are"} marked complete even though an earlier stage is still open. The record was preserved; an administrator can correct the stage controls below.
+                  </Alert>
+                )}
+
+                <Stack gap="sm" mt="lg">
                   {workflowStages.map((stage, index) => (
-                    <WorkflowStageCard
+                    <WorkflowStageRow
                       key={stage.key}
                       stage={stage}
                       index={index}
+                      nextStage={stage.current ? nextWorkflowStage : null}
+                      onComplete={completeAndMoveStage}
+                      onRoute={routeCurrentStage}
+                      saving={saving}
                     />
                   ))}
-                </SimpleGrid>
+                </Stack>
               </MWSection>
 
               <SimpleGrid
@@ -2637,12 +2741,13 @@ function ProjectDetails({
                   </Stack>
                 </MWInfoCard>
 
-                <MWInfoCard
-                  title="Quote & Payment"
-                  subtitle="Manage the commercial approval and payment workflow."
-                  icon={IconCash}
-                  color="green"
-                >
+                <Box id="project-commercial-controls">
+                  <MWInfoCard
+                    title="Quote & Payment"
+                    subtitle="Manage the commercial approval and payment workflow."
+                    icon={IconCash}
+                    color="green"
+                  >
                   <Stack gap="md">
                     <Select
                       label="Quote Status"
@@ -2894,7 +2999,8 @@ function ProjectDetails({
                       </Stack>
                     )}
                   </Stack>
-                </MWInfoCard>
+                  </MWInfoCard>
+                </Box>
 
                 <MWInfoCard
                   title="Production Status"
