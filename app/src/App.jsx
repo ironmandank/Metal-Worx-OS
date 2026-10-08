@@ -674,6 +674,7 @@ function App() {
         <ProjectDetails
           selectedProject={selectedProject}
           setPage={setPage}
+          setSelectedQuote={setSelectedQuote}
           setSelectedProductionJob={setSelectedProductionJob}
           activeUser={activeUser}
           accessLevel={authenticatedProfile?.access_level}
