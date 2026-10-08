@@ -148,17 +148,17 @@ export async function buildQuotePdf(model) {
   doc.setCharSpace(0);
   doc.setFont("QuoteSans", "bold");
   doc.setTextColor(...COLORS.black);
-  const documentType = model.documentType === "Invoice" ? "Invoice" : "Quote";
+  const documentType = model.isChangeOrder ? "Change Order" : model.documentType === "Invoice" ? "Invoice" : "Quote";
   doc.setFontSize(15);
   doc.text(String(model.projectItem || "Custom Fabrication Project"), PAGE.width / 2, y, { align: "center" });
   y += 15;
   doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8.5);
-  doc.text(documentType === "Invoice" ? "Project Invoice" : "Project Quote", PAGE.width / 2, y, { align: "center" });
+  doc.text(model.isChangeOrder ? `Change Order to ${model.referenceQuoteNumber || "Original Quote"}` : documentType === "Invoice" ? "Project Invoice" : "Project Quote", PAGE.width / 2, y, { align: "center" });
   y += 14;
 
   const metaRows = [
-    [documentType === "Invoice" ? "Invoice No." : "Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
+    [model.isChangeOrder ? "Change Order No." : documentType === "Invoice" ? "Invoice No." : "Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
     ["Prepared For", model.preparedFor || "Customer", "Prepared By", model.preparedBy || "Metal Worx Inc."],
     ["Project", model.projectItem || "Not specified", "Location", model.projectLocation || "Not specified"],
     ["Valid Through", model.validThrough || "Not set", "Status", model.status || "Draft"],
@@ -175,7 +175,7 @@ export async function buildQuotePdf(model) {
     },
   });
 
-  paragraphSection("Project Summary", model.scopeOfWork || "Project scope will be completed as stated in the approved quotation.");
+  paragraphSection(model.isChangeOrder ? "Change Order Description" : "Project Summary", model.scopeOfWork || "Project scope will be completed as stated in the approved quotation.");
 
   const scopeRows = [
     ["Specifications", quoteText(model.specifications)],
@@ -195,9 +195,15 @@ export async function buildQuotePdf(model) {
     row.basis || "",
     money(row.amount),
   ]);
-  pricingBody.push(["", "", "Contract Subtotal", money(model.contractSubtotal)]);
-  if (model.showTax) pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
-  pricingBody.push(["", "", "PROJECT TOTAL", money(model.grandTotal)]);
+  if (model.isChangeOrder) {
+    pricingBody.push(["", "", `Original Quote (${model.referenceQuoteNumber || ""})`, money(model.originalQuoteTotal)]);
+    pricingBody.push(["", "", "Change Order Addition", money(model.grandTotal)]);
+    pricingBody.push(["", "", "NEW TOTAL FOR ALL WORK", money(model.revisedContractTotal)]);
+  } else {
+    pricingBody.push(["", "", "Contract Subtotal", money(model.contractSubtotal)]);
+    if (model.showTax) pricingBody.push(["", "", model.taxLabel || "Sales Tax", model.taxDisplay || money(model.taxAmount)]);
+    pricingBody.push(["", "", "PROJECT TOTAL", money(model.grandTotal)]);
+  }
   doc.setFont("QuoteSans", "normal");
   doc.setFontSize(8);
   const pricingWidths = [116, 224, 106, 94];
@@ -222,7 +228,7 @@ export async function buildQuotePdf(model) {
       if (data.section !== "body") return;
       const label = String(data.row.raw?.[2] || "");
       if (["Contract Subtotal", model.taxLabel || "Sales Tax"].includes(label)) data.cell.styles.fillColor = COLORS.gray;
-      if (label === "PROJECT TOTAL") {
+      if (["PROJECT TOTAL", "NEW TOTAL FOR ALL WORK"].includes(label)) {
         data.cell.styles.fillColor = COLORS.black;
         data.cell.styles.textColor = [255, 255, 255];
         data.cell.styles.fontStyle = "bold";
