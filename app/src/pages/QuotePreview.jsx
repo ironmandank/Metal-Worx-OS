@@ -262,6 +262,7 @@ function QuoteTextSection({ title, value, className = "" }) {
 
 function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const [quote, setQuote] = useState(null);
+  const [originalQuote, setOriginalQuote] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [items, setItems] = useState([]);
   const [quoteImages, setQuoteImages] = useState([]);
@@ -314,6 +315,18 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         ]),
       );
       setQuote(activeQuote);
+
+      if (String(activeQuote.quote_number || "").startsWith("CO-") && activeQuote.revision_of_quote_id) {
+        const { data: sourceQuote, error: sourceError } = await supabase
+          .from("project_quotes")
+          .select("id,quote_number,total_amount")
+          .eq("id", activeQuote.revision_of_quote_id)
+          .maybeSingle();
+        if (sourceError) throw sourceError;
+        setOriginalQuote(sourceQuote || null);
+      } else {
+        setOriginalQuote(null);
+      }
 
       const [itemResult, imageResult, materialResult] = await Promise.all([
         supabase
@@ -435,9 +448,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
   const projectItem = getProjectItem(selectedProject, quote);
   const quoteDate =
     quote?.quote_date || quote?.created_at || new Date().toISOString();
-  const documentType = quote?.document_type === "Invoice" ? "Invoice" : "Quote";
-  const documentSubtitle = documentType === "Invoice" ? "Project Invoice" : "Project Quote";
-  const documentNumberLabel = documentType === "Invoice" ? "Invoice No." : "Quote No.";
+  const isChangeOrder = String(quote?.quote_number || "").startsWith("CO-");
+  const documentType = isChangeOrder ? "Change Order" : quote?.document_type === "Invoice" ? "Invoice" : "Quote";
+  const documentSubtitle = isChangeOrder ? `Change Order to ${originalQuote?.quote_number || "Original Quote"}` : documentType === "Invoice" ? "Project Invoice" : "Project Quote";
+  const documentNumberLabel = isChangeOrder ? "Change Order No." : documentType === "Invoice" ? "Invoice No." : "Quote No.";
+  const originalQuoteTotal = Number(originalQuote?.total_amount || 0);
+  const revisedContractTotal = originalQuoteTotal + grandTotal;
   const projectLocation =
     quote?.job_site_address ||
     [
@@ -517,6 +533,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
         taxNotice,
         showTax,
         grandTotal,
+        isChangeOrder,
+        referenceQuoteNumber: originalQuote?.quote_number,
+        originalQuoteTotal,
+        revisedContractTotal,
         priceNotes: quote.price_notes,
         schedule: quote.project_schedule,
         customerResponsibilities: quote.customer_responsibilities,
@@ -1691,7 +1711,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           </section>
 
           <section className="quote-price-band">
-            <div className="quote-price-label">ESTIMATED PROJECT PRICE</div>
+            <div className="quote-price-label">{isChangeOrder ? "CHANGE ORDER ADDITION" : "ESTIMATED PROJECT PRICE"}</div>
             <div className="quote-price-value">{money(grandTotal)}</div>
           </section>
           <p className="quote-price-notes">
@@ -1700,7 +1720,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           </p>
           {taxNotice && <div className="quote-tax-notice">{taxNotice}</div>}
 
-          <QuoteTextSection title="Scope of Work" value={quote.scope_of_work} />
+          <QuoteTextSection title={isChangeOrder ? "Change Order Description" : "Scope of Work"} value={quote.scope_of_work} />
           <QuoteTextSection
             title="Specifications"
             value={quote.specifications}
@@ -1744,17 +1764,20 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
                     </Table.Td>
                   </Table.Tr>
                 )}
-                <Table.Tr className="quote-total-row">
+                {isChangeOrder ? <>
+                  <Table.Tr className="quote-total-row"><Table.Td colSpan={2}>Original Approved Quote ({originalQuote?.quote_number})</Table.Td><Table.Td>{money(originalQuoteTotal)}</Table.Td></Table.Tr>
+                  <Table.Tr className="quote-total-row"><Table.Td colSpan={2}>Change Order Addition</Table.Td><Table.Td>{money(grandTotal)}</Table.Td></Table.Tr>
+                </> : <Table.Tr className="quote-total-row">
                   <Table.Td colSpan={2}>Contract Subtotal</Table.Td>
                   <Table.Td>{money(contractSubtotal)}</Table.Td>
-                </Table.Tr>
-                {showTax && <Table.Tr className="quote-total-row">
+                </Table.Tr>}
+                {!isChangeOrder && showTax && <Table.Tr className="quote-total-row">
                   <Table.Td colSpan={2}>{taxLabel}</Table.Td>
                   <Table.Td>{taxDisplay}</Table.Td>
                 </Table.Tr>}
                 <Table.Tr className="quote-grand-row">
-                  <Table.Td colSpan={2}>TOTAL ESTIMATED PRICE</Table.Td>
-                  <Table.Td>{money(grandTotal)}</Table.Td>
+                  <Table.Td colSpan={2}>{isChangeOrder ? "NEW TOTAL FOR ALL WORK" : "TOTAL ESTIMATED PRICE"}</Table.Td>
+                  <Table.Td>{money(isChangeOrder ? revisedContractTotal : grandTotal)}</Table.Td>
                 </Table.Tr>
               </Table.Tbody>
             </Table>
