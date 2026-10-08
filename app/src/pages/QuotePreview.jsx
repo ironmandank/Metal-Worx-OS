@@ -281,9 +281,9 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
     setLoading(true);
     try {
       let quoteQuery = supabase.from("project_quotes").select("*");
-      quoteQuery = selectedProject?.id
-        ? quoteQuery.eq("project_id", selectedProject.id).eq("is_active", true)
-        : quoteQuery.eq("id", selectedQuote.id);
+      quoteQuery = selectedQuote?.id
+        ? quoteQuery.eq("id", selectedQuote.id)
+        : quoteQuery.eq("project_id", selectedProject.id).eq("is_active", true);
       const quoteResult = await quoteQuery.maybeSingle();
 
       if (quoteResult.error) throw quoteResult.error;
