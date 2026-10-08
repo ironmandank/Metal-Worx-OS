@@ -837,7 +837,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       ["Project Location", projectLocation || ""],
       ["Round-Trip Mileage", Number(quote.travel_round_trip_miles || 0)],
       ["Mileage Rate", Number(quote.travel_rate_per_mile || 0)],
-      ["Project Reference", selectedProject?.project_number || "Standalone Quote"],
+      [isChangeOrder ? "Original Quote" : "Project Reference", isChangeOrder ? (originalQuote?.quote_number || "Not set") : (selectedProject?.project_number || "Standalone Quote")],
       ["Estimated Total", grandTotal],
       [],
       ["Project Summary", quote.scope_of_work || ""],
@@ -1708,9 +1708,11 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
               </div>
             </div>
             <div className="quote-info-cell">
-              <span className="quote-info-label">Project Reference</span>
+              <span className="quote-info-label">{isChangeOrder ? "Original Quote" : "Project Reference"}</span>
               <div className="quote-info-value">
-                {selectedProject?.project_number || quote.project_name || quote.quote_number || "Standalone Quote"}
+                {isChangeOrder
+                  ? originalQuote?.quote_number || "Not set"
+                  : selectedProject?.project_number || quote.project_name || quote.quote_number || "Standalone Quote"}
               </div>
             </div>
           </section>
