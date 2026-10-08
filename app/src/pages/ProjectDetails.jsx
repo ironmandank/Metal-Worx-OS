@@ -77,6 +77,8 @@ import MWSectionHeader from "../components/ui/MWSectionHeader";
 import MWStatPill from "../components/ui/MWStatPill";
 import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
+import ProjectQuickUpdate from "../components/ProjectQuickUpdate";
+import ProjectUnitsWorkspace from "../components/ProjectUnitsWorkspace";
 import ProjectActivityTimeline from "../components/ProjectActivityTimeline";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
 import ProjectStoryBoard from "../components/ProjectStoryBoard";
@@ -254,7 +256,7 @@ function stageColor(stage) {
   return statusColor(stage?.status);
 }
 
-function WorkflowStageRow({ stage, index, nextStage, onComplete, onRoute, saving }) {
+function WorkflowStageRow({ stage, index, nextStage, onComplete, onRoute, onCorrect, saving }) {
   const color = stageColor(stage);
   const actionable = Boolean(PROJECT_STAGE_ACTIONS[stage.key]);
 
@@ -341,6 +343,11 @@ function WorkflowStageRow({ stage, index, nextStage, onComplete, onRoute, saving
 
         <Group gap="sm" wrap="wrap" justify="flex-end">
           <MWStatusBadge status={stage.complete ? "Complete" : stage.status} color={color} size="sm" />
+          {onCorrect && actionable && (
+            <Button size="xs" variant="subtle" color="gray" onClick={() => onCorrect(stage)}>
+              Correct
+            </Button>
+          )}
           {stage.current && actionable && (
             <Button
               color="red"
@@ -432,9 +439,40 @@ function ProjectDetails({
   const [closeoutModalOpen, setCloseoutModalOpen] = useState(false);
   const [closeoutBypassReason, setCloseoutBypassReason] = useState("");
   const [closeoutError, setCloseoutError] = useState("");
+  const [correctionStage, setCorrectionStage] = useState(null);
+  const [correctionStatus, setCorrectionStatus] = useState("");
+  const [correctionStartedAt, setCorrectionStartedAt] = useState("");
+  const [correctionCompletedAt, setCorrectionCompletedAt] = useState("");
   const isAdministrator = String(accessLevel || "")
     .toLowerCase()
     .includes("admin");
+
+  function openStageCorrection(stage) {
+    setCorrectionStage(stage);
+    setCorrectionStatus(stage.status || "Not Started");
+    setCorrectionStartedAt(stage.startedAt ? String(stage.startedAt).slice(0, 16) : "");
+    setCorrectionCompletedAt(stage.completedAt ? String(stage.completedAt).slice(0, 16) : "");
+  }
+
+  async function saveStageCorrection() {
+    const action = PROJECT_STAGE_ACTIONS[correctionStage?.key];
+    if (!action) return;
+    const existingDates = project.workflow_stage_dates || {};
+    await updateProject({
+      [action.field]: correctionStatus,
+      workflow_stage_dates: {
+        ...existingDates,
+        [correctionStage.key]: {
+          ...(existingDates[correctionStage.key] || {}),
+          started_at: correctionStartedAt ? new Date(correctionStartedAt).toISOString() : null,
+          completed_at: correctionCompletedAt ? new Date(correctionCompletedAt).toISOString() : null,
+          started_by: correctionStartedAt ? activeUser || "Administrator" : null,
+          completed_by: correctionCompletedAt ? activeUser || "Administrator" : null,
+        },
+      },
+    });
+    setCorrectionStage(null);
+  }
 
   async function releaseProjectProduction() {
     if (!project?.id || !productionReady || releasingProduction) return;
@@ -2298,6 +2336,10 @@ function ProjectDetails({
 
           <Tabs.Panel value="overview">
             <Stack gap="lg">
+              <ProjectQuickUpdate project={project} activeUser={activeUser} onSaved={loadProject} />
+
+              <ProjectUnitsWorkspace project={project} activeUser={activeUser} compact onChanged={loadProject} />
+
               <MWMaterialOverview
                 internalCost={procurementSummary.internalCost}
                 customerPrice={procurementSummary.customerPrice}
@@ -2627,6 +2669,7 @@ function ProjectDetails({
                       nextStage={stage.current ? nextWorkflowStage : null}
                       onComplete={completeAndMoveStage}
                       onRoute={routeCurrentStage}
+                      onCorrect={isAdministrator ? openStageCorrection : null}
                       saving={saving}
                     />
                   ))}
@@ -3976,6 +4019,21 @@ function ProjectDetails({
           </Tabs>
         </Box>
       </Stack>
+
+      <Modal
+        opened={Boolean(correctionStage)}
+        onClose={() => setCorrectionStage(null)}
+        title={`Correct ${correctionStage?.label || "Workflow Stage"}`}
+        centered
+      >
+        <Stack gap="md">
+          <Alert color="orange" icon={<IconFlag size={18} />}>Use this only to repair an incorrect stage. Clearing the completion date reopens the stage.</Alert>
+          <TextInput label="Stage Status" value={correctionStatus} onChange={(event) => setCorrectionStatus(event.currentTarget.value)} placeholder="Not Started, In Progress, Completed, Not Required…" />
+          <TextInput type="datetime-local" label="Started Date & Time" value={correctionStartedAt} onChange={(event) => setCorrectionStartedAt(event.currentTarget.value)} />
+          <TextInput type="datetime-local" label="Completed Date & Time" value={correctionCompletedAt} onChange={(event) => setCorrectionCompletedAt(event.currentTarget.value)} />
+          <Group justify="flex-end"><Button variant="light" color="gray" onClick={() => setCorrectionStage(null)}>Cancel</Button><Button color="red" loading={saving} onClick={saveStageCorrection}>Save Correction</Button></Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={paymentModalOpen}

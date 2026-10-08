@@ -1162,7 +1162,9 @@ function getOutsideProjectProgress(project) {
 
 function buildOutsideProjectRow(
   project,
-  customerName
+  customerName,
+  units = [],
+  latestUpdate = null,
 ) {
   const balance =
     getProjectBalance(project);
@@ -1173,6 +1175,12 @@ function buildOutsideProjectRow(
   const total =
     getProjectTotal(project);
   const progress = getOutsideProjectProgress(project);
+  const completedUnits = units.filter((unit) =>
+    unit.status === "Complete" || ["Picked Up", "Delivered"].includes(unit.handoff_status)
+  ).length;
+  const readyUnits = units.filter((unit) =>
+    ["Waiting for Customer Pickup", "Pickup Scheduled", "Delivery Scheduled"].includes(unit.handoff_status)
+  ).length;
 
   return {
     id: project.id,
@@ -1248,6 +1256,13 @@ function buildOutsideProjectRow(
     milestonesCompleted: progress.milestonesCompleted,
     milestonesTotal: progress.milestonesTotal,
     targetDate: project.install_start || project.install_date || project.target_completion_date || project.due_date || null,
+    unitsTotal: units.length,
+    unitsCompleted: completedUnits,
+    unitsReady: readyUnits,
+    unitSummary: units.length
+      ? `${completedUnits}/${units.length} handed off${readyUnits ? ` · ${readyUnits} waiting/scheduled` : ""}`
+      : "",
+    latestUpdate,
   };
 }
 
@@ -1375,6 +1390,7 @@ export async function getDashboardData() {
     artHotItemsResult,
     quickCommitmentsResult,
     dailyUpdatesResult,
+    projectUnitsResult,
     checklistItemsResult,
     prequoteSiteVisitsResult,
   ] = await Promise.all([
@@ -1418,6 +1434,11 @@ export async function getDashboardData() {
       .select("*")
       .order("update_date", { ascending: false })
       .limit(200),
+
+    supabase
+      .from("project_units")
+      .select("*")
+      .eq("is_active", true),
 
     supabase
       .from("project_checklist_items")
@@ -1473,7 +1494,19 @@ export async function getDashboardData() {
     customersResult.data || [];
 
   const dailyUpdates = dailyUpdatesResult.error ? [] : dailyUpdatesResult.data || [];
+  const projectUnits = projectUnitsResult.error ? [] : projectUnitsResult.data || [];
   const checklistItems = checklistItemsResult.error ? [] : checklistItemsResult.data || [];
+
+  const unitsByProject = new Map();
+  projectUnits.forEach((unit) => {
+    const key = String(unit.project_id);
+    unitsByProject.set(key, [...(unitsByProject.get(key) || []), unit]);
+  });
+  const latestUpdateByProject = new Map();
+  dailyUpdates.forEach((update) => {
+    const key = String(update.project_id);
+    if (!latestUpdateByProject.has(key)) latestUpdateByProject.set(key, update);
+  });
 
   if (hotTodayResult.error) {
     console.warn(
@@ -1790,7 +1823,9 @@ export async function getDashboardData() {
           project,
           getCustomerName(
             project.customer_id
-          )
+          ),
+          unitsByProject.get(String(project.id)) || [],
+          latestUpdateByProject.get(String(project.id)) || null,
         )
       )
       .sort((a, b) => {
