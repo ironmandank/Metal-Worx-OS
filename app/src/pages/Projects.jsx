@@ -1875,7 +1875,17 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                 </Group>
                 {queue.items.length ? (
                   <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
-                    {queue.items.map((item) => (
+                    {queue.items.map((item) => {
+                      const linkedQuote = item.kind === "project"
+                        ? Object.values(quotesById).find((quote) =>
+                            quote.project_id === item.project.id &&
+                            quote.document_type !== "Invoice" &&
+                            quote.is_current_revision !== false
+                          )
+                        : null;
+                      const contractTotal = Number(item.project?.contract_total || linkedQuote?.total_amount || 0);
+                      const balanceDue = Number(item.project?.balance_due || contractTotal || 0);
+                      return (
                       <Paper key={item.id} withBorder radius="md" p="sm">
                         <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
                         <Group gap="xs" mt={6}>
@@ -1884,6 +1894,22 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Group>
                         <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                         <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
+                        {item.kind === "project" && linkedQuote && (
+                          <Paper withBorder radius="sm" p="xs" mt="xs" bg="rgba(255,255,255,.025)">
+                            <Group justify="space-between" gap="xs">
+                              <Text size="xs" fw={850}>{linkedQuote.quote_number}</Text>
+                              <Badge size="xs" color={linkedQuote.status === "Approved" ? "green" : "orange"}>{linkedQuote.status}</Badge>
+                            </Group>
+                            <Group justify="space-between" gap="xs" mt={4}>
+                              <Text size="xs" c="dimmed">Contract</Text>
+                              <Text size="xs" fw={900}>{money(contractTotal)}</Text>
+                            </Group>
+                            <Group justify="space-between" gap="xs">
+                              <Text size="xs" c="dimmed">Balance</Text>
+                              <Text size="xs" fw={900} c={balanceDue > 0 ? "yellow" : "green"}>{money(balanceDue)}</Text>
+                            </Group>
+                          </Paper>
+                        )}
                         {item.kind === "project" && (
                           <Group gap={6} mt="xs">
                             <Button size="compact-xs" variant="default" leftSection={<IconArrowUp size={13} />} loading={rankingProjectId === item.project.id} disabled={rankedOutsideProjects[0]?.id === item.project.id} onClick={() => moveProjectInWorkOrder(item.project, -1)}>Earlier</Button>
@@ -1918,7 +1944,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           )}
                         </SimpleGrid>
                       </Paper>
-                    ))}
+                    );})}
                   </SimpleGrid>
                 ) : (
                   <Text size="sm" c="dimmed">No work is currently in this section.</Text>
