@@ -223,6 +223,10 @@ function isClosedStatus(status) {
     "completed",
     "complete",
     "closed",
+    "picked up",
+    "shipped",
+    "delivered",
+    "fulfilled",
     "cancelled",
     "canceled",
   ].includes(normalizeStatus(status));
@@ -236,7 +240,7 @@ function isProjectOpen(project) {
 }
 
 function isOrderOpen(order) {
-  return !isClosedStatus(order.status);
+  return !order.fulfillment_completed && !isClosedStatus(order.status);
 }
 
 function isWorkOrderOpen(workOrder) {
@@ -1787,15 +1791,28 @@ export async function getDashboardData() {
         title: itemName || order?.order_number || job?.production_job_number || representative.work_order_number || "Artwork job",
         customer: order ? getArtworkCustomerName(order) : "Customer",
         owner: order?.order_owner || representative.assigned_to || "Unassigned",
+        receivedDate: order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at || null,
+        businessDaysInShop: businessDaysSince(order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at),
+        dueDate: order?.due_date || null,
       });
     }
   });
 
-  const artworkPipeline = artworkPipelineStages.map((name) => ({
-    name: name === "Welding" ? "Small Fabrication & Repairs" : name,
-    count: artworkPipelineCounts[name],
-    items: artworkPipelineItems[name],
-  }));
+  const artworkPipeline = artworkPipelineStages.map((name) => {
+    const uniqueItems = [...new Map(
+      artworkPipelineItems[name].map((item) => [String(item.id), item])
+    ).values()];
+    if (name === "Design") {
+      uniqueItems.sort(
+        (left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0)
+      );
+    }
+    return {
+      name: name === "Welding" ? "Small Fabrication & Repairs" : name,
+      count: uniqueItems.length,
+      items: uniqueItems,
+    };
+  });
 
   /* =====================================================
      DAILY ATTENTION
