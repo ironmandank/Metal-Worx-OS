@@ -638,7 +638,10 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
           new TableRow({ children: [wordCell("Quote No.", { gray: true, bold: true, width: 18 }), wordCell(quote.quote_number || "Not set", { width: 32 }), wordCell("Date", { gray: true, bold: true, width: 18 }), wordCell(formatLongDate(quoteDate), { width: 32 })] }),
           new TableRow({ children: [wordCell("Prepared For", { gray: true, bold: true }), wordCell(projectCompany || projectPerson), wordCell("Prepared By", { gray: true, bold: true }), wordCell(quote.prepared_by || "Metal Worx Inc.") ] }),
           new TableRow({ children: [wordCell("Project", { gray: true, bold: true }), wordCell(projectItem), wordCell("Location", { gray: true, bold: true }), wordCell(projectLocation || "Not specified") ] }),
-          new TableRow({ children: [wordCell("Valid Through", { gray: true, bold: true }), wordCell(formatLongDate(quote.valid_until)), wordCell("Schedule", { gray: true, bold: true }), wordCell(quote.project_schedule || "To be scheduled") ] }),
+          new TableRow({ children: isChangeOrder
+            ? [wordCell("Original Quote", { gray: true, bold: true }), wordCell(originalQuote?.quote_number || "Not set"), wordCell("Schedule", { gray: true, bold: true }), wordCell(quote.project_schedule || "To be scheduled")]
+            : [wordCell("Valid Through", { gray: true, bold: true }), wordCell(formatLongDate(quote.valid_until)), wordCell("Schedule", { gray: true, bold: true }), wordCell(quote.project_schedule || "To be scheduled")]
+          }),
           ...(travelSummary
             ? [new TableRow({ children: [wordCell("Travel", { gray: true, bold: true }), wordCell(travelSummary), wordCell("Route Origin", { gray: true, bold: true }), wordCell("1122 Gillespie Street, Fayetteville, NC 28306") ] })]
             : []),
@@ -828,7 +831,7 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
       ["PROJECT QUOTATION", projectItem],
       ["Quote Number", quote.quote_number || ""],
       ["Quote Date", formatLongDate(quoteDate)],
-      ["Valid Through", formatLongDate(quote.valid_until)],
+      ...(isChangeOrder ? [["Original Quote", originalQuote?.quote_number || ""]] : [["Valid Through", formatLongDate(quote.valid_until)]]),
       ["Prepared For", projectCompany || projectPerson],
       ["Contact", projectPerson],
       ["Project Location", projectLocation || ""],
@@ -1654,10 +1657,12 @@ function QuotePreview({ selectedProject, selectedQuote, setPage }) {
                 <span>Date</span>
                 <strong>{formatLongDate(quoteDate)}</strong>
               </div>
-              <div className="quote-meta-row">
-                <span>Valid Through</span>
-                <strong>{formatLongDate(quote.valid_until)}</strong>
-              </div>
+              {!isChangeOrder && (
+                <div className="quote-meta-row">
+                  <span>Valid Through</span>
+                  <strong>{formatLongDate(quote.valid_until)}</strong>
+                </div>
+              )}
               <div className="quote-meta-row">
                 <span>Status</span>
                 <strong>{quote.status || "Draft"}</strong>
