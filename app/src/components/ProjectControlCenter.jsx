@@ -144,28 +144,22 @@ function ProjectControlCenter({ project, activeUser, onProjectUpdated, setPage, 
       if (quoteError) throw quoteError;
       if (!currentQuote) throw new Error("No current project quote was found to revise.");
 
-      if (String(currentQuote.revision_notes || "").includes(changeOrder.change_order_number)) {
-        setSelectedQuote?.(currentQuote);
+      const { data: existingDocument, error: existingError } = await supabase
+        .from("project_quotes")
+        .select("*")
+        .eq("project_id", project.id)
+        .eq("quote_number", changeOrder.change_order_number)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existingDocument) {
+        setSelectedQuote?.(existingDocument);
         setPage?.("quotePreview");
         return;
       }
 
-      const [itemsResult, imagesResult, familyResult] = await Promise.all([
-        supabase.from("project_quote_items").select("*").eq("quote_id", currentQuote.id).order("sort_order", { ascending: true }),
-        supabase.from("project_quote_images").select("*").eq("quote_id", currentQuote.id).order("sort_order", { ascending: true }),
-        supabase.from("project_quotes").select("id,revision_number").or(`id.eq.${currentQuote.revision_of_quote_id || currentQuote.id},revision_of_quote_id.eq.${currentQuote.revision_of_quote_id || currentQuote.id}`),
-      ]);
-      const loadError = itemsResult.error || imagesResult.error || familyResult.error;
-      if (loadError) throw loadError;
-
-      const rootId = currentQuote.revision_of_quote_id || currentQuote.id;
-      const nextRevision = Math.max(0, ...(familyResult.data || []).map((quote) => Number(quote.revision_number || 0))) + 1;
       const priceChange = Number(changeOrder.amount_delta || 0);
-      const subtotal = Number(currentQuote.subtotal || 0) + priceChange;
-      const taxRate = Number(currentQuote.tax_rate || 0);
-      const taxApplies = Number(currentQuote.tax_amount || 0) > 0 || currentQuote.tax_treatment === "included";
-      const taxAmount = taxApplies ? Math.round(subtotal * taxRate * 100) / 100 : 0;
-      const totalAmount = Math.round((subtotal + taxAmount) * 100) / 100;
+      const originalTotal = Number(currentQuote.total_amount || 0);
+      const revisedTotal = Math.round((originalTotal + priceChange) * 100) / 100;
       const { id, created_at, updated_at, ...quoteCopy } = currentQuote;
       void id; void created_at; void updated_at;
 
@@ -173,63 +167,57 @@ function ProjectControlCenter({ project, activeUser, onProjectUpdated, setPage, 
         .from("project_quotes")
         .insert({
           ...quoteCopy,
-          quote_number: `${currentQuote.quote_number}-R${nextRevision}`,
-          revision_number: nextRevision,
-          revision_of_quote_id: rootId,
-          revision_notes: `${changeOrder.change_order_number} is an addition to the original approved quote ${currentQuote.quote_number}. All original items, scope, and terms remain unchanged. Added: ${changeOrder.title}, ${money(priceChange)}.`,
-          is_current_revision: true,
+          quote_number: changeOrder.change_order_number,
+          quote_title: `${changeOrder.title} Change Order`,
+          quote_type: "Standalone Quote",
+          revision_number: 1,
+          revision_of_quote_id: currentQuote.id,
+          revision_notes: `Change Order ${changeOrder.change_order_number} to original approved quote ${currentQuote.quote_number}.`,
+          is_current_revision: false,
           superseded_at: null,
-          is_active: true,
+          is_active: false,
           status: "Ready for Review",
           quote_date: new Date().toISOString().slice(0, 10),
-          subtotal,
-          tax_amount: taxAmount,
-          total_amount: totalAmount,
+          subtotal: priceChange,
+          tax_rate: 0,
+          tax_amount: 0,
+          total_amount: priceChange,
+          tax_treatment: "none",
+          scope_of_work: `This change order is an addition to original approved quote ${currentQuote.quote_number}. ${changeOrder.description || changeOrder.reason || "Additional project work has been requested."}`,
+          specifications: "",
+          included_services: "",
+          exclusions: "",
+          project_schedule: "",
+          down_payment_terms: "",
+          payment_terms: "",
+          warranty_terms: "",
+          disclaimer: "",
+          price_notes: `Original approved quote total: ${money(originalTotal)}. Change order addition: ${money(priceChange)}. New total for all work to be completed: ${money(revisedTotal)}.`,
+          acceptance_terms: `By signing below, the customer authorizes ${changeOrder.change_order_number} as an addition to approved quote ${currentQuote.quote_number} and accepts the revised total of ${money(revisedTotal)}.`,
         })
         .select()
         .single();
       if (revisionError) throw revisionError;
 
-      const copiedItems = (itemsResult.data || []).map((item) => {
-        const { id: itemId, created_at: itemCreated, quote_id: quoteId, ...copy } = item;
-        void itemId; void itemCreated; void quoteId;
-        return { ...copy, quote_id: revisedQuote.id };
-      });
-      copiedItems.push({
+      const changeItem = {
         quote_id: revisedQuote.id,
         item_type: "Change Order",
         title: changeOrder.title,
-        description: `Addition to original approved quote ${currentQuote.quote_number}. ${changeOrder.description || changeOrder.reason || `Additional scope per ${changeOrder.change_order_number}.`}`,
+        description: changeOrder.description || changeOrder.reason || `Additional scope per ${changeOrder.change_order_number}.`,
         quantity: 1,
         unit_price: priceChange,
         line_total: priceChange,
         is_optional: false,
         is_selected: true,
         show_on_pdf: true,
-        sort_order: copiedItems.length + 1,
-      });
-      const { error: itemError } = await supabase.from("project_quote_items").insert(copiedItems);
+        sort_order: 1,
+      };
+      const { error: itemError } = await supabase.from("project_quote_items").insert(changeItem);
       if (itemError) throw itemError;
-
-      const copiedImages = (imagesResult.data || []).map((image) => {
-        const { id: imageId, created_at: imageCreated, quote_id: quoteId, ...copy } = image;
-        void imageId; void imageCreated; void quoteId;
-        return { ...copy, quote_id: revisedQuote.id };
-      });
-      if (copiedImages.length) {
-        const { error: imageError } = await supabase.from("project_quote_images").insert(copiedImages);
-        if (imageError) throw imageError;
-      }
-
-      const { error: supersedeError } = await supabase
-        .from("project_quotes")
-        .update({ is_current_revision: false, is_active: false, superseded_at: new Date().toISOString() })
-        .eq("id", currentQuote.id);
-      if (supersedeError) throw supersedeError;
 
       notifications.show({
         title: "Revised Customer Quote Created",
-        message: `${revisedQuote.quote_number} Revision ${nextRevision} includes all original items plus ${changeOrder.change_order_number}.`,
+        message: `${changeOrder.change_order_number} references ${currentQuote.quote_number} and shows only the added work and revised contract total.`,
         color: "green",
       });
       setSelectedQuote?.(revisedQuote);
@@ -274,7 +262,7 @@ function ProjectControlCenter({ project, activeUser, onProjectUpdated, setPage, 
       </SimpleGrid></Tabs.Panel>
 
       <Tabs.Panel value="changes" pt="lg"><Stack><Card withBorder radius="lg" p="lg"><Stack><Title order={4}>New Change Order</Title><SimpleGrid cols={{ base: 1, md: 2 }}><TextInput label="Title" value={changeDraft.title} onChange={(e) => setChangeDraft((d) => ({ ...d, title: e.currentTarget.value }))} /><TextInput label="Reason" value={changeDraft.reason} onChange={(e) => setChangeDraft((d) => ({ ...d, reason: e.currentTarget.value }))} /><NumberInput label="Price change" value={changeDraft.amount_delta} onChange={(value) => setChangeDraft((d) => ({ ...d, amount_delta: Number(value || 0) }))} prefix="$" decimalScale={2} /><NumberInput label="Schedule change (days)" value={changeDraft.schedule_days_delta} onChange={(value) => setChangeDraft((d) => ({ ...d, schedule_days_delta: Number(value || 0) }))} /></SimpleGrid><Textarea label="Scope added or removed" value={changeDraft.description} onChange={(e) => setChangeDraft((d) => ({ ...d, description: e.currentTarget.value }))} /><Button leftSection={<IconPlus size={16} />} color="red" loading={saving} onClick={addChangeOrder}>Create Change Order</Button></Stack></Card>
-        {changeOrders.map((item) => <Card key={item.id} withBorder radius="lg" p="md"><Group justify="space-between" align="flex-start"><div><Group gap="xs"><Text fw={900}>{item.change_order_number} · {item.title}</Text><Badge color={item.status === "Approved" ? "green" : item.status === "Declined" ? "red" : "orange"}>{item.status}</Badge></Group><Text size="sm" c="dimmed" mt={4}>{item.description || item.reason || "No description"}</Text></div><Text fw={900} c={Number(item.amount_delta) >= 0 ? "green" : "red"}>{money(item.amount_delta)}</Text></Group><Group mt="md"><Button size="xs" color="red" leftSection={<IconFileInvoice size={15} />} loading={saving} onClick={() => createRevisedCustomerQuote(item)}>Create Revised Customer Quote</Button>{!['Approved','Declined','Cancelled'].includes(item.status) && <><Button size="xs" variant="light" onClick={() => updateChangeOrder(item, "Sent")}>Mark Sent</Button><Button size="xs" color="green" onClick={() => updateChangeOrder(item, "Approved")}>Record Approval</Button><Button size="xs" color="red" variant="light" onClick={() => updateChangeOrder(item, "Declined")}>Declined</Button></>}</Group></Card>)}</Stack></Tabs.Panel>
+        {changeOrders.map((item) => <Card key={item.id} withBorder radius="lg" p="md"><Group justify="space-between" align="flex-start"><div><Group gap="xs"><Text fw={900}>{item.change_order_number} · {item.title}</Text><Badge color={item.status === "Approved" ? "green" : item.status === "Declined" ? "red" : "orange"}>{item.status}</Badge></Group><Text size="sm" c="dimmed" mt={4}>{item.description || item.reason || "No description"}</Text></div><Text fw={900} c={Number(item.amount_delta) >= 0 ? "green" : "red"}>{money(item.amount_delta)}</Text></Group><Group mt="md"><Button size="xs" color="red" leftSection={<IconFileInvoice size={15} />} loading={saving} onClick={() => createRevisedCustomerQuote(item)}>Preview / Download Change Order</Button>{!['Approved','Declined','Cancelled'].includes(item.status) && <><Button size="xs" variant="light" onClick={() => updateChangeOrder(item, "Sent")}>Mark Sent</Button><Button size="xs" color="green" onClick={() => updateChangeOrder(item, "Approved")}>Record Approval</Button><Button size="xs" color="red" variant="light" onClick={() => updateChangeOrder(item, "Declined")}>Declined</Button></>}</Group></Card>)}</Stack></Tabs.Panel>
 
       <Tabs.Panel value="communications" pt="lg"><Stack><Card withBorder radius="lg" p="lg"><Stack><Title order={4}>Record Customer Communication</Title><SimpleGrid cols={{ base: 1, md: 3 }}><Select label="Type" data={["Phone Call","Email","Text Message","Meeting","Site Conversation","Other"]} value={communicationDraft.communication_type} onChange={(value) => setCommunicationDraft((d) => ({ ...d, communication_type: value }))} /><Select label="Direction" data={["Incoming","Outgoing","Internal"]} value={communicationDraft.direction} onChange={(value) => setCommunicationDraft((d) => ({ ...d, direction: value }))} /><TextInput label="Contact" value={communicationDraft.contact_name} onChange={(e) => setCommunicationDraft((d) => ({ ...d, contact_name: e.currentTarget.value }))} /></SimpleGrid><TextInput label="Subject" value={communicationDraft.subject} onChange={(e) => setCommunicationDraft((d) => ({ ...d, subject: e.currentTarget.value }))} /><Textarea label="What was discussed?" value={communicationDraft.summary} onChange={(e) => setCommunicationDraft((d) => ({ ...d, summary: e.currentTarget.value }))} minRows={3} /><Checkbox label="Follow-up required" checked={communicationDraft.follow_up_required} onChange={(e) => setCommunicationDraft((d) => ({ ...d, follow_up_required: e.currentTarget.checked }))} />{communicationDraft.follow_up_required && <DateInput label="Follow-up due" value={communicationDraft.follow_up_due} onChange={(value) => setCommunicationDraft((d) => ({ ...d, follow_up_due: value }))} />}<Button color="red" leftSection={<IconMessage size={16} />} loading={saving} onClick={addCommunication}>Save Communication</Button></Stack></Card>
         {communications.map((item) => <Card key={item.id} withBorder radius="lg" p="md"><Group justify="space-between" align="flex-start"><div><Group gap="xs"><Badge>{item.communication_type}</Badge><Badge color="gray" variant="light">{item.direction}</Badge><Text fw={900}>{item.subject || item.contact_name || "Customer communication"}</Text></Group><Text size="sm" mt="xs">{item.summary}</Text><Text size="xs" c="dimmed" mt="xs">{new Date(item.created_at).toLocaleString()} · {item.recorded_by || "Metal Worx"}</Text></div>{item.follow_up_required && !item.follow_up_completed_at && <Button size="xs" color="green" onClick={() => completeFollowUp(item)}>Complete Follow-Up</Button>}</Group></Card>)}</Stack></Tabs.Panel>
