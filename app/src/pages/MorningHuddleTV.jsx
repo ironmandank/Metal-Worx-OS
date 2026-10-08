@@ -121,15 +121,6 @@ const OUTSIDE_HUDDLE_STAGES = [
   "On Hold",
 ];
 
-function designUrgency(item) {
-  const due = item?.dueDate ? new Date(item.dueDate).getTime() : Number.POSITIVE_INFINITY;
-  const daysUntilDue = Number.isFinite(due) ? Math.ceil((due - Date.now()) / 86400000) : Number.POSITIVE_INFINITY;
-  if (daysUntilDue < 0) return { rank: 0, label: "Overdue", urgent: true };
-  if (daysUntilDue <= 7) return { rank: 1, label: "Due Soon", urgent: true };
-  if (Number(item?.businessDaysInShop || 0) >= 12) return { rank: 2, label: "Aging", urgent: false };
-  return { rank: 3, label: "Normal", urgent: false };
-}
-
 function buildExecutiveSummary(data, openSiteVisitCount = 0, hotArtworkCount = 0) {
   const h = data?.morningHuddle || {};
   const s = h.summary || {};
@@ -173,6 +164,7 @@ export default function MorningHuddleTV({ setPage }) {
   const projects = data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.quickCommitments || [];
   const artworkOrders = data?.artworkOrders || [];
+  const artworkPipeline = huddle.artworkPipeline || [];
   const blockerTasks = (huddle.checklistItems || []).filter((item) => item.status === "Blocked" || item.blocker);
   const linkedPriorityIds = new Set(priorityItems.filter((item) => item.sourceType === "customerOrder" && item.sourceId).map((item) => String(item.sourceId)));
   const priorityTitles = new Set(priorityItems.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
@@ -183,14 +175,6 @@ export default function MorningHuddleTV({ setPage }) {
       if (Boolean(left.dueDate) !== Boolean(right.dueDate)) return left.dueDate ? -1 : 1;
       return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
     });
-  const designQueue = artworkOrders
-    .filter((order) => String(order.department || "").toLowerCase().includes("design"))
-    .sort((left, right) => {
-      const urgencyDifference = designUrgency(left).rank - designUrgency(right).rank;
-      if (urgencyDifference !== 0) return urgencyDifference;
-      return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
-    })
-    .slice(0, 12);
   const outsideProjectPipeline = OUTSIDE_HUDDLE_STAGES.map((name) => ({
     name,
     items: projects.filter((project) => project.workflowStage === name),
@@ -209,7 +193,6 @@ export default function MorningHuddleTV({ setPage }) {
   const field = (huddle.todayFieldWork || []).slice(0,6);
   const blockers = [...(huddle.blockers || []), ...blockerTasks.map((b) => ({ title: b.blocker || "Blocked checklist task", detail: "Checklist blocker" }))].slice(0,6);
   const shopWorkload = (huddle.shopWorkload || []).filter((item) => Number(item.count || 0) > 0);
-  const artworkPipeline = huddle.artworkPipeline || [];
   const projectUpdates = projects
     .filter((project) => project.latestUpdate)
     .sort((left, right) => String(right.latestUpdate.update_date || "").localeCompare(String(left.latestUpdate.update_date || "")))
@@ -256,10 +239,6 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-panel tv-hot-artwork">
         <h2><IconClipboardCheck/> Hot Items This Week</h2>
         {priorities.length ? <><div className="tv-card-grid">{priorities.slice(0,6).map((x,i)=><div className="tv-item-card urgent" key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><span className="tv-card-tag">{text(x.hotReasonCategory,"Priority")}</span><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop<br/>{text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></div>)}</div><MoreCount total={priorities.length} shown={6}/></>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}
-      </div>
-      <div className="tv-panel tv-hot-artwork">
-        <h2><IconClipboardCheck/> Recommended Design Priority — Deadline & Age</h2>
-        {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=>{const urgency=designUrgency(x);return <div className={`tv-item-card ${urgency.urgent ? "urgent" : ""}`} key={`design-${x.id || i}`}><span className={`tv-card-tag ${urgency.rank > 1 ? "gray" : ""}`}>{urgency.label}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · {x.designWorkLabel || "Design Work"}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>;})}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
       </div>
       <div className="tv-panel tv-outside">
         <h2><IconUsers/> Outside Project Pipeline</h2>
