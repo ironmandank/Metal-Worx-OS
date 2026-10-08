@@ -9,7 +9,11 @@ function normalizedName(value) {
 
 export function canUnlockProjectMoney(activeUser) {
   const name = normalizedName(activeUser);
-  return PROJECT_MONEY_ALLOWED_NAMES.some((allowed) => normalizedName(allowed) === name);
+  const identityParts = name.split(/[^a-z]+/).filter(Boolean);
+  return PROJECT_MONEY_ALLOWED_NAMES.some((allowed) => {
+    const normalizedAllowed = normalizedName(allowed);
+    return name === normalizedAllowed || identityParts.includes(normalizedAllowed);
+  });
 }
 
 function storageKey(activeUser) {
