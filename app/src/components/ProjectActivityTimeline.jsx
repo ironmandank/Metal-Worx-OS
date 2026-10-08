@@ -3,6 +3,7 @@ import { Alert, Badge, Box, Card, Divider, Group, Loader, Select, Stack, Text, T
 import { IconActivity, IconCash, IconCheck, IconFileUpload, IconListCheck, IconNotes, IconPackage } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { formatProjectMoney } from "../lib/projectMoneyPrivacy";
 
 function when(value) {
   if (!value) return "Date not recorded";
@@ -12,7 +13,7 @@ function when(value) {
 }
 
 function money(value) {
-  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatProjectMoney(value);
 }
 
 const config = {

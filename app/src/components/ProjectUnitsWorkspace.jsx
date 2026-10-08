@@ -26,34 +26,7 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
-
-export const UNIT_STAGES = [
-  "Planning",
-  "Design",
-  "Materials",
-  "Fabrication",
-  "Finish",
-  "Final Inspection",
-  "Ready for Pickup / Delivery",
-  "Completed",
-];
-
-export const UNIT_STATUSES = ["Not Started", "Ready", "In Progress", "Blocked", "Complete"];
-export const HANDOFF_STATUSES = [
-  "Not Ready",
-  "Waiting for Customer Pickup",
-  "Pickup Scheduled",
-  "Picked Up",
-  "Delivery Scheduled",
-  "Delivered",
-  "Not Required",
-];
-export const HANDOFF_METHODS = [
-  "Customer Pickup",
-  "Metal Worx Delivery",
-  "Third-Party Delivery",
-  "Not Required",
-];
+import { HANDOFF_METHODS, HANDOFF_STATUSES, summarizeProjectUnits, UNIT_STAGES, UNIT_STATUSES } from "../lib/projectUnits";
 
 const EMPTY_UNIT = {
   unit_name: "",
@@ -78,17 +51,6 @@ function handoffColor(status) {
   if (["Pickup Scheduled", "Delivery Scheduled"].includes(status)) return "blue";
   if (status === "Waiting for Customer Pickup") return "orange";
   return "gray";
-}
-
-export function summarizeProjectUnits(units) {
-  const active = units.filter((unit) => unit.is_active !== false);
-  const completed = active.filter((unit) =>
-    unit.status === "Complete" || ["Picked Up", "Delivered"].includes(unit.handoff_status),
-  );
-  const ready = active.filter((unit) =>
-    ["Waiting for Customer Pickup", "Pickup Scheduled", "Delivery Scheduled"].includes(unit.handoff_status),
-  );
-  return { total: active.length, completed: completed.length, ready: ready.length };
 }
 
 export default function ProjectUnitsWorkspace({ project, activeUser, compact = false, onChanged }) {

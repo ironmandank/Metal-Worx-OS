@@ -79,6 +79,8 @@ import MWStatusBadge from "../components/ui/MWStatusBadge";
 import ProjectTrackingWorkspace from "../components/ProjectTrackingWorkspace";
 import ProjectQuickUpdate from "../components/ProjectQuickUpdate";
 import ProjectUnitsWorkspace from "../components/ProjectUnitsWorkspace";
+import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
+import { formatProjectMoney } from "../lib/projectMoneyPrivacy";
 import ProjectActivityTimeline from "../components/ProjectActivityTimeline";
 import ProjectPackageWorkspace from "../components/ProjectPackageWorkspace";
 import ProjectStoryBoard from "../components/ProjectStoryBoard";
@@ -86,10 +88,7 @@ import ProjectControlCenter from "../components/ProjectControlCenter";
 import { downloadSignedApprovalPdf } from "../services/signedApprovalExportService";
 
 function money(value) {
-  return Number(value || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-  });
+  return formatProjectMoney(value);
 }
 
 function formatDate(value) {
@@ -376,6 +375,7 @@ function ProjectDetails({
   activeUser,
   accessLevel,
 }) {
+  const projectMoney = useProjectMoneyPrivacy(activeUser);
   const [project, setProject] = useState(selectedProject || null);
   const workspaceRef = useRef(null);
 
@@ -599,6 +599,10 @@ function ProjectDetails({
   }
 
   function openPaymentModal(defaultType = "Final Payment") {
+    if (!projectMoney.unlocked) {
+      projectMoney.requestUnlock();
+      return;
+    }
     const remaining = Math.max(Number(project?.balance_due || 0), 0);
     const requestedDeposit = Number(project?.down_payment_amount || 0);
     const estimatedDeposit = Number(project?.contract_total || 0) * 0.5;
@@ -1668,6 +1672,10 @@ function ProjectDetails({
 
   async function printOutsideProjectRecord() {
     if (!project?.id) return;
+    if (!projectMoney.unlocked) {
+      projectMoney.requestUnlock();
+      return;
+    }
 
     const printWindow = window.open("", "_blank", "width=1050,height=800");
     if (!printWindow) {
@@ -2080,6 +2088,7 @@ function ProjectDetails({
       />
 
       <Stack gap="lg">
+        {projectMoney.controls}
         <MWCommandCenter
           title="Project Command Center"
           subtitle={project.project_name || project.project_number || "Project"}

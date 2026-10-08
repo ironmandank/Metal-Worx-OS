@@ -23,6 +23,7 @@ import {
 import MWDataRow from "./MWDataRow";
 import MWPanel from "./MWPanel";
 import MWStatusBadge from "./MWStatusBadge";
+import { formatProjectMoney } from "../../lib/projectMoneyPrivacy";
 
 function clampPercentage(value) {
   const parsedValue = Number(value);
@@ -35,10 +36,7 @@ function clampPercentage(value) {
 }
 
 function formatCurrency(value) {
-  return Number(value || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-  });
+  return formatProjectMoney(value);
 }
 
 function FinancialValue({

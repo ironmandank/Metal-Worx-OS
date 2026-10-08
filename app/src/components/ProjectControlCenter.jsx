@@ -8,6 +8,7 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconCheck, IconClipboardCheck, IconMessage, IconPlus } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { formatProjectMoney } from "../lib/projectMoneyPrivacy";
 
 const BLOCK_REASONS = [
   "Waiting on Customer", "Waiting on Material", "Waiting on Design",
@@ -16,7 +17,7 @@ const BLOCK_REASONS = [
 ];
 
 function money(value) {
-  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatProjectMoney(value);
 }
 
 function dateValue(value) {

@@ -64,6 +64,8 @@ import { addDays, buildMonthGrid, dateKey, firstOfMonth, moveMonth } from "../li
 import { OUTSIDE_PHASES, getOutsideNextDate, getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 import companyLogo from "../assets/metal-worx-official-transparent.png";
 import { exportProjectBillingStatement } from "../services/projectBillingStatementService";
+import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
+import { formatProjectMoney } from "../lib/projectMoneyPrivacy";
 
 const CALENDAR_TYPES = [
   { label: "Railings & Handrails", color: "#1677c8", terms: ["rail", "handrail"] },
@@ -167,7 +169,7 @@ function formatDate(value, includeTime = false) {
 }
 
 function money(value) {
-  return Number(value || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+  return formatProjectMoney(value);
 }
 
 function getCustomerName(customer) {
@@ -228,6 +230,7 @@ function getCalendarEntryType(entry) {
 }
 
 function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel, initialWorkspaceView = "board" }) {
+  const projectMoney = useProjectMoneyPrivacy(activeUser);
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
   const [archivedProjects, setArchivedProjects] = useState([]);
@@ -735,6 +738,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   }
 
   async function saveBillingProject(row) {
+    if (!projectMoney.unlocked) {
+      projectMoney.requestUnlock();
+      return;
+    }
     const draft = billingDraft(row);
     const updates = {
       status: draft.status,
@@ -763,6 +770,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   }
 
   async function downloadBillingStatement(row) {
+    if (!projectMoney.unlocked) {
+      projectMoney.requestUnlock();
+      return;
+    }
     setDownloadingStatementProjectId(row.project.id);
     try {
       const { data: payments, error } = await supabase
@@ -1462,6 +1473,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
       <OutsideWorkspaceNav current="projects" setPage={setPage} />
 
+      {projectMoney.controls}
+
       <MWKpiStrip
         compact
         columns={{ base: 1, sm: 2, xl: 4 }}
@@ -1526,7 +1539,13 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         </SimpleGrid>
       </MWPanel>
 
-      {workspaceView === "billing" && (
+      {workspaceView === "billing" && !projectMoney.unlocked && (
+        <MWPanel title="Project Billing Locked" subtitle="Financial amounts, editing, and statement downloads are hidden until an authorized employee unlocks them." icon={IconCash}>
+          <Alert color="gray" icon={<IconCash size={18} />}>Project billing is protected. Use the Unlock Money button above.</Alert>
+        </MWPanel>
+      )}
+
+      {workspaceView === "billing" && projectMoney.unlocked && (
         <MWPanel
           title="Project Billing"
           subtitle="All outside-project quotes, invoices, payments, and remaining balances in one place."
