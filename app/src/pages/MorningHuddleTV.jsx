@@ -56,7 +56,8 @@ const styles = `
   .tv-grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:12px; margin-top:14px; align-items:start; }
   .tv-panel { height:100%; min-height:190px; overflow:hidden; border:1px solid #354047; border-radius:10px; background:#10161a; }
   .tv-panel { grid-column:span 6; }
-  .tv-panel.tv-hot-artwork { grid-column:span 6; }
+  .tv-panel.tv-hot-artwork { grid-column:1 / -1; }
+  .tv-panel.tv-hot-artwork .tv-card-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
   .tv-panel.tv-outside { grid-column:1 / -1; }
   .tv-panel.tv-production { grid-column:span 6; }
   .tv-panel.tv-field { grid-column:span 6; }
@@ -97,7 +98,7 @@ const styles = `
     .tv-summary{padding:10px 12px}.tv-summary p{font-size:15px;line-height:1.3}
     .tv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.tv-kpi{min-height:122px;padding:12px}.tv-kpi span{min-height:43px;font-size:12px}.tv-kpi strong{min-height:48px;font-size:36px}
     .tv-pipeline{padding:11px}.tv-pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.tv-pipeline-stage{min-height:108px;padding:8px}.tv-pipeline-stage-head span{font-size:11px}.tv-pipeline-stage-head strong{font-size:24px}
-    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel.tv-hot-artwork,.tv-panel.tv-outside{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-card-grid,.tv-card-grid.wide{grid-template-columns:1fr;padding:8px}.tv-item-card{min-height:0;padding:10px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
+    .tv-grid{grid-template-columns:minmax(0,1fr);gap:10px}.tv-panel,.tv-panel.tv-hot-artwork,.tv-panel.tv-outside{grid-column:auto;min-height:0}.tv-panel h2{padding:12px;font-size:16px}.tv-card-grid,.tv-card-grid.wide,.tv-panel.tv-hot-artwork .tv-card-grid{grid-template-columns:1fr;padding:8px}.tv-item-card{min-height:0;padding:10px}.tv-empty{padding:20px 12px;font-size:15px;min-height:0}
   }
 `;
 
@@ -230,7 +231,7 @@ export default function MorningHuddleTV({ setPage }) {
             onKeyDown={stage.items?.length > 3 ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleStage(stage.name); } } : undefined}
           >
             <div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.count || 0}</strong></div>
-            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stage.name] ? stage.items.length : 3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}</small></div>)}{stage.items.length > 3 && <button className="tv-pipeline-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleStage(stage.name); }}>{expandedStages[stage.name] ? "Show less" : `+ ${stage.items.length - 3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
+            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stage.name] ? stage.items.length : 3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}{stage.name === "Design" ? ` · ${job.businessDaysInStage || 0} days in Design` : ""}</small></div>)}{stage.items.length > 3 && <button className="tv-pipeline-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleStage(stage.name); }}>{expandedStages[stage.name] ? "Show less" : `+ ${stage.items.length - 3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
           </div>
         ))}
       </div>
