@@ -371,6 +371,7 @@ function WorkflowStageRow({ stage, index, nextStage, onComplete, onRoute, onCorr
 function ProjectDetails({
   selectedProject,
   setPage,
+  setSelectedQuote,
   setSelectedProductionJob,
   activeUser,
   accessLevel,
@@ -422,6 +423,7 @@ function ProjectDetails({
   const [saving, setSaving] = useState(false);
   const [releasingProduction, setReleasingProduction] = useState(false);
   const [projectPayments, setProjectPayments] = useState([]);
+  const [projectQuote, setProjectQuote] = useState(null);
   const [customerApproval, setCustomerApproval] = useState(null);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -573,14 +575,19 @@ function ProjectDetails({
   }
 
   async function loadCustomerApproval() {
-    if (!selectedProject?.id) return setCustomerApproval(null);
+    if (!selectedProject?.id) {
+      setProjectQuote(null);
+      return setCustomerApproval(null);
+    }
     try {
       const { data: quotes, error: quoteError } = await supabase
         .from("project_quotes")
-        .select("id")
+        .select("*")
         .eq("project_id", selectedProject.id)
+        .eq("is_current_revision", true)
         .order("created_at", { ascending: false });
       if (quoteError) throw quoteError;
+      setProjectQuote((quotes || [])[0] || null);
       const quoteIds = (quotes || []).map((quote) => quote.id);
       if (!quoteIds.length) return setCustomerApproval(null);
       const { data, error } = await supabase
@@ -594,8 +601,18 @@ function ProjectDetails({
       setCustomerApproval(data || null);
     } catch (error) {
       console.error("Customer approval load error:", error);
+      setProjectQuote(null);
       setCustomerApproval(null);
     }
+  }
+
+  function openConnectedQuote() {
+    if (!projectQuote) {
+      setPage("quoteCenter");
+      return;
+    }
+    setSelectedQuote?.(projectQuote);
+    setPage("quotePreview");
   }
 
   function openPaymentModal(defaultType = "Final Payment") {
@@ -2446,6 +2463,22 @@ function ProjectDetails({
                       compact
                     >
                       <Stack gap="md">
+                        {projectQuote && (
+                          <Paper p="md" withBorder radius="md" bg="rgba(255,255,255,.025)">
+                            <Group justify="space-between" align="flex-start" wrap="wrap">
+                              <Stack gap={2}>
+                                <Text size="xs" c="dimmed" fw={850} tt="uppercase">Connected Quote</Text>
+                                <Text fw={900}>{projectQuote.quote_number} · {projectQuote.quote_title || projectQuote.project_name}</Text>
+                                <Text size="sm" c="dimmed">Approved project pricing and scope</Text>
+                              </Stack>
+                              <Stack gap={2} align="flex-end">
+                                <Badge color={projectQuote.status === "Approved" ? "green" : "orange"}>{projectQuote.status}</Badge>
+                                <Text fw={900}>{money(projectQuote.total_amount)}</Text>
+                              </Stack>
+                            </Group>
+                          </Paper>
+                        )}
+
                         <Group justify="space-between" gap="lg">
                           <Text size="sm" c="gray.4" fw={700}>
                             Quote
@@ -2525,9 +2558,9 @@ function ProjectDetails({
                           variant="light"
                           color="red"
                           leftSection={<IconFileDollar size={17} />}
-                          onClick={() => setPage("quoteBuilder")}
+                          onClick={openConnectedQuote}
                         >
-                          Open Quote Builder
+                          {projectQuote ? `Open ${projectQuote.quote_number}` : "Open Quote Center"}
                         </Button>
                       </Stack>
                     </MWInfoCard>
