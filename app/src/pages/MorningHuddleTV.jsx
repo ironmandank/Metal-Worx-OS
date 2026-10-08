@@ -64,6 +64,7 @@ const styles = `
   .tv-panel h2 svg { color:#ff3445; flex:0 0 auto; }
   .tv-card-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; padding:11px; }
   .tv-card-grid.wide { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .tv-outside-pipeline { padding:11px; }
   .tv-item-card { min-width:0; min-height:110px; padding:14px 15px; border:1px solid #303a41; border-radius:9px; background:#161d21; }
   .tv-item-card.urgent { border-color:#8f252e; background:linear-gradient(135deg,#291216,#171d21); }
   .tv-item-card strong { display:block; color:#fff; font-size:clamp(17px,1.05vw,21px); line-height:1.2; overflow-wrap:anywhere; }
@@ -106,6 +107,27 @@ const dateOnly = (value) => value ? new Date(String(value).length === 10 ? `${va
 function MoreCount({ total, shown }) {
   const remaining = Math.max(0, Number(total || 0) - Number(shown || 0));
   return remaining > 0 ? <div className="tv-more">+ {remaining} more — open Metal Worx OS for the full list</div> : null;
+}
+
+const OUTSIDE_HUDDLE_STAGES = [
+  "Site Visits",
+  "Needs Quote",
+  "Quote & Approval",
+  "Awaiting Deposit",
+  "Needs Scheduling",
+  "Fabrication / Shop",
+  "Install / Field Work",
+  "Closeout",
+  "On Hold",
+];
+
+function designUrgency(item) {
+  const due = item?.dueDate ? new Date(item.dueDate).getTime() : Number.POSITIVE_INFINITY;
+  const daysUntilDue = Number.isFinite(due) ? Math.ceil((due - Date.now()) / 86400000) : Number.POSITIVE_INFINITY;
+  if (daysUntilDue < 0) return { rank: 0, label: "Overdue", urgent: true };
+  if (daysUntilDue <= 7) return { rank: 1, label: "Due Soon", urgent: true };
+  if (Number(item?.businessDaysInShop || 0) >= 12) return { rank: 2, label: "Aging", urgent: false };
+  return { rank: 3, label: "Normal", urgent: false };
 }
 
 function buildExecutiveSummary(data, openSiteVisitCount = 0, hotArtworkCount = 0) {
@@ -164,13 +186,15 @@ export default function MorningHuddleTV({ setPage }) {
   const designQueue = artworkOrders
     .filter((order) => String(order.department || "").toLowerCase().includes("design"))
     .sort((left, right) => {
-      if (left.designFeeCleared !== right.designFeeCleared) return left.designFeeCleared ? -1 : 1;
-      if (Number(left.designComplexityTier || 5) !== Number(right.designComplexityTier || 5)) {
-        return Number(left.designComplexityTier || 5) - Number(right.designComplexityTier || 5);
-      }
+      const urgencyDifference = designUrgency(left).rank - designUrgency(right).rank;
+      if (urgencyDifference !== 0) return urgencyDifference;
       return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
     })
     .slice(0, 12);
+  const outsideProjectPipeline = OUTSIDE_HUDDLE_STAGES.map((name) => ({
+    name,
+    items: projects.filter((project) => project.workflowStage === name),
+  })).filter((stage) => stage.items.length > 0);
   const promotedArtwork = unduplicatedOrders
     .filter((order) => !order.isSmallFabrication)
     .filter((order) => order.showOnHuddle || order.dueDate || Number(order.businessDaysInShop || 0) >= 12)
@@ -230,20 +254,16 @@ export default function MorningHuddleTV({ setPage }) {
     </section>
     <section className="tv-grid">
       <div className="tv-panel tv-hot-artwork">
-        <h2><IconTool/> Small Fabrication & Repairs</h2>
-        {smallFabrication.length ? <><div className="tv-card-grid">{smallFabrication.slice(0,6).map((x,i)=><div className="tv-item-card" key={`small-fab-${x.id || i}`}><span className="tv-card-tag gray">{text(x.department,"Welding")}</span><strong>{text(x.title,"Small fabrication job")}</strong><small>{text(x.customer,"Customer")} · {text(x.owner,"Shop Team")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={smallFabrication.length} shown={6}/></>:<div className="tv-empty">No small fabrication or repair jobs are currently open. Add one from Artwork / Small Job.</div>}
-      </div>
-      <div className="tv-panel tv-hot-artwork">
         <h2><IconClipboardCheck/> Hot Items This Week</h2>
         {priorities.length ? <><div className="tv-card-grid">{priorities.slice(0,6).map((x,i)=><div className="tv-item-card urgent" key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><span className="tv-card-tag">{text(x.hotReasonCategory,"Priority")}</span><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop<br/>{text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></div>)}</div><MoreCount total={priorities.length} shown={6}/></>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}
       </div>
       <div className="tv-panel tv-hot-artwork">
-        <h2><IconClipboardCheck/> Design Queue — Easiest to Hardest</h2>
-        {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=><div className="tv-item-card" key={`design-${x.id || i}`}><span className={`tv-workload ${x.designWorkColor || "gray"}`}>{x.designWorkLabel || "Design Work"}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · Fee {text(x.designFeeStatus,"Not Required")}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>)}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
+        <h2><IconClipboardCheck/> Recommended Design Priority — Deadline & Age</h2>
+        {designQueue.length ? <><div className="tv-card-grid">{designQueue.slice(0,6).map((x,i)=>{const urgency=designUrgency(x);return <div className={`tv-item-card ${urgency.urgent ? "urgent" : ""}`} key={`design-${x.id || i}`}><span className={`tv-card-tag ${urgency.rank > 1 ? "gray" : ""}`}>{urgency.label}</span><strong>{text(x.title,"Artwork order")}</strong><small>{text(x.owner)} · {x.designWorkLabel || "Design Work"}<br/>{x.businessDaysInShop || 0} business days · {text(x.dueDate,"No deadline set")}</small></div>;})}</div><MoreCount total={designQueue.length} shown={6}/></>:<div className="tv-empty">No work is currently waiting in Design.</div>}
       </div>
       <div className="tv-panel tv-outside">
-        <h2><IconUsers/> Outside Projects</h2>
-        {projects.length ? <><div className="tv-card-grid wide">{projects.slice(0,8).map((p)=><div className={`tv-item-card ${p.health === "At Risk" || p.health === "Critical" ? "urgent" : ""}`} key={p.id}><span className={`tv-card-tag ${p.health === "On Track" ? "green" : p.health ? "" : "gray"}`}>{text(p.status,"Open")}</span><strong>{text(p.projectName || p.project_number,"Project")}</strong><div className="tv-project-progress"><span style={{width:`${Math.max(0,Math.min(100,Number(p.progressPercent||0)))}%`}}/></div><div className="tv-project-progress-label"><span>{p.progressPercent || 0}% complete</span><span>{p.milestonesCompleted || 0}/{p.milestonesTotal || 0} milestones</span></div><small>Lead: {text(p.owner)} · {text(p.health,"Health not set")}<br/>{p.unitSummary ? `Units: ${p.unitSummary}` : "Units: not individually tracked"}<br/>Next: {text(p.nextAction,"Next action not entered")}<br/>Target: {dateOnly(p.targetDate)} · Materials: {text(p.materialStatus,"Not set")}</small></div>)}</div><MoreCount total={projects.length} shown={8}/></>:<div className="tv-empty">No active outside projects.</div>}
+        <h2><IconUsers/> Outside Project Pipeline</h2>
+        {outsideProjectPipeline.length ? <div className="tv-pipeline-grid tv-outside-pipeline">{outsideProjectPipeline.map((stage)=>{const stageKey=`outside-${stage.name}`;const expandable=stage.items.length>3;return <div className={`tv-pipeline-stage ${expandable ? "expandable" : ""} ${["Site Visits","Needs Quote","Quote & Approval","On Hold"].includes(stage.name) ? "attention" : ""}`} key={stageKey} role={expandable ? "button" : undefined} tabIndex={expandable ? 0 : undefined} aria-expanded={expandable ? Boolean(expandedStages[stageKey]) : undefined} onClick={expandable ? ()=>toggleStage(stageKey) : undefined} onKeyDown={expandable ? (event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();toggleStage(stageKey);}} : undefined}><div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.items.length}</strong></div><div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stageKey] ? stage.items.length : 3).map((p)=><div className="tv-pipeline-job" key={p.id}>{text(p.projectName || p.projectNumber,"Project")}<small>{text(p.owner)} · {dateOnly(p.targetDate)}<br/>Next: {text(p.nextAction,"Review project")}</small></div>)}{expandable && <button className="tv-pipeline-toggle" type="button" onClick={(event)=>{event.stopPropagation();toggleStage(stageKey);}}>{expandedStages[stageKey] ? "Show less" : `+ ${stage.items.length-3} more — tap to expand`}</button>}</div></div>;})}</div>:<div className="tv-empty">No active outside projects.</div>}
       </div>
       <div className="tv-panel tv-outside">
         <h2><IconClipboardCheck/> Latest Project Updates</h2>
