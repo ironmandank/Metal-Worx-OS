@@ -161,7 +161,9 @@ export async function buildQuotePdf(model) {
     [model.isChangeOrder ? "Change Order No." : documentType === "Invoice" ? "Invoice No." : "Quote No.", model.quoteNumber || "Not set", "Date", model.quoteDate || "Not set"],
     ["Prepared For", model.preparedFor || "Customer", "Prepared By", model.preparedBy || "Metal Worx Inc."],
     ["Project", model.projectItem || "Not specified", "Location", model.projectLocation || "Not specified"],
-    ["Valid Through", model.validThrough || "Not set", "Status", model.status || "Draft"],
+    model.isChangeOrder
+      ? ["Original Quote", model.referenceQuoteNumber || "Not set", "Status", model.status || "Draft"]
+      : ["Valid Through", model.validThrough || "Not set", "Status", model.status || "Draft"],
   ];
   if (model.contact) metaRows.push(["Customer Contact", model.contact, "Metal Worx Contact", "(910) 438-9353\ninfo@metalworxinc.net"]);
   table({
