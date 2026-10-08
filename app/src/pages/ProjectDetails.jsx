@@ -119,6 +119,135 @@ function formatDateTime(value) {
   return date.toLocaleString();
 }
 
+function QuoteDetailPanel({ quote, items, changeOrders, onOpen }) {
+  if (!quote) return null;
+
+  const visibleItems = (items || []).filter((item) => item.show_on_pdf !== false);
+  const subtotal = Number(quote.subtotal ?? visibleItems.reduce(
+    (sum, item) => sum + Number(item.line_total || 0),
+    0,
+  ));
+
+  return (
+    <MWSection title="Approved Quote & Scope">
+      <Card withBorder radius="lg" p={{ base: "md", sm: "lg" }}>
+        <Stack gap="lg">
+          <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+            <Box style={{ flex: "1 1 340px", minWidth: 0 }}>
+              <Group gap="xs" wrap="wrap">
+                <Title order={3}>{quote.quote_number}</Title>
+                <Badge color={quote.status === "Approved" ? "green" : "orange"}>
+                  {quote.status || "Draft"}
+                </Badge>
+              </Group>
+              <Text fw={850} fz="lg" mt={4}>
+                {quote.quote_title || quote.project_name || "Project Quote"}
+              </Text>
+              <Text size="sm" c="dimmed">
+                {quote.customer_name || quote.company_name || quote.contact_name || "Customer"}
+              </Text>
+            </Box>
+            <Stack gap={6} align="flex-end">
+              <Text size="xs" c="dimmed" fw={850} tt="uppercase">Approved Project Total</Text>
+              <Title order={2}>{money(quote.total_amount)}</Title>
+              <Button size="xs" variant="light" color="red" onClick={onOpen}>
+                Open Full Quote
+              </Button>
+            </Stack>
+          </Group>
+
+          {quote.scope_of_work && (
+            <Box>
+              <Text size="xs" c="dimmed" fw={900} tt="uppercase" mb={6}>Scope of Work</Text>
+              <Text style={{ whiteSpace: "pre-line" }}>{quote.scope_of_work}</Text>
+            </Box>
+          )}
+
+          <Box>
+            <Text size="xs" c="dimmed" fw={900} tt="uppercase" mb="sm">Quoted Items</Text>
+            {visibleItems.length ? (
+              <Table.ScrollContainer minWidth={720}>
+                <Table striped highlightOnHover verticalSpacing="sm">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Item</Table.Th>
+                      <Table.Th>Description</Table.Th>
+                      <Table.Th ta="right">Qty.</Table.Th>
+                      <Table.Th ta="right">Unit Price</Table.Th>
+                      <Table.Th ta="right">Line Total</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {visibleItems.map((item) => (
+                      <Table.Tr key={item.id}>
+                        <Table.Td fw={750}>{item.title || "Quoted item"}</Table.Td>
+                        <Table.Td><Text size="sm" c="gray.4" style={{ whiteSpace: "pre-line" }}>{item.description || "—"}</Text></Table.Td>
+                        <Table.Td ta="right">{Number(item.quantity || 0)}</Table.Td>
+                        <Table.Td ta="right">{money(item.unit_price)}</Table.Td>
+                        <Table.Td ta="right" fw={800}>{money(item.line_total)}</Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            ) : (
+              <Alert color="orange">This quote has no saved line items.</Alert>
+            )}
+          </Box>
+
+          <Group justify="flex-end">
+            <Stack gap={4} style={{ width: "min(100%, 340px)" }}>
+              <Group justify="space-between"><Text c="dimmed">Subtotal</Text><Text fw={750}>{money(subtotal)}</Text></Group>
+              {Number(quote.tax_amount || 0) > 0 && (
+                <Group justify="space-between"><Text c="dimmed">Tax ({Number(quote.tax_rate || 0) * 100}%)</Text><Text fw={750}>{money(quote.tax_amount)}</Text></Group>
+              )}
+              <Divider />
+              <Group justify="space-between"><Text fw={900}>Project Total</Text><Text fw={900} fz="xl">{money(quote.total_amount)}</Text></Group>
+            </Stack>
+          </Group>
+
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
+            {quote.project_schedule && (
+              <Box>
+                <Text size="xs" c="dimmed" fw={900} tt="uppercase" mb={6}>Schedule & Work Conditions</Text>
+                <Text size="sm" style={{ whiteSpace: "pre-line" }}>{quote.project_schedule}</Text>
+              </Box>
+            )}
+            {(quote.down_payment_terms || quote.payment_terms) && (
+              <Box>
+                <Text size="xs" c="dimmed" fw={900} tt="uppercase" mb={6}>Payment Terms</Text>
+                <Text size="sm" style={{ whiteSpace: "pre-line" }}>
+                  {[quote.down_payment_terms, quote.payment_terms].filter(Boolean).join("\n\n")}
+                </Text>
+              </Box>
+            )}
+          </SimpleGrid>
+
+          {(changeOrders || []).length > 0 && (
+            <Box>
+              <Text size="xs" c="dimmed" fw={900} tt="uppercase" mb="sm">Change Orders</Text>
+              <Stack gap="xs">
+                {changeOrders.map((order) => (
+                  <Paper key={order.id} p="md" withBorder radius="md">
+                    <Group justify="space-between" align="flex-start" wrap="wrap">
+                      <Box style={{ flex: "1 1 320px" }}>
+                        <Group gap="xs"><Text fw={850}>{order.change_order_number || `CO-${order.id}`}</Text><Badge color={order.status === "Approved" ? "green" : "orange"}>{order.status || "Draft"}</Badge></Group>
+                        <Text fw={750}>{order.title}</Text>
+                        {order.description && <Text size="sm" c="dimmed">{order.description}</Text>}
+                      </Box>
+                      <Text fw={900}>{money(order.amount_delta)}</Text>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Stack>
+      </Card>
+    </MWSection>
+  );
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -424,6 +553,8 @@ function ProjectDetails({
   const [releasingProduction, setReleasingProduction] = useState(false);
   const [projectPayments, setProjectPayments] = useState([]);
   const [projectQuote, setProjectQuote] = useState(null);
+  const [projectQuoteItems, setProjectQuoteItems] = useState([]);
+  const [projectChangeOrders, setProjectChangeOrders] = useState([]);
   const [customerApproval, setCustomerApproval] = useState(null);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -577,17 +708,42 @@ function ProjectDetails({
   async function loadCustomerApproval() {
     if (!selectedProject?.id) {
       setProjectQuote(null);
+      setProjectQuoteItems([]);
+      setProjectChangeOrders([]);
       return setCustomerApproval(null);
     }
     try {
-      const { data: quotes, error: quoteError } = await supabase
-        .from("project_quotes")
-        .select("*")
-        .eq("project_id", selectedProject.id)
-        .eq("is_current_revision", true)
-        .order("created_at", { ascending: false });
+      const [quotesResult, changesResult] = await Promise.all([
+        supabase
+          .from("project_quotes")
+          .select("*")
+          .eq("project_id", selectedProject.id)
+          .eq("is_current_revision", true)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("project_change_orders")
+          .select("*")
+          .eq("project_id", selectedProject.id)
+          .order("created_at", { ascending: false }),
+      ]);
+      const { data: quotes, error: quoteError } = quotesResult;
       if (quoteError) throw quoteError;
-      setProjectQuote((quotes || [])[0] || null);
+      if (changesResult.error) throw changesResult.error;
+      const currentQuote = (quotes || [])[0] || null;
+      setProjectQuote(currentQuote);
+      setProjectChangeOrders(changesResult.data || []);
+      if (currentQuote?.id) {
+        const { data: quoteItems, error: itemError } = await supabase
+          .from("project_quote_items")
+          .select("*")
+          .eq("quote_id", currentQuote.id)
+          .order("sort_order", { ascending: true })
+          .order("id", { ascending: true });
+        if (itemError) throw itemError;
+        setProjectQuoteItems(quoteItems || []);
+      } else {
+        setProjectQuoteItems([]);
+      }
       const quoteIds = (quotes || []).map((quote) => quote.id);
       if (!quoteIds.length) return setCustomerApproval(null);
       const { data, error } = await supabase
@@ -602,6 +758,8 @@ function ProjectDetails({
     } catch (error) {
       console.error("Customer approval load error:", error);
       setProjectQuote(null);
+      setProjectQuoteItems([]);
+      setProjectChangeOrders([]);
       setCustomerApproval(null);
     }
   }
@@ -2363,6 +2521,13 @@ function ProjectDetails({
           <Tabs.Panel value="overview">
             <Stack gap="lg">
               <ProjectQuickUpdate project={project} activeUser={activeUser} onSaved={loadProject} />
+
+              <QuoteDetailPanel
+                quote={projectQuote}
+                items={projectQuoteItems}
+                changeOrders={projectChangeOrders}
+                onOpen={openConnectedQuote}
+              />
 
               <ProjectUnitsWorkspace project={project} activeUser={activeUser} compact onChanged={loadProject} />
 
