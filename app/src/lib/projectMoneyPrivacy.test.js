@@ -21,8 +21,11 @@ describe("project money privacy", () => {
 
   it("only allows the approved employee names to request access", () => {
     expect(canUnlockProjectMoney("Dan")).toBe(true);
+    expect(canUnlockProjectMoney("Dan Kessler")).toBe(true);
+    expect(canUnlockProjectMoney("lori@metalworxinc.net")).toBe(true);
     expect(canUnlockProjectMoney("kory")).toBe(true);
     expect(canUnlockProjectMoney("Austin")).toBe(false);
+    expect(canUnlockProjectMoney("Chadwick")).toBe(false);
   });
 
   it("hides values until the approved employee unlocks them", () => {
