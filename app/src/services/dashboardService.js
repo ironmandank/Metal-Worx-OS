@@ -1793,6 +1793,8 @@ export async function getDashboardData() {
         owner: order?.order_owner || representative.assigned_to || "Unassigned",
         receivedDate: order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at || null,
         businessDaysInShop: businessDaysSince(order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at),
+        stageEnteredDate: representative.started_at || representative.created_at || representative.updated_at || null,
+        businessDaysInStage: businessDaysSince(representative.started_at || representative.created_at || representative.updated_at),
         dueDate: order?.due_date || null,
       });
     }
@@ -1804,7 +1806,7 @@ export async function getDashboardData() {
     ).values()];
     if (name === "Design") {
       uniqueItems.sort(
-        (left, right) => Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0)
+        (left, right) => Number(right.businessDaysInStage || 0) - Number(left.businessDaysInStage || 0)
       );
     }
     return {
