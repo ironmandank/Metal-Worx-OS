@@ -1161,6 +1161,20 @@ function getOutsideProjectProgress(project) {
   };
 }
 
+function getOutsideHuddleStage(project) {
+  const complete = (value) => ["completed", "complete", "approved", "received", "paid", "passed", "not required"].includes(normalizeStatus(value));
+  if (["on hold", "cancelled", "canceled"].includes(normalizeStatus(project.status))) return "On Hold";
+  if (project.site_visit_required && !complete(project.site_visit_status)) return "Site Visits";
+  if (project.measurements_required && !complete(project.measurements_status)) return "Site Visits";
+  if (project.quote_required && !["sent", "approved"].includes(normalizeStatus(project.quote_status))) return "Needs Quote";
+  if ((project.customer_approval_required !== false && !complete(project.approval_status)) || normalizeStatus(project.quote_status) === "sent") return "Quote & Approval";
+  if (project.down_payment_required && !complete(project.down_payment_status)) return "Awaiting Deposit";
+  if (["new", "needs scheduling", "ready for production"].includes(normalizeStatus(project.status))) return "Needs Scheduling";
+  if ((project.design_required && !complete(project.design_status)) || (project.fabrication_required && !complete(project.fabrication_status)) || (project.finish_required && !complete(project.finish_status)) || (project.assembly_required && !complete(project.assembly_status))) return "Fabrication / Shop";
+  if ((project.test_fit_required && !complete(project.test_fit_status)) || (project.install_required && !complete(project.install_status))) return "Install / Field Work";
+  return "Closeout";
+}
+
 function buildOutsideProjectRow(
   project,
   customerName,
@@ -1197,6 +1211,9 @@ function buildOutsideProjectRow(
 
     status:
       project.status || "Open",
+
+    workflowStage:
+      getOutsideHuddleStage(project),
 
     owner:
       getProjectOwner(project),
@@ -1256,7 +1273,7 @@ function buildOutsideProjectRow(
     progressPercent: progress.progressPercent,
     milestonesCompleted: progress.milestonesCompleted,
     milestonesTotal: progress.milestonesTotal,
-    targetDate: project.install_start || project.install_date || project.target_completion_date || project.due_date || null,
+    targetDate: project.site_visit_date || project.install_start || project.install_date || project.target_completion_date || project.due_date || null,
     unitsTotal: units.length,
     unitsCompleted: completedUnits,
     unitsReady: readyUnits,
@@ -1775,7 +1792,7 @@ export async function getDashboardData() {
   });
 
   const artworkPipeline = artworkPipelineStages.map((name) => ({
-    name,
+    name: name === "Welding" ? "Small Fabrication & Repairs" : name,
     count: artworkPipelineCounts[name],
     items: artworkPipelineItems[name],
   }));
