@@ -1037,7 +1037,7 @@ function ProjectDetails({
 
     if (
       projectData.site_visit_required &&
-      projectData.site_visit_status !== "Completed"
+      !["Completed", "Not Required"].includes(projectData.site_visit_status)
     ) {
       return projectData.site_visit_status === "Scheduled"
         ? "Complete the scheduled site visit"
@@ -1055,7 +1055,7 @@ function ProjectDetails({
 
     if (
       projectData.measurements_required &&
-      projectData.measurements_status !== "Completed"
+      !["Completed", "Not Required"].includes(projectData.measurements_status)
     ) {
       return "Complete project measurements";
     }
@@ -1107,7 +1107,7 @@ function ProjectDetails({
 
     if (
       projectData.design_required &&
-      projectData.design_status !== "Completed"
+      !["Completed", "Not Required"].includes(projectData.design_status)
     ) {
       return projectData.design_status === "In Progress"
         ? "Continue project design"
@@ -1118,8 +1118,8 @@ function ProjectDetails({
       projectData.fabrication_required &&
       (procurement.total === 0 || procurement.received === procurement.total) &&
       (!projectData.design_required ||
-        projectData.design_status === "Completed") &&
-      projectData.fabrication_status !== "Completed"
+        ["Completed", "Not Required"].includes(projectData.design_status)) &&
+      !["Completed", "Not Required"].includes(projectData.fabrication_status)
     ) {
       return projectData.fabrication_status === "In Progress"
         ? "Continue production work"
@@ -1129,7 +1129,7 @@ function ProjectDetails({
     if (
       projectData.test_fit_required &&
       projectData.fabrication_status === "Completed" &&
-      projectData.test_fit_status !== "Completed"
+      !["Completed", "Not Required"].includes(projectData.test_fit_status)
     ) {
       return projectData.test_fit_status === "Scheduled"
         ? "Complete the scheduled test fit"
@@ -1139,8 +1139,8 @@ function ProjectDetails({
     if (
       projectData.finish_required &&
       (!projectData.test_fit_required ||
-        projectData.test_fit_status === "Completed") &&
-      projectData.finish_status !== "Completed"
+        ["Completed", "Not Required"].includes(projectData.test_fit_status)) &&
+      !["Completed", "Not Required"].includes(projectData.finish_status)
     ) {
       return projectData.finish_status === "At Powder Coat"
         ? "Waiting for powder coating"
@@ -1150,8 +1150,8 @@ function ProjectDetails({
     if (
       projectData.assembly_required &&
       (!projectData.finish_required ||
-        projectData.finish_status === "Completed") &&
-      projectData.assembly_status !== "Completed"
+        ["Completed", "Not Required"].includes(projectData.finish_status)) &&
+      !["Completed", "Not Required"].includes(projectData.assembly_status)
     ) {
       return projectData.assembly_status === "In Progress"
         ? "Continue project assembly"
@@ -1163,8 +1163,8 @@ function ProjectDetails({
       (projectData.assembly_required
         ? projectData.assembly_status === "Completed"
         : !projectData.finish_required ||
-          projectData.finish_status === "Completed") &&
-      projectData.install_status !== "Completed"
+          ["Completed", "Not Required"].includes(projectData.finish_status)) &&
+      !["Completed", "Not Required"].includes(projectData.install_status)
     ) {
       return projectData.install_status === "Scheduled"
         ? "Complete the scheduled installation"
@@ -1172,8 +1172,7 @@ function ProjectDetails({
     }
 
     if (
-      projectData.balance_status !== "Not Required" &&
-      projectData.balance_status !== "Paid"
+      !["Not Required", "Paid"].includes(projectData.balance_status)
     ) {
       return "Collect the remaining customer balance";
     }
@@ -1292,7 +1291,7 @@ function ProjectDetails({
   ).length;
 
   const nextActionText = project
-    ? calculateNextAction(project, materialRequests)
+    ? project.next_action || calculateNextAction(project, materialRequests)
     : "No next action";
 
   const currentStageIndex = workflowStages.findIndex((stage) => stage.current);
