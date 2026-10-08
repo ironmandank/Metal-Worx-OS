@@ -4148,19 +4148,19 @@ function ProjectDetails({
           </Tabs.Panel>
 
           <Tabs.Panel value="controls">
-            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="actions" />
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} setPage={setPage} setSelectedQuote={setSelectedQuote} section="actions" />
           </Tabs.Panel>
 
           <Tabs.Panel value="changes">
-            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="changes" />
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} setPage={setPage} setSelectedQuote={setSelectedQuote} section="changes" />
           </Tabs.Panel>
 
           <Tabs.Panel value="communications">
-            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="communications" />
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} setPage={setPage} setSelectedQuote={setSelectedQuote} section="communications" />
           </Tabs.Panel>
 
           <Tabs.Panel value="closeout">
-            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} section="closeout" />
+            <ProjectControlCenter project={project} activeUser={activeUser} onProjectUpdated={loadProject} setPage={setPage} setSelectedQuote={setSelectedQuote} section="closeout" />
           </Tabs.Panel>
 
           <Tabs.Panel value="story">
