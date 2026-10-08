@@ -1,6 +1,7 @@
 // Live Operations Command Center data service.
 import { supabase } from "../lib/supabase";
 import { getDesignComplexity, isDesignFeeCleared } from "../lib/designPriority";
+import { selectCurrentArtworkWorkOrder } from "../lib/artworkRoute";
 import { getActionCenterData } from "./actionCenterService";
 
 function startOfToday() {
@@ -1747,12 +1748,9 @@ export async function getDashboardData() {
     if (isClosedStatus(order?.status) || order?.fulfillment_completed) return;
 
     const expectedStage = getCanonicalShopStage(job) || getCustomerOrderShopStage(order);
-    const openRoute = route.filter((workOrder) => !isClosedStatus(workOrder.status));
-    // Match the Stations screen: the open, non-pending work order is the
-    // authoritative current location. Job/order stage fields are fallbacks only.
-    const representative = openRoute.find(
-      (workOrder) => normalizeStatus(workOrder.status) !== "pending"
-    ) || openRoute[0] || [...route].reverse().find((workOrder) => isClosedStatus(workOrder.status));
+    // This is the same deterministic selector used by the Artwork screen.
+    // The active work order is authoritative, regardless of database row order.
+    const representative = selectCurrentArtworkWorkOrder(route);
     if (!representative) return;
 
     let stage = getCanonicalShopStage(representative) || expectedStage;
