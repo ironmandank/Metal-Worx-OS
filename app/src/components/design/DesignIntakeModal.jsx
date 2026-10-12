@@ -154,6 +154,12 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   }
 
   async function findOrCreateCustomer() {
+    const enteredName = clean(form.customerName).toLowerCase();
+    const matchesEnteredName = (record) => {
+      if (!record) return false;
+      const recordName = clean(`${record.first_name || ""} ${record.last_name || ""}`).toLowerCase();
+      return Boolean(enteredName) && recordName === enteredName;
+    };
     let customer = null;
     if (clean(form.email)) {
       const { data, error } = await supabase
@@ -162,7 +168,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         .eq("email", clean(form.email))
         .maybeSingle();
       if (error) throw error;
-      customer = data;
+      customer = matchesEnteredName(data) ? data : null;
     }
     if (!customer && clean(form.phone)) {
       const { data, error } = await supabase
@@ -171,7 +177,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         .eq("phone", clean(form.phone))
         .maybeSingle();
       if (error) throw error;
-      customer = data;
+      customer = matchesEnteredName(data) ? data : null;
     }
     if (customer) return customer;
 
