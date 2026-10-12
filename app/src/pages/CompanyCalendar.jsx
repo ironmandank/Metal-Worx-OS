@@ -74,6 +74,22 @@ const EVENT_COLORS = {
   "Outside Job": "#22c55e",
 };
 
+const EVENT_COLOR_OPTIONS = [
+  { value: "#22c55e", label: "Green" },
+  { value: "#3b82f6", label: "Blue" },
+  { value: "#8b5cf6", label: "Purple" },
+  { value: "#f97316", label: "Orange" },
+  { value: "#eab308", label: "Yellow" },
+  { value: "#14b8a6", label: "Teal" },
+  { value: "#e11d32", label: "Red" },
+  { value: "#ec4899", label: "Pink" },
+  { value: "#94a3b8", label: "Gray" },
+];
+
+function eventDisplayColor(event) {
+  return event?.event_color || EVENT_COLORS[event?.event_type] || "#e11d32";
+}
+
 const DEPARTMENTS = [
   "Office",
   "Sales",
@@ -850,6 +866,7 @@ function emptyForm(dateValue = new Date()) {
     id: "",
     title: "",
     event_type: "Company Event",
+    event_color: EVENT_COLORS["Company Event"],
     start_at: toLocalInputValue(start),
     end_at: toLocalInputValue(end),
     all_day: false,
@@ -1063,6 +1080,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
             id: `project-${project.id}-${milestone}`,
             title: `${project.project_name} — ${milestone}`,
             event_type: "Outside Job",
+            event_color: EVENT_COLORS["Outside Job"],
             start_at: start.toISOString(),
             end_at: end.toISOString(),
             all_day: milestone === "General Work",
@@ -1270,6 +1288,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
       id: event.is_project_schedule ? "" : event.id,
       title: event.title || "",
       event_type: event.event_type || "Company Event",
+      event_color: event.event_color || EVENT_COLORS[event.event_type] || EVENT_COLORS["Company Event"],
       start_at: toLocalInputValue(event.start_at),
       end_at: toLocalInputValue(event.end_at),
       all_day: Boolean(event.all_day),
@@ -1343,6 +1362,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
       const payload = {
         title: form.title.trim(),
         event_type: form.event_type,
+        event_color: form.event_color || EVENT_COLORS[form.event_type] || null,
         start_at: start.toISOString(),
         end_at: end.toISOString(),
         all_day: form.all_day,
@@ -1515,6 +1535,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
           .insert({
             title: form.title.trim(),
             event_type: "Outside Job",
+            event_color: form.event_color || EVENT_COLORS["Outside Job"],
             start_at: new Date(form.start_at).toISOString(),
             end_at: new Date(form.end_at).toISOString(),
             all_day: form.all_day,
@@ -1870,7 +1891,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
                               key={event.id}
                               type="button"
                               className="mw-calendar-event"
-                              style={{ "--event-color": EVENT_COLORS[event.event_type] || "#e11d32" }}
+                              style={{ "--event-color": eventDisplayColor(event) }}
                               title={`${event.title} — ${formatEventTime(event)}`}
                               onClick={() => openExistingEvent(event)}
                             >
@@ -1895,7 +1916,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
                         type="button"
                         className="mw-calendar-span-event"
                         style={{
-                          "--event-color": EVENT_COLORS[event.event_type] || "#e11d32",
+                          "--event-color": eventDisplayColor(event),
                           "--span-start": startIndex,
                           "--span-days": dayCount,
                           "--span-lane": lane,
@@ -2027,6 +2048,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
                 setForm((current) => ({
                   ...current,
                   event_type: eventType,
+                  event_color: EVENT_COLORS[eventType] || current.event_color,
                   outside_project_id:
                     eventType === "Outside Job"
                       ? current.outside_project_id
@@ -2041,6 +2063,25 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
               value={form.priority}
               onChange={(value) =>
                 updateForm("priority", value || "Normal")
+              }
+            />
+            <Select
+              label="Calendar Color"
+              description="Use different colors when jobs run on the same days."
+              data={EVENT_COLOR_OPTIONS}
+              value={form.event_color || EVENT_COLORS[form.event_type]}
+              onChange={(value) => updateForm("event_color", value || EVENT_COLORS[form.event_type])}
+              leftSection={
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 13,
+                    height: 13,
+                    borderRadius: "50%",
+                    background: form.event_color || EVENT_COLORS[form.event_type],
+                    boxShadow: "0 0 0 2px rgba(255,255,255,.18)",
+                  }}
+                />
               }
             />
           </SimpleGrid>
