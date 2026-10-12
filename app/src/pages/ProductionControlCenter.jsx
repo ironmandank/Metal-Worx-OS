@@ -290,6 +290,7 @@ function ProductionControlCenter({
   const [outsideProjects, setOutsideProjects] = useState([]);
   const [outsideJobs, setOutsideJobs] = useState([]);
   const [outsideWorkOrders, setOutsideWorkOrders] = useState([]);
+  const [timeOffEvents, setTimeOffEvents] = useState([]);
   const [scheduleProject, setScheduleProject] = useState(null);
   const [scheduleType, setScheduleType] = useState("");
   const [scheduleStart, setScheduleStart] = useState(null);
@@ -450,6 +451,15 @@ function ProductionControlCenter({
       setOutsideWorkOrders(
         validWorkOrders.filter((workOrder) => workOrder.project_id),
       );
+      const { data: timeOffData, error: timeOffError } = await supabase
+        .from("company_calendar_events")
+        .select("id,title,start_at,end_at,employee_profile:employee_profiles!company_calendar_events_employee_profile_id_fkey(display_name)")
+        .in("event_type", ["Time Off", "Employee Unavailable"])
+        .eq("status", "Scheduled")
+        .gte("end_at", new Date().toISOString())
+        .order("start_at", { ascending: true });
+      if (timeOffError) throw timeOffError;
+      setTimeOffEvents(timeOffData || []);
       setItemsByOrderId(groupedItems);
       setActivity(activityResult.data || []);
     } catch (error) {
@@ -611,6 +621,18 @@ function ProductionControlCenter({
   }).sort((a, b) => b.total - a.total || departmentRank(a.department) - departmentRank(b.department));
   const bottleneck = stationWorkload[0] || null;
   const isAdministrator = String(accessLevel || "").toLowerCase().includes("admin");
+  const scheduleConflicts = useMemo(() => {
+    if (!scheduleProject || !scheduleStart) return [];
+    const owner = String(scheduleProject.assigned_to || "").trim().toLowerCase();
+    if (!owner) return [];
+    const start = new Date(scheduleStart).getTime();
+    const end = scheduleEnd ? new Date(scheduleEnd).getTime() : start;
+    if (Number.isNaN(start) || Number.isNaN(end)) return [];
+    return timeOffEvents.filter((event) => {
+      const employee = String(event.employee_profile?.display_name || "").trim().toLowerCase();
+      return employee === owner && new Date(event.start_at).getTime() <= end && new Date(event.end_at).getTime() >= start;
+    });
+  }, [scheduleEnd, scheduleProject, scheduleStart, timeOffEvents]);
 
   const outsideCards = useMemo(() => {
     const searchValue = search.trim().toLowerCase();
@@ -1768,6 +1790,11 @@ function ProductionControlCenter({
               {scheduleError}
             </Alert>
           )}
+          {scheduleConflicts.length > 0 && (
+            <Alert color="orange" icon={<IconAlertTriangle size={18} />} title="Employee time-off conflict">
+              {scheduleProject?.assigned_to} is marked unavailable during this project schedule. Review the Company Calendar or assign another employee before saving.
+            </Alert>
+          )}
           <TextInput
             type="datetime-local"
             label="Start Date and Time"
@@ -1796,7 +1823,7 @@ function ProductionControlCenter({
               color="red"
               leftSection={<IconCheck size={17} />}
               loading={Boolean(updatingId)}
-              disabled={!scheduleStart}
+              disabled={!scheduleStart || scheduleConflicts.length > 0}
               onClick={saveSiteSchedule}
             >
               Save Schedule
