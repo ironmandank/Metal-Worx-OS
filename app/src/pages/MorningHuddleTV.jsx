@@ -140,18 +140,32 @@ export default function MorningHuddleTV({ setPage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [siteVisits, setSiteVisits] = useState([]);
+  const [timeOff, setTimeOff] = useState([]);
   const [expandedStages, setExpandedStages] = useState({});
 
   async function load() {
     try {
       setError("");
-      const [dashboardData, siteVisitResult] = await Promise.all([
+      const today = new Date();
+      const upcomingEnd = new Date(today);
+      upcomingEnd.setDate(upcomingEnd.getDate() + 14);
+      const [dashboardData, siteVisitResult, timeOffResult] = await Promise.all([
         getDashboardData(),
         supabase.from("prequote_site_visits").select("*").in("status", ["Open", "Scheduled"]).order("requested_visit_date", { ascending: true, nullsFirst: false }),
+        supabase
+          .from("company_calendar_events")
+          .select("id,title,event_type,start_at,end_at,all_day,notes,employee_profile:employee_profiles!company_calendar_events_employee_profile_id_fkey(display_name,department)")
+          .in("event_type", ["Time Off", "Employee Unavailable"])
+          .eq("status", "Scheduled")
+          .gte("end_at", today.toISOString())
+          .lte("start_at", upcomingEnd.toISOString())
+          .order("start_at", { ascending: true }),
       ]);
       if (siteVisitResult.error) throw siteVisitResult.error;
+      if (timeOffResult.error) throw timeOffResult.error;
       setData(dashboardData);
       setSiteVisits(siteVisitResult.data || []);
+      setTimeOff(timeOffResult.data || []);
     }
     catch (e) { setError(e?.message || "Huddle data could not load."); }
     finally { setLoading(false); }
@@ -251,6 +265,7 @@ export default function MorningHuddleTV({ setPage }) {
       </div>
       <div className="tv-panel tv-production"><h2><IconTool/> Production by Station</h2>{shopWorkload.length ? <div className="tv-card-grid">{shopWorkload.slice(0,6).map((item)=><div className="tv-item-card" key={item.name}><span className="tv-card-tag gray">{item.count} total</span><strong>{item.name}</strong><small>{item.ready || 0} ready · {item.inProgress || 0} active · {item.onHold || 0} on hold</small></div>)}</div>:<div className="tv-empty">Artwork has not been released into a production station yet.</div>}</div>
       <div className="tv-panel tv-field"><h2><IconCalendarEvent/> Field Schedule</h2>{field.length ? <div className="tv-card-grid">{field.slice(0,4).map((x,i)=><div className="tv-item-card" key={x.id || i}><span className="tv-card-tag green">{dateOnly(x.start || x.date || x.dueDate)}</span><strong>{text(x.title,"Field activity")}</strong><small>Lead: {text(x.owner)}</small></div>)}</div>:<div className="tv-empty">No field work scheduled today.</div>}</div>
+      <div className="tv-panel"><h2><IconUsers/> Team Availability</h2>{timeOff.length ? <><div className="tv-card-grid">{timeOff.slice(0,4).map((entry)=><div className="tv-item-card" key={entry.id}><span className="tv-card-tag gray">{dateOnly(entry.start_at)}{dateOnly(entry.end_at) !== dateOnly(entry.start_at) ? ` – ${dateOnly(entry.end_at)}` : ""}</span><strong>{text(entry.employee_profile?.display_name, entry.title || "Team member")}</strong><small>{text(entry.event_type,"Time Off")}{entry.employee_profile?.department ? ` · ${entry.employee_profile.department}` : ""}{entry.notes ? <><br/>{entry.notes}</> : null}</small></div>)}</div><MoreCount total={timeOff.length} shown={4}/></>:<div className="tv-empty">No approved time off is scheduled in the next 14 days.</div>}</div>
       <div className="tv-panel"><h2><IconCalendarEvent/> Pre-Quote Site Visits</h2>{siteVisits.length ? <><div className="tv-card-grid">{siteVisits.slice(0,4).map((visit)=><div className="tv-item-card" key={visit.id}><span className="tv-card-tag gray">{dateOnly(visit.requested_visit_date)}</span><strong>{text(visit.customer_name,"Potential job")}</strong><small>{text(visit.assigned_estimator)} · {text(visit.job_site_address,"Address not entered")}</small></div>)}</div><MoreCount total={siteVisits.length} shown={4}/></>:<div className="tv-empty">No open pre-quote site visits.</div>}</div>
       <div className="tv-panel"><h2><IconAlertTriangle/> Leadership Attention</h2>{blockers.length ? <div className="tv-card-grid">{blockers.slice(0,4).map((x,i)=><div className="tv-item-card urgent" key={x.id || i}><span className="tv-card-tag">Needs Action</span><strong>{text(x.title,"Blocker")}</strong><small>{text(x.detail,"Immediate review required")}</small></div>)}</div>:<div className="tv-empty">No blockers recorded.</div>}</div>
       <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><div className="tv-card-grid"><div className="tv-item-card"><span className="tv-card-tag gray">Purchasing</span><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Receiving</span><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Shop Load</span><strong>{summary.busiestDepartment || "No active station"}</strong><small>{summary.busiestDepartmentCount || 0} active at the busiest station</small></div></div></div>
