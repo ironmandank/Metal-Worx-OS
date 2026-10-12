@@ -323,7 +323,12 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       }
     }
 
-    const { data: localEvents, error: localError } = await admin.from("company_calendar_events").select("*").gte("end_at", timeMin).order("start_at");
+    const { data: localEvents, error: localError } = await admin
+      .from("company_calendar_events")
+      .select("*")
+      .gte("end_at", timeMin)
+      .lte("start_at", timeMax)
+      .order("start_at");
     if (localError) throw localError;
     for (const local of localEvents || []) {
       if (local.outside_project_id) continue;
