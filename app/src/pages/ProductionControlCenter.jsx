@@ -151,8 +151,12 @@ function getProductNames(items) {
   return names.length ? [...new Set(names)].join(", ") : "Unspecified Product";
 }
 
-function getOrderDisplayName(customer, items) {
-  return `${getCustomerName(customer)} — ${getProductNames(items)}`;
+function getOrderCustomerName(customerOrder, customer) {
+  return String(customerOrder?.artwork_customer_name || "").trim() || getCustomerName(customer);
+}
+
+function getOrderDisplayName(customerOrder, customer, items) {
+  return `${getOrderCustomerName(customerOrder, customer)} — ${getProductNames(items)}`;
 }
 
 function getStatusColor(status) {
@@ -545,10 +549,10 @@ function ProductionControlCenter({
         workOrder.status,
         job?.production_job_number,
         customerOrder?.order_number,
-        getCustomerName(customer),
+        getOrderCustomerName(customerOrder, customer),
         getCustomerCompany(customer),
         getProductNames(items),
-        getOrderDisplayName(customer, items),
+        getOrderDisplayName(customerOrder, customer, items),
         project?.project_number,
         project?.project_name,
         project?.contact_name,
@@ -1292,7 +1296,7 @@ function ProductionControlCenter({
                                 >
                                   {project
                                     ? `${project.contact_name || getCustomerName(customer)} — ${project.project_name || "Outside Fabrication"}`
-                                    : getOrderDisplayName(customer, items)}
+                                    : getOrderDisplayName(customerOrder, customer, items)}
                                 </Title>
                                 {companyName && (
                                   <Text fw={750} c="gray.3" mt={5}>
