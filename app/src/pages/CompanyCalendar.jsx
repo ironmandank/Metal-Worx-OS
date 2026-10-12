@@ -784,6 +784,7 @@ function emptyForm(dateValue = new Date()) {
     created_by: "",
     outside_project_id: "",
     outside_project_milestone: "General Work",
+    is_project_schedule: false,
   };
 }
 
@@ -921,7 +922,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
           supabase
             .from("projects")
             .select(
-              "id,project_number,project_name,project_type,status,is_active,work_location,job_address,city,state,planned_start_date,target_completion_date,site_visit_start,site_visit_end,test_fit_start,test_fit_end,install_start,install_end"
+              "id,project_number,project_name,project_type,status,is_active,work_location,job_address,city,state,planned_start_date,target_completion_date,site_visit_start,site_visit_end,site_visit_status,test_fit_start,test_fit_end,test_fit_status,install_start,install_end,install_status"
             )
             .eq("is_active", true)
             .order("project_name", { ascending: true }),
@@ -944,12 +945,13 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
       const projectEvents = [];
       for (const project of projectsResult.data || []) {
         const milestones = [
-          ["Site Visit", project.site_visit_start, project.site_visit_end],
-          ["Test Fit", project.test_fit_start, project.test_fit_end],
-          ["Installation", project.install_start, project.install_end],
-          ["General Work", project.planned_start_date, project.target_completion_date],
+          ["Site Visit", project.site_visit_start, project.site_visit_end, project.site_visit_status],
+          ["Test Fit", project.test_fit_start, project.test_fit_end, project.test_fit_status],
+          ["Installation", project.install_start, project.install_end, project.install_status],
+          ["General Work", project.planned_start_date, project.target_completion_date, project.status],
         ];
-        for (const [milestone, startValue, endValue] of milestones) {
+        for (const [milestone, startValue, endValue, milestoneStatus] of milestones) {
+          if (["completed", "closed", "archived", "cancelled"].includes(String(milestoneStatus || "").toLowerCase())) continue;
           if (!startValue || linkedKeys.has(`${project.id}:${milestone}`)) continue;
           const start = new Date(startValue);
           const end = endValue ? new Date(endValue) : new Date(start.getTime() + 60 * 60 * 1000);
@@ -996,7 +998,12 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
             }
           : { ...event, project };
       });
-      setEvents([...mergedEvents, ...projectEvents]);
+      setEvents([
+        ...mergedEvents.filter(
+          (event) => !["Completed", "Cancelled"].includes(event.status)
+        ),
+        ...projectEvents,
+      ]);
       setEmployees(employeesResult.data || []);
       setOutsideProjects(projectsResult.data || []);
       setCurrentProfile(profileResult.data || null);
@@ -1170,6 +1177,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
         : "",
       outside_project_milestone:
         event.outside_project_milestone || "General Work",
+      is_project_schedule: Boolean(event.is_project_schedule),
     });
     setModalOpened(true);
   }
@@ -1368,6 +1376,72 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
         color: "red",
         title: "Delete failed",
         message: error.message || "The event could not be deleted.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function completeEvent() {
+    if (!form.id && !form.is_project_schedule) return;
+    setSaving(true);
+    try {
+      if (form.id) {
+        const { error } = await supabase
+          .from("company_calendar_events")
+          .update({ status: "Completed", updated_by: currentUser?.id || null })
+          .eq("id", form.id);
+        if (error) throw error;
+      } else if (form.is_project_schedule) {
+        const { error } = await supabase
+          .from("company_calendar_events")
+          .insert({
+            title: form.title.trim(),
+            event_type: "Outside Job",
+            start_at: new Date(form.start_at).toISOString(),
+            end_at: new Date(form.end_at).toISOString(),
+            all_day: form.all_day,
+            department: form.department || "Outside Fabrication",
+            location: form.location.trim() || null,
+            notes: form.notes.trim() || null,
+            status: "Completed",
+            priority: form.priority || "Normal",
+            created_by: currentUser?.id,
+            updated_by: currentUser?.id,
+            outside_project_id: Number(form.outside_project_id),
+            outside_project_milestone:
+              form.outside_project_milestone || "General Work",
+          });
+        if (error) throw error;
+      }
+
+      if (form.outside_project_id) {
+        const milestoneField = {
+          "Site Visit": "site_visit_status",
+          "Test Fit": "test_fit_status",
+          Installation: "install_status",
+        }[form.outside_project_milestone];
+        if (milestoneField) {
+          const { error } = await supabase
+            .from("projects")
+            .update({ [milestoneField]: "Completed" })
+            .eq("id", Number(form.outside_project_id));
+          if (error) throw error;
+        }
+      }
+
+      notifications.show({
+        color: "green",
+        title: "Calendar activity completed",
+        message: "It was removed from the active calendar and retained in history.",
+      });
+      setModalOpened(false);
+      await loadCalendar();
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        title: "Could not complete activity",
+        message: error.message || "The calendar activity could not be completed.",
       });
     } finally {
       setSaving(false);
@@ -1993,6 +2067,16 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
 
           <Group justify="space-between">
             <div>
+              {(form.id || form.is_project_schedule) && (
+                <Button
+                  color="green"
+                  variant="light"
+                  loading={saving}
+                  onClick={completeEvent}
+                >
+                  Mark Complete
+                </Button>
+              )}
               {form.outside_project_id && openProject && (
                 <Button
                   variant="light"
