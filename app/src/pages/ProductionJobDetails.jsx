@@ -318,6 +318,8 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   }, [loadJobFolder]);
 
   const customerName = useMemo(() => {
+    const orderCustomerName = String(order?.artwork_customer_name || "").trim();
+    if (orderCustomerName) return orderCustomerName;
     if (!customer) return "Customer not available";
 
     return (
@@ -327,7 +329,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
       customer.company_name ||
       "Unnamed Customer"
     );
-  }, [customer]);
+  }, [customer, order?.artwork_customer_name]);
 
   const companyName = useMemo(() => {
     if (!customer?.company_name || customer.company_name === customerName) {
@@ -592,6 +594,27 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
         onButtonClick={() => setPage("productionControl")}
       />
 
+      <Paper withBorder radius="lg" p="md" mb="lg">
+        <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+          <div>
+            <Text size="xs" fw={900} c="dimmed">CUSTOMER CONTACT</Text>
+            <Text fw={900} size="lg">{customerName}</Text>
+          </div>
+          <Group gap="lg" wrap="wrap">
+            {customer?.phone ? (
+              <Button component="a" href={`tel:${customer.phone}`} variant="light" color="gray" leftSection={<IconPhone size={17} />}>
+                {customer.phone}
+              </Button>
+            ) : <Text c="dimmed">Phone not provided</Text>}
+            {customer?.email && customer.email.toLowerCase() !== "na" ? (
+              <Button component="a" href={`mailto:${customer.email}`} variant="light" color="gray" leftSection={<IconMail size={17} />}>
+                {customer.email}
+              </Button>
+            ) : <Text c="dimmed">Email not provided</Text>}
+          </Group>
+        </Group>
+      </Paper>
+
       {errorMessage && (
         <Alert
           mb="lg"
@@ -786,7 +809,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                   <Text size="xs" fw={800} c="dimmed">
                     EMAIL
                   </Text>
-                  {customer?.email ? (
+                  {customer?.email && customer.email.toLowerCase() !== "na" ? (
                     <Button component="a" href={`mailto:${customer.email}`} variant="subtle" color="gray" p={0} leftSection={<IconMail size={15} />}>
                       {customer.email}
                     </Button>
