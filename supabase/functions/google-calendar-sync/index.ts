@@ -3,9 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 
 const GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN = "https://oauth2.googleapis.com/token";
-const GOOGLE_EVENTS = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+const GOOGLE_API = "https://www.googleapis.com/calendar/v3";
+const GOOGLE_CALENDAR_LIST = `${GOOGLE_API}/users/me/calendarList`;
 const GOOGLE_USERINFO = "https://openidconnect.googleapis.com/v1/userinfo";
 const REQUIRED_EMAIL = "kory@metalworxinc.net";
+const TARGET_CALENDAR_NAMES = ["metal worx inc", "metal worx os", "metal worx"];
 const APP_URL = "https://metalworxinc-os.com";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -77,6 +79,10 @@ function addDays(date: Date, amount: number) {
   const copy = new Date(date);
   copy.setUTCDate(copy.getUTCDate() + amount);
   return copy;
+}
+
+function calendarEventsUrl(calendarId: string) {
+  return `${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events`;
 }
 
 function googleDateTime(event: any) {
@@ -195,6 +201,50 @@ async function validAccessToken(admin: any, connection: any, clientId: string, c
   return tokens.access_token as string;
 }
 
+async function resolveTargetCalendar(admin: any, connection: any, accessToken: string) {
+  if (connection.calendar_id && connection.calendar_id !== "primary") return connection.calendar_id as string;
+
+  let pageToken = "";
+  const calendars: any[] = [];
+  do {
+    const query = new URLSearchParams({ maxResults: "250", minAccessRole: "writer" });
+    if (pageToken) query.set("pageToken", pageToken);
+    const page = await googleRequest(`${GOOGLE_CALENDAR_LIST}?${query}`, accessToken);
+    calendars.push(...(page.items || []));
+    pageToken = page.nextPageToken || "";
+  } while (pageToken);
+
+  const target = calendars.find((calendar) => TARGET_CALENDAR_NAMES[0] === clean(calendar.summary, 200).toLowerCase())
+    || calendars.find((calendar) => TARGET_CALENDAR_NAMES.includes(clean(calendar.summary, 200).toLowerCase()));
+  if (!target?.id) {
+    throw new Error('The "Metal Worx Inc" Google calendar was not found. Reconnect Google and confirm that calendar is available to kory@metalworxinc.net.');
+  }
+
+  if (connection.calendar_id !== target.id) {
+    const now = new Date().toISOString();
+    const { error: connectionError } = await admin.from("google_calendar_connections").update({
+      calendar_id: target.id,
+      updated_at: now,
+    }).eq("id", connection.id);
+    if (connectionError) throw connectionError;
+
+    const { error: linksError } = await admin.from("google_calendar_event_links").delete().eq("connection_id", connection.id);
+    if (linksError) throw linksError;
+
+    const { error: eventsError } = await admin.from("company_calendar_events").update({
+      google_event_id: null,
+      google_calendar_id: null,
+      google_etag: null,
+      google_updated_at: null,
+      google_last_synced_at: null,
+      google_sync_status: "Pending dedicated calendar sync",
+    }).not("google_calendar_id", "eq", target.id);
+    if (eventsError) throw eventsError;
+  }
+
+  return target.id as string;
+}
+
 async function upsertLink(admin: any, connectionId: string, sourceType: string, sourceId: string, event: any) {
   const now = new Date().toISOString();
   const { error } = await admin.from("google_calendar_event_links").upsert({
@@ -211,6 +261,8 @@ async function upsertLink(admin: any, connectionId: string, sourceType: string, 
 }
 
 async function pushCalendarSource(admin: any, connection: any, accessToken: string, sourceType: string, sourceId: string) {
+  const calendarId = await resolveTargetCalendar(admin, connection, accessToken);
+  const eventsUrl = calendarEventsUrl(calendarId);
   const allowedProjectSources = ["project_site_visit", "project_test_fit", "project_install", "project_general_work"];
   if (sourceType === "company_event") {
     const { data: local, error } = await admin.from("company_calendar_events").select("*").eq("id", sourceId).maybeSingle();
@@ -218,18 +270,18 @@ async function pushCalendarSource(admin: any, connection: any, accessToken: stri
     if (!local) throw new Error("The Metal Worx calendar event was not found.");
     const { data: link, error: linkError } = await admin.from("google_calendar_event_links").select("*").eq("connection_id", connection.id).eq("source_type", sourceType).eq("source_id", sourceId).maybeSingle();
     if (linkError) throw linkError;
-    const googleEventId = local.google_event_id || link?.google_event_id;
+    const googleEventId = local.google_calendar_id === calendarId ? (local.google_event_id || link?.google_event_id) : null;
     if (local.status === "Cancelled") {
-      if (googleEventId) await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "DELETE" });
+      if (googleEventId) await googleRequest(`${eventsUrl}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "DELETE" });
       await admin.from("company_calendar_events").update({ google_sync_status: "Cancelled", google_last_synced_at: new Date().toISOString() }).eq("id", local.id);
       return { action: "deleted", source_type: sourceType, source_id: sourceId };
     }
     const resource = eventResource(local, sourceType);
     const event = googleEventId
-      ? await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-      : await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
+      ? await googleRequest(`${eventsUrl}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+      : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
     const now = new Date().toISOString();
-    await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: "primary", google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: now, google_sync_status: "Synced" }).eq("id", local.id);
+    await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: calendarId, google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: now, google_sync_status: "Synced" }).eq("id", local.id);
     await upsertLink(admin, connection.id, sourceType, local.id, event);
     return { action: googleEventId ? "updated" : "created", source_type: sourceType, source_id: sourceId };
   }
@@ -244,8 +296,8 @@ async function pushCalendarSource(admin: any, connection: any, accessToken: stri
   if (linkError) throw linkError;
   const resource = eventResource(source, sourceType);
   const event = link?.google_event_id
-    ? await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(link.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-    : await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
+    ? await googleRequest(`${eventsUrl}/${encodeURIComponent(link.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+    : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
   await upsertLink(admin, connection.id, sourceType, sourceId, event);
   return { action: link?.google_event_id ? "updated" : "created", source_type: sourceType, source_id: sourceId };
 }
@@ -258,6 +310,8 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
   let updated = 0;
 
   try {
+    const calendarId = await resolveTargetCalendar(admin, connection, accessToken);
+    const eventsUrl = calendarEventsUrl(calendarId);
     const timeMin = addDays(new Date(), -30).toISOString();
     const timeMax = addDays(new Date(), 365).toISOString();
     let pageToken = "";
@@ -265,7 +319,7 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
     do {
       const query = new URLSearchParams({ singleEvents: "true", showDeleted: "true", maxResults: "2500", timeMin, timeMax });
       if (pageToken) query.set("pageToken", pageToken);
-      const page = await googleRequest(`${GOOGLE_EVENTS}?${query}`, accessToken);
+      const page = await googleRequest(`${eventsUrl}?${query}`, accessToken);
       googleEvents.push(...(page.items || []));
       pageToken = page.nextPageToken || "";
     } while (pageToken);
@@ -328,7 +382,7 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
         status: local?.status === "Completed" ? "Completed" : "Scheduled",
         priority: local?.priority || "Normal",
         google_event_id: event.id,
-        google_calendar_id: "primary",
+        google_calendar_id: calendarId,
         google_etag: event.etag || null,
         google_updated_at: event.updated || now,
         google_last_synced_at: now,
@@ -376,18 +430,18 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       if (local.google_event_id) {
         if (local.status === "Cancelled") {
           if (googleById.get(local.google_event_id)?.status !== "cancelled") {
-            await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "DELETE" });
+            await googleRequest(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "DELETE" });
           }
           await admin.from("company_calendar_events").update({ google_sync_status: "Cancelled", google_last_synced_at: new Date().toISOString() }).eq("id", local.id);
         } else if (!local.google_last_synced_at || new Date(local.updated_at || 0) > new Date(local.google_last_synced_at)) {
-          const event = await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) });
+          const event = await googleRequest(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) });
           await admin.from("company_calendar_events").update({ google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: new Date().toISOString(), google_sync_status: "Synced" }).eq("id", local.id);
           await upsertLink(admin, connection.id, "company_event", local.id, event);
           exported += 1;
         }
       } else if (local.status !== "Cancelled") {
-        const event = await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
-        await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: "primary", google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: new Date().toISOString(), google_sync_status: "Synced" }).eq("id", local.id);
+        const event = await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
+        await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: calendarId, google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: new Date().toISOString(), google_sync_status: "Synced" }).eq("id", local.id);
         await upsertLink(admin, connection.id, "company_event", local.id, event);
         exported += 1;
       }
@@ -411,8 +465,8 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
         const existing = linksBySource.get(`${sourceType}:${project.id}`);
         const resource = eventResource(source, sourceType);
         const event = existing
-          ? await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(existing.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-          : await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
+          ? await googleRequest(`${eventsUrl}/${encodeURIComponent(existing.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+          : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
         await upsertLink(admin, connection.id, sourceType, project.id, event);
         exported += 1;
       }
@@ -485,7 +539,7 @@ Deno.serve(async (request: Request) => {
     if (connectionError) throw connectionError;
 
     if (action === "status") {
-      return json(request, { connection: connection ? { status: connection.status, google_email: connection.google_email, connected_at: connection.connected_at, last_sync_completed_at: connection.last_sync_completed_at, last_sync_status: connection.last_sync_status, last_sync_error: connection.last_sync_error } : null });
+      return json(request, { connection: connection ? { status: connection.status, google_email: connection.google_email, calendar_id: connection.calendar_id, connected_at: connection.connected_at, last_sync_completed_at: connection.last_sync_completed_at, last_sync_status: connection.last_sync_status, last_sync_error: connection.last_sync_error } : null });
     }
 
     if (action === "authorize") {
@@ -501,7 +555,7 @@ Deno.serve(async (request: Request) => {
         access_type: "offline",
         prompt: "consent",
         include_granted_scopes: "true",
-        scope: "openid email https://www.googleapis.com/auth/calendar.events",
+        scope: "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly",
         state,
         login_hint: REQUIRED_EMAIL,
       });
