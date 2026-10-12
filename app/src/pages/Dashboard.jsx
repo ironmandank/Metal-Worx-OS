@@ -202,15 +202,6 @@ const styles = `
   }
   .mc-operating-card-foot { padding-top: 6px; border-top: 1px solid #2e383f; color: #9da7ae; font-size: .59rem; }
   .mc-operating-card-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mc-card-complete {
-    min-height: 28px; padding: 0 9px; border: 1px solid #477334; border-radius: 6px;
-    color: #dfffd1; background: #1b3514; font: inherit; font-size: .6rem; font-weight: 900;
-    cursor: pointer; white-space: nowrap;
-  }
-  .mc-card-complete:hover { border-color: var(--mc-green); background: #274d1d; }
-  .mc-card-complete:disabled { cursor: wait; opacity: .58; }
-  .mc-closeout-message { margin: 10px 10px 0; padding: 9px 11px; border: 1px solid #477334; border-radius: 6px; color: #dfffd1; background: #142510; font-size: .67rem; }
-  .mc-closeout-message.error { border-color: #9d2530; color: #ffd5d8; background: #351116; }
   .mc-link {
     border: 0; color: #d9dfe3; background: transparent; font: inherit; font-size: .72rem;
     cursor: pointer; white-space: nowrap;
@@ -509,32 +500,6 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function getDeadlineCountdown(item) {
-  const rawValue = item?.deadlineAt ?? item?.dueAt ?? item?.dueDate ?? item?.sortDate;
-  if (!rawValue || rawValue === Number.MAX_SAFE_INTEGER) return null;
-
-  const target = new Date(
-    typeof rawValue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawValue)
-      ? `${rawValue}T12:00:00`
-      : rawValue,
-  );
-  if (Number.isNaN(target.getTime())) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
-  const days = Math.round((target.getTime() - today.getTime()) / 86400000);
-
-  if (days < 0) {
-    const overdueDays = Math.abs(days);
-    return { label: `${overdueDays} day${overdueDays === 1 ? "" : "s"} overdue`, tone: "overdue" };
-  }
-  if (days === 0) return { label: "Due today", tone: "today" };
-  if (days <= 3) return { label: `${days} day${days === 1 ? "" : "s"} left`, tone: "urgent" };
-  if (days <= 7) return { label: `${days} days left`, tone: "warning" };
-  return { label: `${days} days left`, tone: "scheduled" };
-}
-
 function getCloseoutCustomerName(customer) {
   if (!customer) return "Customer not assigned";
   return (
@@ -728,7 +693,6 @@ function Dashboard({
   openActionCenter,
   openProject,
   openCustomerOrder,
-  openCallback,
 }) {
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -742,14 +706,11 @@ function Dashboard({
     () => window.localStorage.getItem("mw-dashboard-flow-mode") || "shop",
   );
   const [selectedOutsideStage, setSelectedOutsideStage] = useState("");
-  const [todayView, setTodayView] = useState("All");
   const [leadershipView, setLeadershipView] = useState("Needs Attention");
   const [briefOpen, setBriefOpen] = useState(false);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefText, setBriefText] = useState("");
   const [briefCopied, setBriefCopied] = useState(false);
-  const [closingItemId, setClosingItemId] = useState("");
-  const [closeoutMessage, setCloseoutMessage] = useState(null);
 
   useEffect(() => {
     loadDashboard();
@@ -842,112 +803,12 @@ function Dashboard({
     else goToPage("customerOrderDetails");
   }
 
-  async function openAction(item) {
-    if (item?.sourceType === "project") return openProjectById(item.sourceId);
-    if (item?.sourceType === "customerOrder")
-      return openOrderById(item.sourceId);
-    if (item?.sourceType === "callback" && openCallback) {
-      openCallback(item.sourceId);
-      return;
-    }
-    goToActionCenter("All");
-  }
-
-  function closeoutKey(item) {
-    return `${item.dashboardGroup || "item"}-${item.id || item.sourceId}`;
-  }
-
-  function canCompleteNeedsAction(item) {
-    if (item.dashboardGroup === "Field Work") return true;
-    if (item.dashboardGroup === "Blockers") return false;
-    return ["hotToday", "quickCommitment", "artHotItem", "customerOrder", "productionJob", "workOrder"].includes(item.sourceType);
-  }
-
-  async function completeNeedsAction(item) {
-    const key = closeoutKey(item);
-    const title = item.title || item.customer || item.job || "this item";
-    const group = item.dashboardGroup;
-    let table;
-    let recordId;
-    let updates;
-
-    if (group === "Field Work") {
-      if (item.sourceType === "prequoteSiteVisit") {
-        table = "prequote_site_visits";
-        recordId = item.siteVisitId;
-        updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-      } else {
-        table = "projects";
-        recordId = item.projectId || item.sourceId;
-        const milestoneField = String(item.id || "").startsWith("site-")
-          ? "site_visit_status"
-          : String(item.id || "").startsWith("test-fit-")
-            ? "test_fit_status"
-            : "install_status";
-        updates = { [milestoneField]: "Completed", updated_at: new Date().toISOString() };
-      }
-    } else if (item.sourceType === "hotToday") {
-      table = "hot_today_items";
-      recordId = item.id;
-      updates = { status: "Completed" };
-    } else if (item.sourceType === "quickCommitment") {
-      table = "quick_turnaround_commitments";
-      recordId = item.id;
-      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    } else if (item.sourceType === "artHotItem") {
-      table = "art_hot_items";
-      recordId = item.id;
-      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    } else if (item.sourceType === "callback") {
-      table = "callbacks";
-      recordId = item.sourceId;
-      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-    } else if (item.sourceType === "customerOrder") {
-      table = "customer_orders";
-      recordId = item.sourceId || item.id;
-      updates = { status: "Completed", updated_at: new Date().toISOString() };
-    } else if (item.sourceType === "productionJob") {
-      table = "production_jobs";
-      recordId = item.sourceId;
-      updates = { status: "Completed", current_department: "Completed", progress_percent: 100, is_active: false };
-    } else if (item.sourceType === "workOrder") {
-      table = "work_orders";
-      recordId = item.sourceId;
-      updates = { status: "Completed", completed_at: new Date().toISOString() };
-    } else if (item.sourceType === "project") {
-      table = "projects";
-      recordId = item.sourceId;
-      updates = { status: "Completed", percent_complete: 100, completed_at: new Date().toISOString(), next_action: "Project complete", is_active: false };
-    }
-
-    if (!table || !recordId) {
-      setCloseoutMessage({ type: "error", text: "Open this item to complete its specific workflow step." });
-      return;
-    }
-
-    if (!window.confirm(`Mark “${title}” complete? This will update the actual ${group === "Field Work" ? "field milestone" : "work record"} and remove it from Needs Action Now.`)) return;
-
-    setClosingItemId(key);
-    setCloseoutMessage(null);
-    try {
-      const { error } = await supabase.from(table).update(updates).eq("id", recordId);
-      if (error) throw error;
-      await loadDashboard(false);
-      setCloseoutMessage({ type: "success", text: `${title} was completed and removed from the active action list.` });
-    } catch (error) {
-      setCloseoutMessage({ type: "error", text: error?.message || "This item could not be completed." });
-    } finally {
-      setClosingItemId("");
-    }
-  }
-
   const stats = dashboardData?.stats || {};
   const outsideSummary = dashboardData?.outsideSummary || {};
   const huddle = dashboardData?.morningHuddle || {};
   const huddleSummary = huddle.summary || {};
   const projectHealth = huddle.projectHealth || {};
   const attention = safeArray(dashboardData?.dailyAttention);
-  const schedule = safeArray(dashboardData?.outsideSchedule);
   const flow = safeArray(dashboardData?.shopFlow);
   const outsideCloseoutProjects = outsideProjects.filter(
     (project) => project.workflowStage === "Office Closeout",
@@ -1110,12 +971,6 @@ function Dashboard({
   const hotArtwork = safeArray(dashboardData?.priorityFeed?.quickCommitments);
   const hotArtworkIds = new Set(hotArtwork.map((item) => String(item.sourceId || "")).filter(Boolean));
   const hotArtworkTitles = new Set(hotArtwork.map((item) => String(item.title || "").trim().toLowerCase()).filter(Boolean));
-  const smallFabrication = artworkOrders
-    .filter((item) => item.isSmallFabrication)
-    .sort((left, right) => {
-      if (Boolean(left.dueDate) !== Boolean(right.dueDate)) return left.dueDate ? -1 : 1;
-      return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
-    });
   const regularArtwork = artworkOrders
     .filter((item) => !item.isSmallFabrication)
     .filter((item) => !hotArtworkIds.has(String(item.id)) && !hotArtworkTitles.has(String(item.title || "").trim().toLowerCase()))
@@ -1142,46 +997,6 @@ function Dashboard({
       String(candidate.sourceId || candidate.id || candidate.title) === String(item.sourceId || item.id || item.title)
     ),
   );
-  const fieldItems = schedule.slice(0, 5);
-  const riskItems = [
-    ...safeArray(huddle.blockers),
-    ...attention.filter(
-      (item) => item.tag === "Overdue" || item.priority === "Critical",
-    ),
-  ].slice(0, 5);
-
-  const todayGroups = {
-    "Hot Today": hotItems,
-    "Hot Artwork": artHotItems,
-    "Small Fabrication": smallFabrication,
-    "Artwork Orders": regularArtwork,
-    "Field Work": fieldItems,
-    Blockers: riskItems,
-  };
-  const todayTabs = ["All", ...Object.keys(todayGroups)];
-  const todayItems = (
-    todayView === "All"
-      ? Object.entries(todayGroups).flatMap(([group, items]) =>
-          items.map((item) => ({ ...item, dashboardGroup: group })),
-        )
-      : (todayGroups[todayView] || []).map((item) => ({
-          ...item,
-          dashboardGroup: todayView,
-        }))
-  )
-    .filter(
-      (item, index, items) =>
-        index ===
-        items.findIndex(
-          (candidate) =>
-            String(candidate.sourceType || candidate.dashboardGroup) ===
-              String(item.sourceType || item.dashboardGroup) &&
-            String(candidate.sourceId || candidate.id || candidate.title) ===
-              String(item.sourceId || item.id || item.title),
-        ),
-    )
-    .slice(0, todayView === "All" ? 12 : 10);
-
   const leadershipUpdates = useMemo(() => {
     const updates = safeArray(huddle.dailyUpdates);
     const latestByProject = new Map();
@@ -1522,121 +1337,6 @@ function Dashboard({
       </section>
 
       <PersonalFollowUps onOpenProject={openProjectById} />
-
-      <section className="mc-panel">
-        <PanelHead
-          icon={IconBolt}
-          title="Needs Action Now"
-          subtitle="Priorities, dated orders, field work, and blockers requiring follow-through"
-          action="Open Action Center"
-          onAction={() => goToActionCenter("All")}
-        />
-        <div className="mc-tabbar" role="tablist" aria-label="Today filters">
-          {todayTabs.map((tab) => {
-            const count =
-              tab === "All"
-                ? Object.values(todayGroups).reduce(
-                    (total, items) => total + items.length,
-                    0,
-                  )
-                : todayGroups[tab].length;
-            return (
-              <button
-                className={`mc-tab ${todayView === tab ? "active" : ""}`}
-                type="button"
-                role="tab"
-                aria-selected={todayView === tab}
-                key={tab}
-                onClick={() => setTodayView(tab)}
-              >
-                {tab}
-                <span className="mc-tab-count">{count}</span>
-              </button>
-            );
-          })}
-        </div>
-        {closeoutMessage && (
-          <div className={`mc-closeout-message ${closeoutMessage.type === "error" ? "error" : ""}`} role="status">
-            {closeoutMessage.text}
-          </div>
-        )}
-        <div className="mc-operating-list">
-          {todayItems.length === 0 ? (
-            <Empty
-              text={`No ${todayView === "All" ? "operating items" : todayView.toLowerCase()} need attention.`}
-            />
-          ) : (
-            todayItems.map((item, index) => {
-              const countdown = getDeadlineCountdown(item);
-              return (
-              <article
-                className="mc-operating-card"
-                role="button"
-                tabIndex={0}
-                key={`${item.dashboardGroup}-${item.id || item.sourceId || index}`}
-                onClick={() => {
-                  if (item.dashboardGroup === "Hot Artwork") {
-                    goToPage("quickTurnaround");
-                    return;
-                  }
-                  if (item.dashboardGroup === "Artwork Orders") {
-                    if (item.sourceType === "customerOrder")
-                      openOrderById(item.sourceId);
-                    else goToPage("quickTurnaround");
-                    return;
-                  }
-                  if (item.dashboardGroup === "Field Work") {
-                    if (item.sourceType === "prequoteSiteVisit")
-                      goToPage("quoteCenter");
-                    else openProjectById(item.projectId || item.sourceId);
-                    return;
-                  }
-                  openAction(item);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
-                }}
-              >
-                <span className="mc-operating-card-head">
-                  <span className={`mc-priority ${item.priority === "Critical" ? "quick" : ""}`}>{item.dashboardGroup}</span>
-                  <span className="mc-operating-card-badges">
-                    {countdown && <span className={`mc-countdown ${countdown.tone}`}>{countdown.label}</span>}
-                    <span className={`mc-tag ${item.isToday ? "green" : ""}`}>{item.status || item.tag || (item.isToday ? "Today" : "Open")}</span>
-                  </span>
-                </span>
-                <strong className="mc-operating-card-title">{item.title || item.customer || item.job || "Work item"}</strong>
-                <span className="mc-operating-card-detail">{item.customer || item.detail || item.issue || item.location || item.type || "Metal Worx work item"}</span>
-                {item.designWorkLabel && (
-                  <span
-                    className="mc-operating-card-detail"
-                    style={{ color: `var(--mantine-color-${item.designWorkColor || "gray"}-4)`, fontWeight: 850 }}
-                  >
-                    {item.designWorkLabel} · Design fee {item.designFeeStatus || "Not Required"}
-                  </span>
-                )}
-                <span className="mc-operating-card-foot">
-                  <span>Owner: {item.owner || "Unassigned"}</span>
-                  <span>{item.dueDisplay || item.nextAction || item.notes || item.date || item.day || "Date not set"}</span>
-                  {canCompleteNeedsAction(item) && (
-                    <button
-                      className="mc-card-complete"
-                      type="button"
-                      disabled={closingItemId === closeoutKey(item)}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        completeNeedsAction(item);
-                      }}
-                    >
-                      {closingItemId === closeoutKey(item) ? "Closing…" : "Complete"}
-                    </button>
-                  )}
-                </span>
-              </article>
-              );
-            })
-          )}
-        </div>
-      </section>
 
       <section className="mc-panel">
         <PanelHead
