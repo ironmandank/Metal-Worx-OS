@@ -250,6 +250,49 @@ async function resolveTargetCalendar(admin: any, connection: any, accessToken: s
   return target.id as string;
 }
 
+async function ensureCalendarWatch(admin: any, connection: any, accessToken: string, calendarId: string, supabaseUrl: string) {
+  const currentExpiration = connection.watch_expires_at ? new Date(connection.watch_expires_at).getTime() : 0;
+  if (
+    connection.watch_channel_id
+    && connection.watch_resource_id
+    && connection.watch_token_hash
+    && currentExpiration > Date.now() + 24 * 60 * 60 * 1000
+  ) {
+    return;
+  }
+
+  const channelId = crypto.randomUUID();
+  const channelToken = randomState();
+  const requestedExpiration = Date.now() + 6 * 24 * 60 * 60 * 1000;
+  const watch = await googleRequest(`${calendarEventsUrl(calendarId)}/watch`, accessToken, {
+    method: "POST",
+    body: JSON.stringify({
+      id: channelId,
+      type: "web_hook",
+      address: `${supabaseUrl}/functions/v1/google-calendar-sync?google_watch=1`,
+      token: channelToken,
+      expiration: String(requestedExpiration),
+    }),
+  });
+
+  const watchExpiration = watch?.expiration
+    ? new Date(Number(watch.expiration)).toISOString()
+    : new Date(requestedExpiration).toISOString();
+  const { error } = await admin.from("google_calendar_connections").update({
+    watch_channel_id: channelId,
+    watch_resource_id: watch?.resourceId || null,
+    watch_token_hash: await sha256(channelToken),
+    watch_expires_at: watchExpiration,
+    updated_at: new Date().toISOString(),
+  }).eq("id", connection.id);
+  if (error) throw error;
+
+  connection.watch_channel_id = channelId;
+  connection.watch_resource_id = watch?.resourceId || null;
+  connection.watch_token_hash = await sha256(channelToken);
+  connection.watch_expires_at = watchExpiration;
+}
+
 async function upsertLink(admin: any, connectionId: string, sourceType: string, sourceId: string, event: any) {
   const now = new Date().toISOString();
   const { error } = await admin.from("google_calendar_event_links").upsert({
@@ -316,6 +359,8 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
 
   try {
     const calendarId = await resolveTargetCalendar(admin, connection, accessToken);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    await ensureCalendarWatch(admin, connection, accessToken, calendarId, supabaseUrl);
     const eventsUrl = calendarEventsUrl(calendarId);
     const timeMin = addDays(new Date(), -30).toISOString();
     const timeMax = addDays(new Date(), 365).toISOString();
@@ -529,6 +574,25 @@ Deno.serve(async (request: Request) => {
 
   try {
     const url = new URL(request.url);
+    const watchChannelId = request.headers.get("x-goog-channel-id") || "";
+    if (watchChannelId) {
+      const watchResourceId = request.headers.get("x-goog-resource-id") || "";
+      const watchToken = request.headers.get("x-goog-channel-token") || "";
+      const { data: watchConnection, error: watchConnectionError } = await admin
+        .from("google_calendar_connections")
+        .select("*")
+        .eq("provider", "google")
+        .maybeSingle();
+      if (watchConnectionError || !watchConnection) return new Response(null, { status: 404 });
+      const validWatch = watchConnection.watch_channel_id === watchChannelId
+        && watchConnection.watch_resource_id === watchResourceId
+        && watchConnection.watch_token_hash
+        && watchConnection.watch_token_hash === await sha256(watchToken);
+      if (!validWatch) return new Response(null, { status: 403 });
+      const accessToken = await validAccessToken(admin, watchConnection, clientId, clientSecret);
+      await syncCalendar(admin, watchConnection, accessToken);
+      return new Response(null, { status: 204 });
+    }
     const requestBody = request.method === "GET" ? {} : await request.json().catch(() => ({}));
     const action = request.method === "GET" ? "callback" : clean(requestBody?.action, 40);
 
