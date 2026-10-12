@@ -26,6 +26,7 @@ import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowLeft,
+  IconBox,
   IconCalendarEvent,
   IconCash,
   IconCheck,
@@ -124,6 +125,13 @@ function ShowSales({ setPage, activeUser }) {
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileSearch, setReconcileSearch] = useState("");
   const [reconcileCounts, setReconcileCounts] = useState({});
+  const [crateAuditOpen, setCrateAuditOpen] = useState(false);
+  const [crateAuditLoading, setCrateAuditLoading] = useState(false);
+  const [crateAuditSaving, setCrateAuditSaving] = useState(false);
+  const [crateAuditRows, setCrateAuditRows] = useState([]);
+  const [crateAuditBins, setCrateAuditBins] = useState([]);
+  const [crateAuditBinId, setCrateAuditBinId] = useState(null);
+  const [crateAuditDrafts, setCrateAuditDrafts] = useState({});
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
@@ -276,6 +284,14 @@ function ShowSales({ setPage, activeUser }) {
         return count && Number(count.actualQuantity) !== Number(row.expected_quantity);
       }).length,
     [reconcileCounts, snapshots]
+  );
+  const crateAuditBinOptions = useMemo(() => crateAuditBins.map((bin) => ({
+    value: bin.id,
+    label: [bin.code, bin.name].filter(Boolean).join(" · "),
+  })), [crateAuditBins]);
+  const currentCrateAuditRows = useMemo(
+    () => crateAuditRows.filter((row) => row.bin_id === crateAuditBinId),
+    [crateAuditRows, crateAuditBinId]
   );
   const productTrends = useMemo(() => {
     const grouped = new Map();
@@ -839,6 +855,110 @@ function ShowSales({ setPage, activeUser }) {
     }));
   }
 
+  async function openCrateAudit() {
+    setCrateAuditOpen(true);
+    setCrateAuditLoading(true);
+    try {
+      const [balanceResult, binResult] = await Promise.all([
+        supabase
+          .from("inventory_bin_balances")
+          .select("inventory_item_id,item_number,sku,item_name,bin_id,bin_code,bin_name,quantity_on_hand")
+          .gt("quantity_on_hand", 0)
+          .order("bin_code")
+          .order("item_name"),
+        supabase
+          .from("inventory_bins")
+          .select("id,code,name,is_active")
+          .eq("is_active", true)
+          .order("code"),
+      ]);
+      if (balanceResult.error) throw balanceResult.error;
+      if (binResult.error) throw binResult.error;
+      const rows = balanceResult.data || [];
+      const showBins = (binResult.data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || "")));
+      const rowBinIds = new Set(rows.map((row) => row.bin_id));
+      const visibleBins = showBins.filter((bin) => rowBinIds.has(bin.id));
+      const drafts = {};
+      rows.forEach((row) => {
+        drafts[`${row.inventory_item_id}:${row.bin_id}`] = {
+          actualQuantity: Number(row.quantity_on_hand || 0),
+          destinationBinId: row.bin_id,
+        };
+      });
+      setCrateAuditRows(rows);
+      setCrateAuditBins(showBins);
+      setCrateAuditDrafts(drafts);
+      setCrateAuditBinId((current) => current && visibleBins.some((bin) => bin.id === current) ? current : visibleBins[0]?.id || null);
+    } catch (error) {
+      notifications.show({ title: "Crate Audit Could Not Load", message: error.message, color: "red" });
+      setCrateAuditOpen(false);
+    } finally {
+      setCrateAuditLoading(false);
+    }
+  }
+
+  function updateCrateAuditDraft(row, patch) {
+    const key = `${row.inventory_item_id}:${row.bin_id}`;
+    setCrateAuditDrafts((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
+  }
+
+  async function saveCurrentCrateAudit() {
+    if (!crateAuditBinId || !currentCrateAuditRows.length) return;
+    const sourceBin = crateAuditBins.find((bin) => bin.id === crateAuditBinId);
+    if (!window.confirm(`Save the physical counts and crate moves for ${sourceBin?.code || "this crate"}?`)) return;
+    setCrateAuditSaving(true);
+    try {
+      for (const row of currentCrateAuditRows) {
+        const key = `${row.inventory_item_id}:${row.bin_id}`;
+        const draft = crateAuditDrafts[key] || {};
+        const actualQuantity = Number(draft.actualQuantity ?? row.quantity_on_hand);
+        const destinationBinId = draft.destinationBinId || row.bin_id;
+        if (!Number.isFinite(actualQuantity) || actualQuantity < 0) {
+          throw new Error(`${row.item_name} needs a valid quantity of zero or more.`);
+        }
+        if (actualQuantity !== Number(row.quantity_on_hand)) {
+          const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
+            p_inventory_item_id: row.inventory_item_id,
+            p_bin_id: row.bin_id,
+            p_operation: "set",
+            p_quantity: actualQuantity,
+            p_reason: "Post-show physical recount",
+            p_notes: "Verified after the Mount Airy show and weather exposure.",
+            p_reference_type: "Post-Show Crate Audit",
+            p_reference_id: activeEvent?.id || null,
+            p_reference_number: activeEvent?.event_code || null,
+            p_performed_by: activeUser || null,
+          });
+          if (error) throw error;
+        }
+        if (destinationBinId !== row.bin_id && actualQuantity > 0) {
+          const { error } = await supabase.rpc("mw_transfer_inventory_quantity", {
+            p_inventory_item_id: row.inventory_item_id,
+            p_from_bin_id: row.bin_id,
+            p_to_bin_id: destinationBinId,
+            p_quantity: actualQuantity,
+            p_notes: `Moved during post-show crate audit from ${row.bin_code || "original crate"}.`,
+            p_performed_by: activeUser || null,
+          });
+          if (error) throw error;
+        }
+      }
+      notifications.show({
+        title: "Crate Updated",
+        message: `${sourceBin?.code || "The crate"} was saved. Quantities and crate moves are now reflected in current inventory.`,
+        color: "green",
+      });
+      await openCrateAudit();
+    } catch (error) {
+      notifications.show({ title: "Crate Could Not Be Saved", message: error.message, color: "red" });
+    } finally {
+      setCrateAuditSaving(false);
+    }
+  }
+
   async function closeAndReconcileShow() {
     if (!activeEvent) return;
     const missingReason = snapshots.find((row) => {
@@ -956,6 +1076,7 @@ function ShowSales({ setPage, activeUser }) {
         </Group>
         <Group>
           <Button variant="light" color="gray" leftSection={<IconRefresh size={18} />} onClick={loadData}>Refresh</Button>
+          <Button variant="light" color="green" leftSection={<IconBox size={18} />} onClick={openCrateAudit}>Post-Show Crate Audit</Button>
           <Button variant="light" color="red" leftSection={<IconSettings size={18} />} onClick={openCatalogManager}>Manage Quick-Sell Catalog</Button>
           <Button color="red" leftSection={<IconPlus size={18} />} onClick={() => setCreateOpen(true)}>Create Show</Button>
         </Group>
@@ -1646,6 +1767,93 @@ function ShowSales({ setPage, activeUser }) {
           <Textarea label="Sale notes" value={checkout.notes} onChange={(event) => setCheckout((current) => ({ ...current, notes: event.target.value }))} />
           <Group justify="flex-end"><Button variant="default" onClick={() => setCheckoutOpen(false)}>Back to Cart</Button><Button color="green" loading={saving} leftSection={<IconCheck size={18} />} onClick={completeSale}>Complete {money(checkoutTotal)} Sale</Button></Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={crateAuditOpen}
+        onClose={() => setCrateAuditOpen(false)}
+        title={<Text fw={900} c="white">Post-Show Inventory · Review by Crate</Text>}
+        fullScreen
+        zIndex={10000}
+        styles={{
+          header: { background: "#17191c", borderBottom: "1px solid rgba(255,255,255,.12)" },
+          body: { background: "#111316", minHeight: "calc(100vh - 60px)", padding: "24px" },
+          content: { background: "#111316" },
+        }}
+      >
+        {crateAuditLoading ? (
+          <Stack align="center" py={80}><Loader color="green" /><Text c="dimmed">Loading current crate inventory…</Text></Stack>
+        ) : (
+          <Stack gap="lg">
+            <Alert color="green" icon={<IconBox size={20} />} title="Count what physically came back">
+              Choose one crate, enter the quantity physically in front of you, and select a different crate only when the item has moved. Saving updates the current inventory immediately.
+            </Alert>
+            <Group align="flex-end" justify="space-between">
+              <Select
+                label="Crate being reviewed"
+                placeholder="Choose a crate"
+                searchable
+                data={crateAuditBinOptions}
+                value={crateAuditBinId}
+                onChange={setCrateAuditBinId}
+                style={{ flex: 1, maxWidth: 520 }}
+              />
+              <Badge color="green" variant="light" size="lg">{currentCrateAuditRows.length} item{currentCrateAuditRows.length === 1 ? "" : "s"}</Badge>
+            </Group>
+            {!crateAuditBinId ? (
+              <Alert color="gray">No active artwork crates with inventory were found.</Alert>
+            ) : (
+              <Table.ScrollContainer minWidth={850}>
+                <Table striped highlightOnHover verticalSpacing="sm">
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Item</Table.Th>
+                      <Table.Th w={170}>Recorded Quantity</Table.Th>
+                      <Table.Th w={180}>Actual Quantity Now</Table.Th>
+                      <Table.Th w={320}>Crate After Review</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {currentCrateAuditRows.map((row) => {
+                      const key = `${row.inventory_item_id}:${row.bin_id}`;
+                      const draft = crateAuditDrafts[key] || {};
+                      const changed = Number(draft.actualQuantity) !== Number(row.quantity_on_hand) || (draft.destinationBinId || row.bin_id) !== row.bin_id;
+                      return (
+                        <Table.Tr key={key} style={changed ? { background: "rgba(34,197,94,.08)" } : undefined}>
+                          <Table.Td>
+                            <Text fw={900}>{row.item_name}</Text>
+                            <Text size="xs" c="dimmed">{row.item_number || row.sku || "No item number"} · {row.bin_code}</Text>
+                          </Table.Td>
+                          <Table.Td><Badge color="gray" variant="light">{Number(row.quantity_on_hand)}</Badge></Table.Td>
+                          <Table.Td>
+                            <NumberInput
+                              min={0}
+                              decimalScale={0}
+                              value={draft.actualQuantity ?? Number(row.quantity_on_hand)}
+                              onChange={(value) => updateCrateAuditDraft(row, { actualQuantity: Number(value || 0) })}
+                            />
+                          </Table.Td>
+                          <Table.Td>
+                            <Select
+                              searchable
+                              data={crateAuditBinOptions}
+                              value={draft.destinationBinId || row.bin_id}
+                              onChange={(value) => updateCrateAuditDraft(row, { destinationBinId: value || row.bin_id })}
+                            />
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
+            <Group justify="space-between">
+              <Button variant="default" onClick={() => setCrateAuditOpen(false)}>Close Audit</Button>
+              <Button color="green" loading={crateAuditSaving} disabled={!currentCrateAuditRows.length} leftSection={<IconCheck size={18} />} onClick={saveCurrentCrateAudit}>Save This Crate</Button>
+            </Group>
+          </Stack>
+        )}
       </Modal>
 
       <Modal
