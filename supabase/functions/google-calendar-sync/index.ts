@@ -219,10 +219,11 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
 
   try {
     const timeMin = addDays(new Date(), -30).toISOString();
+    const timeMax = addDays(new Date(), 365).toISOString();
     let pageToken = "";
     const googleEvents: any[] = [];
     do {
-      const query = new URLSearchParams({ singleEvents: "true", showDeleted: "true", maxResults: "2500", timeMin });
+      const query = new URLSearchParams({ singleEvents: "true", showDeleted: "true", maxResults: "2500", timeMin, timeMax });
       if (pageToken) query.set("pageToken", pageToken);
       const page = await googleRequest(`${GOOGLE_EVENTS}?${query}`, accessToken);
       googleEvents.push(...(page.items || []));
@@ -284,7 +285,7 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
         ...times,
         location: clean(event.location, 1000) || null,
         notes: clean(event.description, 8000) || null,
-        status: "Scheduled",
+        status: local?.status === "Completed" ? "Completed" : "Scheduled",
         priority: local?.priority || "Normal",
         google_event_id: event.id,
         google_calendar_id: "primary",
