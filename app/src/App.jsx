@@ -485,7 +485,12 @@ function App() {
     }
 
     if (page === "companyCalendar") {
-      return <CompanyCalendar authenticatedProfile={authenticatedProfile} />;
+      return (
+        <CompanyCalendar
+          authenticatedProfile={authenticatedProfile}
+          openProject={openProject}
+        />
+      );
     }
 
     if (page === "callbacks") {
