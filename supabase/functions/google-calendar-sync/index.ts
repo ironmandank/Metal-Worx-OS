@@ -280,13 +280,24 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
         const localChanged = local.google_last_synced_at && new Date(local.updated_at || 0) > new Date(local.google_last_synced_at);
         const googleChanged = !local.google_updated_at || new Date(event.updated || 0) > new Date(local.google_updated_at);
         if (!localChanged || googleChanged) {
-          const { error } = await admin.from("company_calendar_events").update(payload).eq("id", local.id);
+          const { error } = await admin
+            .from("company_calendar_events")
+            .update({ ...payload, updated_by: connection.connected_by })
+            .eq("id", local.id);
           if (error) throw error;
           updated += 1;
         }
         await upsertLink(admin, connection.id, "company_event", local.id, event);
       } else {
-        const { data: inserted, error } = await admin.from("company_calendar_events").insert(payload).select("id").single();
+        const { data: inserted, error } = await admin
+          .from("company_calendar_events")
+          .insert({
+            ...payload,
+            created_by: connection.connected_by,
+            updated_by: connection.connected_by,
+          })
+          .select("id")
+          .single();
         if (error) throw error;
         await upsertLink(admin, connection.id, "company_event", inserted.id, event);
         imported += 1;
