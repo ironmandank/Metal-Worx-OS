@@ -85,6 +85,11 @@ function calendarEventsUrl(calendarId: string) {
   return `${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events`;
 }
 
+function silentGoogleEventUrl(url: string) {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}sendUpdates=none`;
+}
+
 function googleDateTime(event: any) {
   if (event?.start?.date) {
     const start = new Date(`${event.start.date}T00:00:00`);
@@ -272,14 +277,14 @@ async function pushCalendarSource(admin: any, connection: any, accessToken: stri
     if (linkError) throw linkError;
     const googleEventId = local.google_calendar_id === calendarId ? (local.google_event_id || link?.google_event_id) : null;
     if (local.status === "Cancelled") {
-      if (googleEventId) await googleRequest(`${eventsUrl}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "DELETE" });
+      if (googleEventId) await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(googleEventId)}`), accessToken, { method: "DELETE" });
       await admin.from("company_calendar_events").update({ google_sync_status: "Cancelled", google_last_synced_at: new Date().toISOString() }).eq("id", local.id);
       return { action: "deleted", source_type: sourceType, source_id: sourceId };
     }
     const resource = eventResource(local, sourceType);
     const event = googleEventId
-      ? await googleRequest(`${eventsUrl}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-      : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
+      ? await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(googleEventId)}`), accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+      : await googleRequest(silentGoogleEventUrl(eventsUrl), accessToken, { method: "POST", body: JSON.stringify(resource) });
     const now = new Date().toISOString();
     await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: calendarId, google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: now, google_sync_status: "Synced" }).eq("id", local.id);
     await upsertLink(admin, connection.id, sourceType, local.id, event);
@@ -296,8 +301,8 @@ async function pushCalendarSource(admin: any, connection: any, accessToken: stri
   if (linkError) throw linkError;
   const resource = eventResource(source, sourceType);
   const event = link?.google_event_id
-    ? await googleRequest(`${eventsUrl}/${encodeURIComponent(link.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-    : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
+    ? await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(link.google_event_id)}`), accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+    : await googleRequest(silentGoogleEventUrl(eventsUrl), accessToken, { method: "POST", body: JSON.stringify(resource) });
   await upsertLink(admin, connection.id, sourceType, sourceId, event);
   return { action: link?.google_event_id ? "updated" : "created", source_type: sourceType, source_id: sourceId };
 }
@@ -315,7 +320,7 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
     const timeMin = addDays(new Date(), -30).toISOString();
     const timeMax = addDays(new Date(), 365).toISOString();
     let pageToken = "";
-    const googleEvents: any[] = [];
+    let googleEvents: any[] = [];
     do {
       const query = new URLSearchParams({ singleEvents: "true", showDeleted: "true", maxResults: "2500", timeMin, timeMax });
       if (pageToken) query.set("pageToken", pageToken);
@@ -323,6 +328,24 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       googleEvents.push(...(page.items || []));
       pageToken = page.nextPageToken || "";
     } while (pageToken);
+
+    // A previous primary-calendar connection could leave personal Google events in
+    // Metal Worx OS. Archive those imported rows first. Genuine, unmanaged events
+    // from the selected calendar are restored by the import loop below; app-managed
+    // copies of old imports stay archived and are never exported again.
+    const { data: googleOriginRows, error: googleOriginError } = await admin
+      .from("company_calendar_events")
+      .select("id")
+      .eq("calendar_source", "google");
+    if (googleOriginError) throw googleOriginError;
+    const googleOriginIds = new Set((googleOriginRows || []).map((row: any) => String(row.id)));
+    if (googleOriginIds.size) {
+      const { error: originArchiveError } = await admin
+        .from("company_calendar_events")
+        .update({ status: "Cancelled", google_sync_status: "Archived old calendar import" })
+        .in("id", Array.from(googleOriginIds));
+      if (originArchiveError) throw originArchiveError;
+    }
 
     const { data: links, error: linksError } = await admin.from("google_calendar_event_links").select("*").eq("connection_id", connection.id);
     if (linksError) throw linksError;
@@ -334,6 +357,14 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       const privateProps = event.extendedProperties?.private || {};
       const sourceType = link?.source_type || privateProps.mw_source_type;
       const sourceId = link?.source_id || privateProps.mw_source_id;
+
+      if (
+        privateProps.mw_managed === "true"
+        && sourceType === "company_event"
+        && googleOriginIds.has(String(sourceId || ""))
+      ) {
+        continue;
+      }
 
       if (["project_site_visit", "project_test_fit", "project_install", "project_general_work"].includes(sourceType)) {
         if (!sourceId || event.status === "cancelled") continue;
@@ -426,21 +457,24 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
     if (localError) throw localError;
     for (const local of localEvents || []) {
       if (local.outside_project_id) continue;
+      // Google-origin events are imported from the selected calendar only. Never
+      // export them into a different calendar or turn an old import into a copy.
+      if (local.calendar_source === "google") continue;
       const resource = eventResource(local, "company_event");
       if (local.google_event_id) {
         if (local.status === "Cancelled") {
           if (googleById.get(local.google_event_id)?.status !== "cancelled") {
-            await googleRequest(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "DELETE" });
+            await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`), accessToken, { method: "DELETE" });
           }
           await admin.from("company_calendar_events").update({ google_sync_status: "Cancelled", google_last_synced_at: new Date().toISOString() }).eq("id", local.id);
         } else if (!local.google_last_synced_at || new Date(local.updated_at || 0) > new Date(local.google_last_synced_at)) {
-          const event = await googleRequest(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) });
+          const event = await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(local.google_event_id)}`), accessToken, { method: "PATCH", body: JSON.stringify(resource) });
           await admin.from("company_calendar_events").update({ google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: new Date().toISOString(), google_sync_status: "Synced" }).eq("id", local.id);
           await upsertLink(admin, connection.id, "company_event", local.id, event);
           exported += 1;
         }
       } else if (local.status !== "Cancelled") {
-        const event = await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
+        const event = await googleRequest(silentGoogleEventUrl(eventsUrl), accessToken, { method: "POST", body: JSON.stringify(resource) });
         await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: calendarId, google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: new Date().toISOString(), google_sync_status: "Synced" }).eq("id", local.id);
         await upsertLink(admin, connection.id, "company_event", local.id, event);
         exported += 1;
@@ -465,8 +499,8 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
         const existing = linksBySource.get(`${sourceType}:${project.id}`);
         const resource = eventResource(source, sourceType);
         const event = existing
-          ? await googleRequest(`${eventsUrl}/${encodeURIComponent(existing.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
-          : await googleRequest(eventsUrl, accessToken, { method: "POST", body: JSON.stringify(resource) });
+          ? await googleRequest(silentGoogleEventUrl(`${eventsUrl}/${encodeURIComponent(existing.google_event_id)}`), accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+          : await googleRequest(silentGoogleEventUrl(eventsUrl), accessToken, { method: "POST", body: JSON.stringify(resource) });
         await upsertLink(admin, connection.id, sourceType, project.id, event);
         exported += 1;
       }
