@@ -210,6 +210,46 @@ async function upsertLink(admin: any, connectionId: string, sourceType: string, 
   if (error) throw error;
 }
 
+async function pushCalendarSource(admin: any, connection: any, accessToken: string, sourceType: string, sourceId: string) {
+  const allowedProjectSources = ["project_site_visit", "project_test_fit", "project_install", "project_general_work"];
+  if (sourceType === "company_event") {
+    const { data: local, error } = await admin.from("company_calendar_events").select("*").eq("id", sourceId).maybeSingle();
+    if (error) throw error;
+    if (!local) throw new Error("The Metal Worx calendar event was not found.");
+    const { data: link, error: linkError } = await admin.from("google_calendar_event_links").select("*").eq("connection_id", connection.id).eq("source_type", sourceType).eq("source_id", sourceId).maybeSingle();
+    if (linkError) throw linkError;
+    const googleEventId = local.google_event_id || link?.google_event_id;
+    if (local.status === "Cancelled") {
+      if (googleEventId) await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "DELETE" });
+      await admin.from("company_calendar_events").update({ google_sync_status: "Cancelled", google_last_synced_at: new Date().toISOString() }).eq("id", local.id);
+      return { action: "deleted", source_type: sourceType, source_id: sourceId };
+    }
+    const resource = eventResource(local, sourceType);
+    const event = googleEventId
+      ? await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(googleEventId)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+      : await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
+    const now = new Date().toISOString();
+    await admin.from("company_calendar_events").update({ google_event_id: event.id, google_calendar_id: "primary", google_etag: event.etag || null, google_updated_at: event.updated || null, google_last_synced_at: now, google_sync_status: "Synced" }).eq("id", local.id);
+    await upsertLink(admin, connection.id, sourceType, local.id, event);
+    return { action: googleEventId ? "updated" : "created", source_type: sourceType, source_id: sourceId };
+  }
+
+  if (!allowedProjectSources.includes(sourceType)) throw new Error("Unsupported calendar source type.");
+  const { data: project, error } = await admin.from("projects").select("*").eq("id", sourceId).maybeSingle();
+  if (error) throw error;
+  if (!project) throw new Error("The outside project was not found.");
+  const source = projectEvent(project, sourceType);
+  if (!source.start_at) throw new Error("The outside project activity does not have a scheduled date.");
+  const { data: link, error: linkError } = await admin.from("google_calendar_event_links").select("*").eq("connection_id", connection.id).eq("source_type", sourceType).eq("source_id", sourceId).maybeSingle();
+  if (linkError) throw linkError;
+  const resource = eventResource(source, sourceType);
+  const event = link?.google_event_id
+    ? await googleRequest(`${GOOGLE_EVENTS}/${encodeURIComponent(link.google_event_id)}`, accessToken, { method: "PATCH", body: JSON.stringify(resource) })
+    : await googleRequest(GOOGLE_EVENTS, accessToken, { method: "POST", body: JSON.stringify(resource) });
+  await upsertLink(admin, connection.id, sourceType, sourceId, event);
+  return { action: link?.google_event_id ? "updated" : "created", source_type: sourceType, source_id: sourceId };
+}
+
 async function syncCalendar(admin: any, connection: any, accessToken: string) {
   const startedAt = new Date().toISOString();
   await admin.from("google_calendar_connections").update({ last_sync_started_at: startedAt, last_sync_status: "Running", last_sync_error: null }).eq("id", connection.id);
@@ -401,7 +441,8 @@ Deno.serve(async (request: Request) => {
 
   try {
     const url = new URL(request.url);
-    const action = request.method === "GET" ? "callback" : clean((await request.json().catch(() => ({})))?.action, 40);
+    const requestBody = request.method === "GET" ? {} : await request.json().catch(() => ({}));
+    const action = request.method === "GET" ? "callback" : clean(requestBody?.action, 40);
 
     if (action === "callback") {
       const code = clean(url.searchParams.get("code"), 5000);
@@ -471,6 +512,18 @@ Deno.serve(async (request: Request) => {
       if (!connection || connection.status !== "Connected") return json(request, { error: "Connect Kory's Google Calendar before syncing." }, 409);
       const accessToken = await validAccessToken(admin, connection, clientId, clientSecret);
       return json(request, { result: await syncCalendar(admin, connection, accessToken) });
+    }
+
+    if (action === "push") {
+      if (!connection || connection.status !== "Connected") return json(request, { error: "Connect Kory's Google Calendar before syncing." }, 409);
+      const sourceType = clean(requestBody?.source_type, 80);
+      const sourceId = clean(requestBody?.source_id, 160);
+      if (!sourceType || !sourceId) return json(request, { error: "A calendar source type and ID are required." }, 400);
+      const accessToken = await validAccessToken(admin, connection, clientId, clientSecret);
+      const result = await pushCalendarSource(admin, connection, accessToken, sourceType, sourceId);
+      const completedAt = new Date().toISOString();
+      await admin.from("google_calendar_connections").update({ last_sync_completed_at: completedAt, last_sync_status: "Completed", last_sync_error: null, updated_at: completedAt }).eq("id", connection.id);
+      return json(request, { result });
     }
 
     if (action === "disconnect") {
