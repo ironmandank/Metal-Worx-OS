@@ -202,6 +202,15 @@ const styles = `
   }
   .mc-operating-card-foot { padding-top: 6px; border-top: 1px solid #2e383f; color: #9da7ae; font-size: .59rem; }
   .mc-operating-card-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mc-card-complete {
+    min-height: 28px; padding: 0 9px; border: 1px solid #477334; border-radius: 6px;
+    color: #dfffd1; background: #1b3514; font: inherit; font-size: .6rem; font-weight: 900;
+    cursor: pointer; white-space: nowrap;
+  }
+  .mc-card-complete:hover { border-color: var(--mc-green); background: #274d1d; }
+  .mc-card-complete:disabled { cursor: wait; opacity: .58; }
+  .mc-closeout-message { margin: 10px 10px 0; padding: 9px 11px; border: 1px solid #477334; border-radius: 6px; color: #dfffd1; background: #142510; font-size: .67rem; }
+  .mc-closeout-message.error { border-color: #9d2530; color: #ffd5d8; background: #351116; }
   .mc-link {
     border: 0; color: #d9dfe3; background: transparent; font: inherit; font-size: .72rem;
     cursor: pointer; white-space: nowrap;
@@ -739,6 +748,8 @@ function Dashboard({
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefText, setBriefText] = useState("");
   const [briefCopied, setBriefCopied] = useState(false);
+  const [closingItemId, setClosingItemId] = useState("");
+  const [closeoutMessage, setCloseoutMessage] = useState(null);
 
   useEffect(() => {
     loadDashboard();
@@ -840,6 +851,94 @@ function Dashboard({
       return;
     }
     goToActionCenter("All");
+  }
+
+  function closeoutKey(item) {
+    return `${item.dashboardGroup || "item"}-${item.id || item.sourceId}`;
+  }
+
+  function canCompleteNeedsAction(item) {
+    if (item.dashboardGroup === "Field Work") return true;
+    if (item.dashboardGroup === "Blockers") return false;
+    return ["hotToday", "quickCommitment", "artHotItem", "customerOrder", "productionJob", "workOrder"].includes(item.sourceType);
+  }
+
+  async function completeNeedsAction(item) {
+    const key = closeoutKey(item);
+    const title = item.title || item.customer || item.job || "this item";
+    const group = item.dashboardGroup;
+    let table;
+    let recordId;
+    let updates;
+
+    if (group === "Field Work") {
+      if (item.sourceType === "prequoteSiteVisit") {
+        table = "prequote_site_visits";
+        recordId = item.siteVisitId;
+        updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      } else {
+        table = "projects";
+        recordId = item.projectId || item.sourceId;
+        const milestoneField = String(item.id || "").startsWith("site-")
+          ? "site_visit_status"
+          : String(item.id || "").startsWith("test-fit-")
+            ? "test_fit_status"
+            : "install_status";
+        updates = { [milestoneField]: "Completed", updated_at: new Date().toISOString() };
+      }
+    } else if (item.sourceType === "hotToday") {
+      table = "hot_today_items";
+      recordId = item.id;
+      updates = { status: "Completed" };
+    } else if (item.sourceType === "quickCommitment") {
+      table = "quick_turnaround_commitments";
+      recordId = item.id;
+      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    } else if (item.sourceType === "artHotItem") {
+      table = "art_hot_items";
+      recordId = item.id;
+      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    } else if (item.sourceType === "callback") {
+      table = "callbacks";
+      recordId = item.sourceId;
+      updates = { status: "Completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    } else if (item.sourceType === "customerOrder") {
+      table = "customer_orders";
+      recordId = item.sourceId || item.id;
+      updates = { status: "Completed", updated_at: new Date().toISOString() };
+    } else if (item.sourceType === "productionJob") {
+      table = "production_jobs";
+      recordId = item.sourceId;
+      updates = { status: "Completed", current_department: "Completed", progress_percent: 100, is_active: false };
+    } else if (item.sourceType === "workOrder") {
+      table = "work_orders";
+      recordId = item.sourceId;
+      updates = { status: "Completed", completed_at: new Date().toISOString() };
+    } else if (item.sourceType === "project") {
+      table = "projects";
+      recordId = item.sourceId;
+      updates = { status: "Completed", percent_complete: 100, completed_at: new Date().toISOString(), next_action: "Project complete", is_active: false };
+    }
+
+    if (!table || !recordId) {
+      setCloseoutMessage({ type: "error", text: "Open this item to complete its specific workflow step." });
+      return;
+    }
+
+    if (!window.confirm(`Mark “${title}” complete? This will update the actual ${group === "Field Work" ? "field milestone" : "work record"} and remove it from Needs Action Now.`)) return;
+
+    setClosingItemId(key);
+    setCloseoutMessage(null);
+    try {
+      const { error } = await supabase.from(table).update(updates).eq("id", recordId);
+      if (error) throw error;
+      await loadDashboard(false);
+      setCloseoutMessage({ type: "success", text: `${title} was completed and removed from the active action list.` });
+    } catch (error) {
+      setCloseoutMessage({ type: "error", text: error?.message || "This item could not be completed." });
+    } finally {
+      setClosingItemId("");
+    }
   }
 
   const stats = dashboardData?.stats || {};
@@ -1456,6 +1555,11 @@ function Dashboard({
             );
           })}
         </div>
+        {closeoutMessage && (
+          <div className={`mc-closeout-message ${closeoutMessage.type === "error" ? "error" : ""}`} role="status">
+            {closeoutMessage.text}
+          </div>
+        )}
         <div className="mc-operating-list">
           {todayItems.length === 0 ? (
             <Empty
@@ -1465,9 +1569,10 @@ function Dashboard({
             todayItems.map((item, index) => {
               const countdown = getDeadlineCountdown(item);
               return (
-              <button
+              <article
                 className="mc-operating-card"
-                type="button"
+                role="button"
+                tabIndex={0}
                 key={`${item.dashboardGroup}-${item.id || item.sourceId || index}`}
                 onClick={() => {
                   if (item.dashboardGroup === "Hot Artwork") {
@@ -1487,6 +1592,9 @@ function Dashboard({
                     return;
                   }
                   openAction(item);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
                 }}
               >
                 <span className="mc-operating-card-head">
@@ -1509,8 +1617,21 @@ function Dashboard({
                 <span className="mc-operating-card-foot">
                   <span>Owner: {item.owner || "Unassigned"}</span>
                   <span>{item.dueDisplay || item.nextAction || item.notes || item.date || item.day || "Date not set"}</span>
+                  {canCompleteNeedsAction(item) && (
+                    <button
+                      className="mc-card-complete"
+                      type="button"
+                      disabled={closingItemId === closeoutKey(item)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        completeNeedsAction(item);
+                      }}
+                    >
+                      {closingItemId === closeoutKey(item) ? "Closing…" : "Complete"}
+                    </button>
+                  )}
                 </span>
-              </button>
+              </article>
               );
             })
           )}
