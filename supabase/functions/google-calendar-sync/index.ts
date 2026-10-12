@@ -119,17 +119,28 @@ function eventResource(source: any, sourceType = "company_event") {
   };
 }
 
-function projectEvent(project: any, type: "project_site_visit" | "project_install") {
-  const siteVisit = type === "project_site_visit";
-  const startAt = siteVisit ? project.site_visit_start : (project.install_start || project.install_date);
-  const endAt = siteVisit ? project.site_visit_end : project.install_end;
+function projectEvent(
+  project: any,
+  type:
+    | "project_site_visit"
+    | "project_test_fit"
+    | "project_install"
+    | "project_general_work",
+) {
+  const schedule = {
+    project_site_visit: ["Site Visit", project.site_visit_start, project.site_visit_end],
+    project_test_fit: ["Test Fit", project.test_fit_start, project.test_fit_end],
+    project_install: ["Installation", project.install_start || project.install_date, project.install_end],
+    project_general_work: ["Outside Job", project.planned_start_date, project.target_completion_date],
+  }[type];
+  const [label, startAt, endAt] = schedule;
   const projectName = project.project_name || project.name || project.title || project.customer_name || project.project_number || `Project ${project.id}`;
   return {
     id: project.id,
-    title: `${siteVisit ? "Site Visit" : "Installation"}: ${projectName}`,
+    title: `${label}: ${projectName}`,
     start_at: startAt,
     end_at: endAt || new Date(new Date(startAt).getTime() + 60 * 60 * 1000).toISOString(),
-    all_day: false,
+    all_day: type === "project_general_work",
     notes: project.scheduled_notes || project.install_notes || project.site_visit_result_notes || "",
     location: project.location || project.project_location || project.site_address || "",
   };
@@ -229,12 +240,19 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       const sourceType = link?.source_type || privateProps.mw_source_type;
       const sourceId = link?.source_id || privateProps.mw_source_id;
 
-      if (sourceType === "project_site_visit" || sourceType === "project_install") {
+      if (["project_site_visit", "project_test_fit", "project_install", "project_general_work"].includes(sourceType)) {
         if (!sourceId || event.status === "cancelled") continue;
         const times = googleDateTime(event);
         const patch = sourceType === "project_site_visit"
           ? { site_visit_start: times.start_at, site_visit_end: times.end_at }
-          : { install_start: times.start_at, install_end: times.end_at };
+          : sourceType === "project_test_fit"
+            ? { test_fit_start: times.start_at, test_fit_end: times.end_at }
+            : sourceType === "project_install"
+              ? { install_start: times.start_at, install_end: times.end_at }
+              : {
+                  planned_start_date: times.start_at.slice(0, 10),
+                  target_completion_date: times.end_at.slice(0, 10),
+                };
         const { error } = await admin.from("projects").update(patch).eq("id", sourceId);
         if (error) throw error;
         await upsertLink(admin, connection.id, sourceType, sourceId, event);
@@ -307,6 +325,7 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
     const { data: localEvents, error: localError } = await admin.from("company_calendar_events").select("*").gte("end_at", timeMin).order("start_at");
     if (localError) throw localError;
     for (const local of localEvents || []) {
+      if (local.outside_project_id) continue;
       const resource = eventResource(local, "company_event");
       if (local.google_event_id) {
         if (local.status === "Cancelled") {
@@ -328,11 +347,19 @@ async function syncCalendar(admin: any, connection: any, accessToken: string) {
       }
     }
 
-    const { data: projects, error: projectError } = await admin.from("projects").select("*").or(`site_visit_start.gte.${timeMin},install_start.gte.${timeMin}`);
+    const { data: projects, error: projectError } = await admin
+      .from("projects")
+      .select("*")
+      .or(`site_visit_start.gte.${timeMin},test_fit_start.gte.${timeMin},install_start.gte.${timeMin},planned_start_date.gte.${timeMin.slice(0, 10)}`);
     if (projectError) throw projectError;
     const linksBySource = new Map((links || []).map((link: any) => [`${link.source_type}:${link.source_id}`, link]));
     for (const project of projects || []) {
-      for (const sourceType of ["project_site_visit", "project_install"] as const) {
+      for (const sourceType of [
+        "project_site_visit",
+        "project_test_fit",
+        "project_install",
+        "project_general_work",
+      ] as const) {
         const source = projectEvent(project, sourceType);
         if (!source.start_at) continue;
         const existing = linksBySource.get(`${sourceType}:${project.id}`);
