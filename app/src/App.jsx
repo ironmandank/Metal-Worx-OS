@@ -16,6 +16,7 @@ const Dashboard = page("Dashboard");
 const MorningHuddleTV = page("MorningHuddleTV");
 const ActionCenter = page("ActionCenter");
 const MyTasks = page("MyTasks");
+const CompanyCalendar = page("CompanyCalendar");
 const Callbacks = page("Callbacks");
 const InternalChat = page("InternalChat");
 const Reports = page("Reports");
@@ -476,6 +477,10 @@ function App() {
 
     if (page === "myTasks") {
       return <MyTasks setPage={setPage} authenticatedProfile={authenticatedProfile} />;
+    }
+
+    if (page === "companyCalendar") {
+      return <CompanyCalendar />;
     }
 
     if (page === "callbacks") {
