@@ -69,9 +69,9 @@ const EVENT_COLORS = {
   "Holiday / Closure": "#ef4444",
   Training: "#14b8a6",
   "Equipment Maintenance": "#f59e0b",
-  "Delivery / Vendor": "#22c55e",
+  "Delivery / Vendor": "#06b6d4",
   "Important Reminder": "#f97316",
-  "Outside Job": "#dc2626",
+  "Outside Job": "#22c55e",
 };
 
 const DEPARTMENTS = [
