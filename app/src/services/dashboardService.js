@@ -1895,6 +1895,7 @@ export async function getDashboardData() {
 
     if (
       project.site_visit_start &&
+      normalizeStatus(project.site_visit_status) !== "completed" &&
       isWithinNextDays(
         project.site_visit_start,
         7
@@ -1939,6 +1940,7 @@ export async function getDashboardData() {
 
     if (
       project.test_fit_start &&
+      normalizeStatus(project.test_fit_status) !== "completed" &&
       isWithinNextDays(
         project.test_fit_start,
         7
@@ -1990,6 +1992,7 @@ export async function getDashboardData() {
 
     if (
       scheduledInstallDate &&
+      normalizeStatus(project.install_status) !== "completed" &&
       isWithinNextDays(
         scheduledInstallDate,
         7
