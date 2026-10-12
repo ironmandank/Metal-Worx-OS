@@ -896,13 +896,38 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
     }
   }, [authenticatedProfile]);
 
-  async function calendarAction(action) {
+  async function calendarAction(action, payload = {}) {
     const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
-      body: { action },
+      body: { action, ...payload },
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
     return data;
+  }
+
+  function projectGoogleSource(milestone) {
+    return {
+      "Site Visit": "project_site_visit",
+      "Test Fit": "project_test_fit",
+      Installation: "project_install",
+      "General Work": "project_general_work",
+    }[milestone || "General Work"] || "project_general_work";
+  }
+
+  async function pushGoogleChange(sourceType, sourceId) {
+    if (googleConnection?.status !== "Connected" || !sourceId) return false;
+    try {
+      await calendarAction("push", { source_type: sourceType, source_id: String(sourceId) });
+      await loadGoogleStatus();
+      return true;
+    } catch (error) {
+      notifications.show({
+        color: "orange",
+        title: "Saved in Metal Worx OS",
+        message: `Google Calendar did not update: ${error.message}`,
+      });
+      return false;
+    }
   }
 
   async function loadGoogleStatus() {
@@ -1393,12 +1418,18 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
 
       if (result.error) throw result.error;
 
+      const googleUpdated = form.event_type === "Outside Job" && form.outside_project_id
+        ? await pushGoogleChange(projectGoogleSource(form.outside_project_milestone), form.outside_project_id)
+        : await pushGoogleChange("company_event", result.data.id);
+
       notifications.show({
         color: "green",
         title: form.id ? "Event updated" : "Event added",
         message: requiresApproval
           ? "The event was saved and marked pending approval."
-          : "The company calendar has been updated.",
+          : googleUpdated
+            ? "Metal Worx OS and Kory's Google Calendar were updated."
+            : "The company calendar has been updated.",
       });
 
       setModalOpened(false);
@@ -1445,11 +1476,14 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
 
       if (error) throw error;
 
+      const googleUpdated = await pushGoogleChange("company_event", form.id);
+
       notifications.show({
         color: "green",
         title: "Event cancelled",
-        message:
-          "The event was cancelled and will be removed from Google Calendar during the next sync.",
+        message: googleUpdated
+          ? "The event was removed from Metal Worx OS and Kory's Google Calendar."
+          : "The event was cancelled in Metal Worx OS.",
       });
 
       setModalOpened(false);
@@ -1511,6 +1545,12 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
             .eq("id", Number(form.outside_project_id));
           if (error) throw error;
         }
+      }
+
+      if (form.outside_project_id) {
+        await pushGoogleChange(projectGoogleSource(form.outside_project_milestone), form.outside_project_id);
+      } else if (form.id) {
+        await pushGoogleChange("company_event", form.id);
       }
 
       notifications.show({
