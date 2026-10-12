@@ -9,3 +9,9 @@ entrypoint = "./functions/manage-employee-login/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/manage-employee-login/*.html" ]
+
+[functions.google-calendar-sync]
+enabled = true
+verify_jwt = false
+import_map = "./functions/google-calendar-sync/deno.json"
+entrypoint = "./functions/google-calendar-sync/index.ts"
