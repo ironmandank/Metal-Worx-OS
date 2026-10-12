@@ -30,6 +30,7 @@ import {
   IconEdit,
   IconMapPin,
   IconPlus,
+  IconBriefcase,
   IconRefresh,
   IconSearch,
   IconTrash,
@@ -49,6 +50,14 @@ const EVENT_TYPES = [
   "Equipment Maintenance",
   "Delivery / Vendor",
   "Important Reminder",
+  "Outside Job",
+];
+
+const OUTSIDE_JOB_MILESTONES = [
+  "General Work",
+  "Site Visit",
+  "Test Fit",
+  "Installation",
 ];
 
 const PRIORITIES = ["Low", "Normal", "High", "Critical"];
@@ -62,6 +71,7 @@ const EVENT_COLORS = {
   "Equipment Maintenance": "#f59e0b",
   "Delivery / Vendor": "#22c55e",
   "Important Reminder": "#f97316",
+  "Outside Job": "#dc2626",
 };
 
 const DEPARTMENTS = [
@@ -772,15 +782,18 @@ function emptyForm(dateValue = new Date()) {
     status: "Scheduled",
     priority: "Normal",
     created_by: "",
+    outside_project_id: "",
+    outside_project_milestone: "General Work",
   };
 }
 
-function CompanyCalendar({ authenticatedProfile }) {
+function CompanyCalendar({ authenticatedProfile, openProject }) {
   const [monthDate, setMonthDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
   const [events, setEvents] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [outsideProjects, setOutsideProjects] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -871,7 +884,7 @@ function CompanyCalendar({ authenticatedProfile }) {
         monthDays[monthDays.length - 1]
       ).toISOString();
 
-      const [eventsResult, employeesResult, profileResult] =
+      const [eventsResult, employeesResult, profileResult, projectsResult] =
         await Promise.all([
           supabase
             .from("company_calendar_events")
@@ -905,14 +918,87 @@ function CompanyCalendar({ authenticatedProfile }) {
                 .eq("auth_user_id", user.id)
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
+          supabase
+            .from("projects")
+            .select(
+              "id,project_number,project_name,project_type,status,is_active,work_location,job_address,city,state,planned_start_date,target_completion_date,site_visit_start,site_visit_end,test_fit_start,test_fit_end,install_start,install_end"
+            )
+            .eq("is_active", true)
+            .order("project_name", { ascending: true }),
         ]);
 
       if (eventsResult.error) throw eventsResult.error;
       if (employeesResult.error) throw employeesResult.error;
       if (profileResult.error) throw profileResult.error;
+      if (projectsResult.error) throw projectsResult.error;
 
-      setEvents(eventsResult.data || []);
+      const calendarEvents = eventsResult.data || [];
+      const linkedKeys = new Set(
+        calendarEvents
+          .filter((event) => event.outside_project_id)
+          .map(
+            (event) =>
+              `${event.outside_project_id}:${event.outside_project_milestone || "General Work"}`
+          )
+      );
+      const projectEvents = [];
+      for (const project of projectsResult.data || []) {
+        const milestones = [
+          ["Site Visit", project.site_visit_start, project.site_visit_end],
+          ["Test Fit", project.test_fit_start, project.test_fit_end],
+          ["Installation", project.install_start, project.install_end],
+          ["General Work", project.planned_start_date, project.target_completion_date],
+        ];
+        for (const [milestone, startValue, endValue] of milestones) {
+          if (!startValue || linkedKeys.has(`${project.id}:${milestone}`)) continue;
+          const start = new Date(startValue);
+          const end = endValue ? new Date(endValue) : new Date(start.getTime() + 60 * 60 * 1000);
+          if (end < new Date(rangeStart) || start > new Date(rangeEnd)) continue;
+          projectEvents.push({
+            id: `project-${project.id}-${milestone}`,
+            title: `${project.project_name} — ${milestone}`,
+            event_type: "Outside Job",
+            start_at: start.toISOString(),
+            end_at: end.toISOString(),
+            all_day: milestone === "General Work",
+            department: "Outside Fabrication",
+            location: project.work_location || project.job_address || null,
+            status: project.status || "Scheduled",
+            priority: "Normal",
+            outside_project_id: project.id,
+            outside_project_milestone: milestone,
+            project,
+            is_project_schedule: true,
+          });
+        }
+      }
+      const mergedEvents = calendarEvents.map((event) => {
+        if (!event.outside_project_id) return event;
+        const project = (projectsResult.data || []).find(
+          (item) => String(item.id) === String(event.outside_project_id)
+        );
+        if (!project) return event;
+        const milestone = event.outside_project_milestone || "General Work";
+        const schedule = {
+          "Site Visit": [project.site_visit_start, project.site_visit_end],
+          "Test Fit": [project.test_fit_start, project.test_fit_end],
+          Installation: [project.install_start, project.install_end],
+          "General Work": [project.planned_start_date, project.target_completion_date],
+        }[milestone];
+        return schedule?.[0]
+          ? {
+              ...event,
+              start_at: new Date(schedule[0]).toISOString(),
+              end_at: schedule[1]
+                ? new Date(schedule[1]).toISOString()
+                : event.end_at,
+              project,
+            }
+          : { ...event, project };
+      });
+      setEvents([...mergedEvents, ...projectEvents]);
       setEmployees(employeesResult.data || []);
+      setOutsideProjects(projectsResult.data || []);
       setCurrentProfile(profileResult.data || null);
     } catch (error) {
       console.error("Company Calendar load error:", error);
@@ -934,6 +1020,15 @@ function CompanyCalendar({ authenticatedProfile }) {
         label: employee.display_name,
       })),
     [employees]
+  );
+
+  const outsideProjectOptions = useMemo(
+    () =>
+      outsideProjects.map((project) => ({
+        value: String(project.id),
+        label: `${project.project_number ? `${project.project_number} · ` : ""}${project.project_name}`,
+      })),
+    [outsideProjects]
   );
 
   const filteredEvents = useMemo(() => {
@@ -1057,7 +1152,7 @@ function CompanyCalendar({ authenticatedProfile }) {
 
   function openExistingEvent(event) {
     setForm({
-      id: event.id,
+      id: event.is_project_schedule ? "" : event.id,
       title: event.title || "",
       event_type: event.event_type || "Company Event",
       start_at: toLocalInputValue(event.start_at),
@@ -1070,6 +1165,11 @@ function CompanyCalendar({ authenticatedProfile }) {
       status: event.status || "Scheduled",
       priority: event.priority || "Normal",
       created_by: event.created_by || "",
+      outside_project_id: event.outside_project_id
+        ? String(event.outside_project_id)
+        : "",
+      outside_project_milestone:
+        event.outside_project_milestone || "General Work",
     });
     setModalOpened(true);
   }
@@ -1140,7 +1240,48 @@ function CompanyCalendar({ authenticatedProfile }) {
         status: requiresApproval
           ? "Pending Approval"
           : form.status,
+        outside_project_id:
+          form.event_type === "Outside Job" && form.outside_project_id
+            ? Number(form.outside_project_id)
+            : null,
+        outside_project_milestone:
+          form.event_type === "Outside Job" && form.outside_project_id
+            ? form.outside_project_milestone || "General Work"
+            : null,
       };
+
+      if (form.event_type === "Outside Job" && form.outside_project_id) {
+        const projectPatch = {};
+        if (form.outside_project_milestone === "Site Visit") {
+          Object.assign(projectPatch, {
+            site_visit_required: true,
+            site_visit_start: start.toISOString(),
+            site_visit_end: end.toISOString(),
+          });
+        } else if (form.outside_project_milestone === "Test Fit") {
+          Object.assign(projectPatch, {
+            test_fit_required: true,
+            test_fit_start: start.toISOString(),
+            test_fit_end: end.toISOString(),
+          });
+        } else if (form.outside_project_milestone === "Installation") {
+          Object.assign(projectPatch, {
+            install_required: true,
+            install_start: start.toISOString(),
+            install_end: end.toISOString(),
+          });
+        } else {
+          Object.assign(projectPatch, {
+            planned_start_date: start.toISOString().slice(0, 10),
+            target_completion_date: end.toISOString().slice(0, 10),
+          });
+        }
+        const { error: projectError } = await supabase
+          .from("projects")
+          .update(projectPatch)
+          .eq("id", Number(form.outside_project_id));
+        if (projectError) throw projectError;
+      }
 
       let result;
 
@@ -1670,9 +1811,17 @@ function CompanyCalendar({ authenticatedProfile }) {
               label="Event Type"
               data={EVENT_TYPES}
               value={form.event_type}
-              onChange={(value) =>
-                updateForm("event_type", value || "Company Event")
-              }
+              onChange={(value) => {
+                const eventType = value || "Company Event";
+                setForm((current) => ({
+                  ...current,
+                  event_type: eventType,
+                  outside_project_id:
+                    eventType === "Outside Job"
+                      ? current.outside_project_id
+                      : "",
+                }));
+              }}
               required
             />
             <Select
@@ -1684,6 +1833,50 @@ function CompanyCalendar({ authenticatedProfile }) {
               }
             />
           </SimpleGrid>
+
+          {form.event_type === "Outside Job" && (
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <Select
+                label="Link to Outside Project"
+                description="You can link it now or edit the event and link it later."
+                placeholder="Choose an active outside job"
+                searchable
+                clearable
+                data={outsideProjectOptions}
+                value={form.outside_project_id || null}
+                leftSection={<IconBriefcase size={16} />}
+                onChange={(value) => {
+                  const project = outsideProjects.find(
+                    (item) => String(item.id) === String(value)
+                  );
+                  setForm((current) => ({
+                    ...current,
+                    outside_project_id: value || "",
+                    title:
+                      current.title || project?.project_name || "",
+                    location:
+                      current.location ||
+                      project?.work_location ||
+                      project?.job_address ||
+                      "",
+                    department:
+                      current.department || "Outside Fabrication",
+                  }));
+                }}
+              />
+              <Select
+                label="Outside Job Activity"
+                data={OUTSIDE_JOB_MILESTONES}
+                value={form.outside_project_milestone}
+                onChange={(value) =>
+                  updateForm(
+                    "outside_project_milestone",
+                    value || "General Work"
+                  )
+                }
+              />
+            </SimpleGrid>
+          )}
 
           <Checkbox
             label="All-day event"
@@ -1800,6 +1993,25 @@ function CompanyCalendar({ authenticatedProfile }) {
 
           <Group justify="space-between">
             <div>
+              {form.outside_project_id && openProject && (
+                <Button
+                  variant="light"
+                  leftSection={<IconBriefcase size={17} />}
+                  onClick={() => {
+                    const project = outsideProjects.find(
+                      (item) =>
+                        String(item.id) ===
+                        String(form.outside_project_id)
+                    );
+                    if (project) {
+                      setModalOpened(false);
+                      openProject(project);
+                    }
+                  }}
+                >
+                  Open Outside Project
+                </Button>
+              )}
               {form.id &&
                 (isAdministrator ||
                   form.created_by === currentUser?.id) && (
