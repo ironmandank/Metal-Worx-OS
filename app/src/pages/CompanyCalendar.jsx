@@ -932,7 +932,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
   }
 
   async function pushGoogleChange(sourceType, sourceId) {
-    if (googleConnection?.status !== "Connected" || !sourceId) return false;
+    if (googleConnection?.status !== "Connected" || googleConnection?.calendar_id === "primary" || !sourceId) return false;
     try {
       await calendarAction("push", { source_type: sourceType, source_id: String(sourceId) });
       await loadGoogleStatus();
@@ -1243,6 +1243,9 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
 
   const isAdministrator =
     currentProfile?.access_level === "Administrator";
+  const needsDedicatedCalendarConnection =
+    googleConnection?.status === "Connected" &&
+    (!googleConnection?.calendar_id || googleConnection.calendar_id === "primary");
 
   function previousMonth() {
     setMonthDate(
@@ -1651,11 +1654,13 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
             <Group gap="sm">
               <IconBrandGoogle size={26} color="#4285f4" />
               <div>
-                <Text fw={900}>Kory’s Google Calendar</Text>
+                <Text fw={900}>Metal Worx Inc Google Calendar</Text>
                 <Text size="sm" c="dimmed">
-                  {googleConnection?.status === "Connected"
-                    ? `Connected as ${googleConnection.google_email}. Changes move both ways between Google and Metal Worx OS.`
-                    : "Connect kory@metalworxinc.net for two-way calendar synchronization."}
+                  {needsDedicatedCalendarConnection
+                    ? "Kory’s Google account is connected. Reconnect once to select the existing Metal Worx Inc calendar only."
+                    : googleConnection?.status === "Connected"
+                      ? `Connected as ${googleConnection.google_email}. Only the Metal Worx Inc Google calendar syncs with Metal Worx OS.`
+                      : "Connect kory@metalworxinc.net to the existing Metal Worx Inc Google calendar."}
                 </Text>
                 {googleConnection?.last_sync_completed_at && (
                   <Text
@@ -1673,7 +1678,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
                 )}
               </div>
             </Group>
-            {googleConnection?.status === "Connected" ? (
+            {googleConnection?.status === "Connected" && !needsDedicatedCalendarConnection ? (
               <Button
                 leftSection={<IconRefresh size={17} />}
                 loading={googleLoading}
@@ -1687,7 +1692,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
                 loading={googleLoading}
                 onClick={connectGoogleCalendar}
               >
-                Connect Kory’s Calendar
+                {needsDedicatedCalendarConnection ? "Reconnect Metal Worx Inc" : "Connect Metal Worx Inc"}
               </Button>
             )}
           </Group>
