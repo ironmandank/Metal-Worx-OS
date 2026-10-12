@@ -129,7 +129,12 @@ function App() {
     return sessionStorage.getItem("mwSplashPlayed") !== "true";
   });
 
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has("calendar") || params.get("page") === "companyCalendar"
+      ? "companyCalendar"
+      : "dashboard";
+  });
 
   const [activeUser, setActiveUser] = useState("");
 
@@ -480,7 +485,7 @@ function App() {
     }
 
     if (page === "companyCalendar") {
-      return <CompanyCalendar />;
+      return <CompanyCalendar authenticatedProfile={authenticatedProfile} />;
     }
 
     if (page === "callbacks") {
