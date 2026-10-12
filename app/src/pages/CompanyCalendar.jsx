@@ -21,6 +21,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertTriangle,
+  IconBrandGoogle,
   IconBuildingWarehouse,
   IconCalendarEvent,
   IconChevronLeft,
@@ -774,7 +775,7 @@ function emptyForm(dateValue = new Date()) {
   };
 }
 
-function CompanyCalendar({ setPage }) {
+function CompanyCalendar({ authenticatedProfile }) {
   const [monthDate, setMonthDate] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
@@ -790,10 +791,66 @@ function CompanyCalendar({ setPage }) {
   const [employeeFilter, setEmployeeFilter] = useState("All");
   const [modalOpened, setModalOpened] = useState(false);
   const [form, setForm] = useState(emptyForm());
+  const [googleConnection, setGoogleConnection] = useState(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
     loadCalendar();
   }, [monthDate]);
+
+  useEffect(() => {
+    if (String(authenticatedProfile?.access_level || "").toLowerCase().includes("admin")) {
+      loadGoogleStatus();
+    }
+  }, [authenticatedProfile]);
+
+  async function calendarAction(action) {
+    const { data, error } = await supabase.functions.invoke("google-calendar-sync", {
+      body: { action },
+    });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  async function loadGoogleStatus() {
+    try {
+      const data = await calendarAction("status");
+      setGoogleConnection(data?.connection || null);
+    } catch (error) {
+      console.error("Google Calendar status error:", error);
+    }
+  }
+
+  async function connectGoogleCalendar() {
+    setGoogleLoading(true);
+    try {
+      const data = await calendarAction("authorize");
+      if (!data?.authorization_url) throw new Error("Google authorization could not be started.");
+      window.location.assign(data.authorization_url);
+    } catch (error) {
+      notifications.show({ color: "red", title: "Google Calendar connection failed", message: error.message });
+      setGoogleLoading(false);
+    }
+  }
+
+  async function syncGoogleCalendar() {
+    setGoogleLoading(true);
+    try {
+      const data = await calendarAction("sync");
+      const result = data?.result || {};
+      notifications.show({
+        color: "green",
+        title: "Calendars synchronized",
+        message: `${result.imported || 0} imported, ${result.exported || 0} sent to Google, and ${result.updated || 0} updated.`,
+      });
+      await Promise.all([loadCalendar(), loadGoogleStatus()]);
+    } catch (error) {
+      notifications.show({ color: "red", title: "Calendar sync failed", message: error.message });
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
 
   async function loadCalendar() {
     setLoading(true);
@@ -1151,15 +1208,16 @@ function CompanyCalendar({ setPage }) {
     try {
       const { error } = await supabase
         .from("company_calendar_events")
-        .delete()
+        .update({ status: "Cancelled" })
         .eq("id", form.id);
 
       if (error) throw error;
 
       notifications.show({
         color: "green",
-        title: "Event removed",
-        message: "The company calendar has been updated.",
+        title: "Event cancelled",
+        message:
+          "The event was cancelled and will be removed from Google Calendar during the next sync.",
       });
 
       setModalOpened(false);
@@ -1224,6 +1282,57 @@ function CompanyCalendar({ setPage }) {
           </Button>
         </div>
       </section>
+
+      {String(authenticatedProfile?.access_level || "")
+        .toLowerCase()
+        .includes("admin") && (
+        <Paper withBorder radius="md" p="md" bg="#11171b">
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Group gap="sm">
+              <IconBrandGoogle size={26} color="#4285f4" />
+              <div>
+                <Text fw={900}>Kory’s Google Calendar</Text>
+                <Text size="sm" c="dimmed">
+                  {googleConnection?.status === "Connected"
+                    ? `Connected as ${googleConnection.google_email}. Changes move both ways between Google and Metal Worx OS.`
+                    : "Connect kory@metalworxinc.net for two-way calendar synchronization."}
+                </Text>
+                {googleConnection?.last_sync_completed_at && (
+                  <Text
+                    size="xs"
+                    c={
+                      googleConnection.last_sync_status === "Error"
+                        ? "red"
+                        : "dimmed"
+                    }
+                  >
+                    Last sync: {new Date(
+                      googleConnection.last_sync_completed_at,
+                    ).toLocaleString()} · {googleConnection.last_sync_status}
+                  </Text>
+                )}
+              </div>
+            </Group>
+            {googleConnection?.status === "Connected" ? (
+              <Button
+                leftSection={<IconRefresh size={17} />}
+                loading={googleLoading}
+                onClick={syncGoogleCalendar}
+              >
+                Sync Now
+              </Button>
+            ) : (
+              <Button
+                leftSection={<IconBrandGoogle size={17} />}
+                loading={googleLoading}
+                onClick={connectGoogleCalendar}
+              >
+                Connect Kory’s Calendar
+              </Button>
+            )}
+          </Group>
+        </Paper>
+      )}
 
       {loadError && (
         <Alert
