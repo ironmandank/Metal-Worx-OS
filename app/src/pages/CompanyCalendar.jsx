@@ -318,9 +318,49 @@ const calendarStyles = `
   }
 
   .mw-calendar-weekdays,
-  .mw-calendar-grid {
+  .mw-calendar-week {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .mw-calendar-week {
+    position: relative;
+  }
+
+  .mw-calendar-span-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  .mw-calendar-span-event {
+    position: absolute;
+    top: calc(42px + (var(--span-lane) * 27px));
+    left: calc((100% / 7) * var(--span-start) + 8px);
+    width: calc((100% / 7) * var(--span-days) - 16px);
+    height: 23px;
+    padding: 4px 9px 4px 12px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--event-color) 48%, #252d33);
+    border-left: 5px solid var(--event-color);
+    border-radius: 5px;
+    color: #fff;
+    background: color-mix(in srgb, var(--event-color) 22%, #182026);
+    box-shadow: 0 3px 10px rgba(0,0,0,.28);
+    font: inherit;
+    font-size: .56rem;
+    font-weight: 900;
+    line-height: 1.2;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .mw-calendar-span-event:hover {
+    filter: brightness(1.18);
   }
 
   .mw-calendar-weekday {
@@ -430,7 +470,7 @@ const calendarStyles = `
   .mw-calendar-events {
     display: grid;
     gap: 4px;
-    margin-top: 6px;
+    margin-top: calc(6px + (var(--span-lanes, 0) * 27px));
   }
 
   .mw-calendar-event {
@@ -673,6 +713,10 @@ const calendarStyles = `
     .mw-calendar-grid {
       min-width: 760px;
     }
+
+    .mw-calendar-week {
+      min-width: 760px;
+    }
   }
 
   @container (max-width: 430px) {
@@ -744,6 +788,40 @@ function eventTouchesDay(event, day) {
   const start = new Date(event.start_at);
   const end = new Date(event.end_at);
   return start <= endOfDay(day) && end >= startOfDay(day);
+}
+
+function isMultiDayEvent(event) {
+  return !sameDay(new Date(event.start_at), new Date(event.end_at));
+}
+
+function buildWeekSpans(weekDays, events) {
+  const weekStart = startOfDay(weekDays[0]);
+  const weekEnd = endOfDay(weekDays[6]);
+  const laneEnds = [];
+
+  return events
+    .filter(isMultiDayEvent)
+    .filter((event) => new Date(event.start_at) <= weekEnd && new Date(event.end_at) >= weekStart)
+    .sort((first, second) => new Date(first.start_at) - new Date(second.start_at))
+    .map((event) => {
+      const startIndex = Math.max(0, weekDays.findIndex((day) => eventTouchesDay(event, day)));
+      let endIndex = startIndex;
+      weekDays.forEach((day, index) => {
+        if (eventTouchesDay(event, day)) endIndex = index;
+      });
+      let lane = laneEnds.findIndex((lastEnd) => lastEnd < startIndex);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = endIndex;
+
+      return {
+        event,
+        startIndex,
+        dayCount: endIndex - startIndex + 1,
+        lane,
+        continuesBefore: new Date(event.start_at) < weekStart,
+        continuesAfter: new Date(event.end_at) > weekEnd,
+      };
+    });
 }
 
 function formatEventTime(event) {
@@ -1018,6 +1096,11 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
   const monthDays = useMemo(
     () => buildMonthDays(monthDate),
     [monthDate]
+  );
+
+  const monthWeeks = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => monthDays.slice(index * 7, index * 7 + 7)),
+    [monthDays]
   );
 
   const employeeOptions = useMemo(
@@ -1450,6 +1533,7 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
 
   function eventsForDay(day) {
     return filteredEvents
+      .filter((event) => !isMultiDayEvent(event))
       .filter((event) => eventTouchesDay(event, day))
       .sort(
         (first, second) =>
@@ -1698,77 +1782,90 @@ function CompanyCalendar({ authenticatedProfile, openProject }) {
           </div>
 
           <div className="mw-calendar-grid">
-            {monthDays.map((day) => {
-              const dayEvents = eventsForDay(day);
-              const isOutside =
-                day.getMonth() !== monthDate.getMonth();
-              const isToday = sameDay(day, new Date());
-              const isWeekend =
-                day.getDay() === 0 || day.getDay() === 6;
+            {monthWeeks.map((weekDays) => {
+              const weekSpans = buildWeekSpans(weekDays, filteredEvents);
+              const spanLaneCount = weekSpans.length
+                ? Math.max(...weekSpans.map((span) => span.lane)) + 1
+                : 0;
 
               return (
-                <div
-                  key={day.toISOString()}
-                  className={`mw-calendar-day ${
-                    isOutside ? "outside" : ""
-                  } ${isToday ? "today" : ""} ${
-                    isWeekend ? "weekend" : ""
-                  }`}
-                  role="button"
-                  tabIndex={0}
-                  onDoubleClick={() => openNewEvent(day)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") openNewEvent(day);
-                  }}
-                >
-                  <span
-                    className="mw-company-date-marker-v3"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openNewEvent(day)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        openNewEvent(day);
-                      }
-                    }}
-                    title="Add event on this date"
-                  >
-                    {day.getDate()}
-                  </span>
+                <div className="mw-calendar-week" key={weekDays[0].toISOString()}>
+                  {weekDays.map((day) => {
+                    const dayEvents = eventsForDay(day);
+                    const isOutside = day.getMonth() !== monthDate.getMonth();
+                    const isToday = sameDay(day, new Date());
+                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
 
-                  <div className="mw-calendar-events">
-                    {dayEvents.slice(0, 3).map((event) => (
-                      <button
-                        key={event.id}
-                        type="button"
-                        className="mw-calendar-event"
-                        style={{
-                          "--event-color":
-                            EVENT_COLORS[event.event_type] ||
-                            "#e11d32",
+                    return (
+                      <div
+                        key={day.toISOString()}
+                        className={`mw-calendar-day ${isOutside ? "outside" : ""} ${isToday ? "today" : ""} ${isWeekend ? "weekend" : ""}`}
+                        style={{ "--span-lanes": spanLaneCount }}
+                        role="button"
+                        tabIndex={0}
+                        onDoubleClick={() => openNewEvent(day)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") openNewEvent(day);
                         }}
-                        title={`${event.title} — ${formatEventTime(
-                          event
-                        )}`}
+                      >
+                        <span
+                          className="mw-company-date-marker-v3"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openNewEvent(day)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openNewEvent(day);
+                            }
+                          }}
+                          title="Add event on this date"
+                        >
+                          {day.getDate()}
+                        </span>
+
+                        <div className="mw-calendar-events">
+                          {dayEvents.slice(0, 3).map((event) => (
+                            <button
+                              key={event.id}
+                              type="button"
+                              className="mw-calendar-event"
+                              style={{ "--event-color": EVENT_COLORS[event.event_type] || "#e11d32" }}
+                              title={`${event.title} — ${formatEventTime(event)}`}
+                              onClick={() => openExistingEvent(event)}
+                            >
+                              {event.all_day
+                                ? event.title
+                                : `${new Date(event.start_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} ${event.title}`}
+                            </button>
+                          ))}
+
+                          {dayEvents.length > 3 && (
+                            <span className="mw-calendar-more">+{dayEvents.length - 3} more</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <div className="mw-calendar-span-layer" aria-label="Multi-day events">
+                    {weekSpans.map(({ event, startIndex, dayCount, lane, continuesBefore, continuesAfter }) => (
+                      <button
+                        key={`${event.id}-${weekDays[0].toISOString()}`}
+                        type="button"
+                        className="mw-calendar-span-event"
+                        style={{
+                          "--event-color": EVENT_COLORS[event.event_type] || "#e11d32",
+                          "--span-start": startIndex,
+                          "--span-days": dayCount,
+                          "--span-lane": lane,
+                        }}
+                        title={`${event.title} — ${formatEventTime(event)}`}
                         onClick={() => openExistingEvent(event)}
                       >
-                        {event.all_day
-                          ? event.title
-                          : `${new Date(
-                              event.start_at
-                            ).toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })} ${event.title}`}
+                        {continuesBefore ? "← " : ""}{event.title}{continuesAfter ? " →" : ""}
                       </button>
                     ))}
-
-                    {dayEvents.length > 3 && (
-                      <span className="mw-calendar-more">
-                        +{dayEvents.length - 3} more
-                      </span>
-                    )}
                   </div>
                 </div>
               );
