@@ -102,7 +102,8 @@ function getProductNames(items) {
 }
 
 function getProductionDisplayName(job) {
-  return `${getCustomerName(job.customer)} — ${getProductNames(job.items)}`;
+  const orderCustomerName = String(job.customer_order?.artwork_customer_name || "").trim();
+  return `${orderCustomerName || getCustomerName(job.customer)} — ${getProductNames(job.items)}`;
 }
 
 function getStatusColor(status) {
@@ -334,6 +335,7 @@ function ProductionJobs({
         job.production_job_number,
         job.status,
         job.current_department,
+        job.customer_order?.artwork_customer_name,
         getCustomerName(job.customer),
         getCustomerCompany(job.customer),
         getProductionDisplayName(job),
