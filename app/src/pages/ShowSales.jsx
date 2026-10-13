@@ -138,6 +138,11 @@ function ShowSales({ setPage, activeUser }) {
   const [locationDestinationDrafts, setLocationDestinationDrafts] = useState({});
   const [locationQuantityDrafts, setLocationQuantityDrafts] = useState({});
   const [locationResolutionSavingId, setLocationResolutionSavingId] = useState(null);
+  const [foundItemOpen, setFoundItemOpen] = useState(false);
+  const [foundItemLoading, setFoundItemLoading] = useState(false);
+  const [foundItemSaving, setFoundItemSaving] = useState(false);
+  const [foundItemCatalog, setFoundItemCatalog] = useState([]);
+  const [foundItemForm, setFoundItemForm] = useState({ itemId: null, quantity: 1, binId: null });
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
@@ -1233,6 +1238,79 @@ function ShowSales({ setPage, activeUser }) {
     }
   }
 
+  async function openFoundItem() {
+    setFoundItemOpen(true);
+    setFoundItemLoading(true);
+    try {
+      const [itemResult, binResult] = await Promise.all([
+        supabase
+          .from("inventory_items")
+          .select("id,item_number,name,color_name,is_active")
+          .order("name"),
+        crateAuditBins.length
+          ? Promise.resolve({ data: crateAuditBins, error: null })
+          : supabase
+            .from("inventory_bins")
+            .select("id,code,name,is_active")
+            .eq("is_active", true)
+            .order("code"),
+      ]);
+      if (itemResult.error) throw itemResult.error;
+      if (binResult.error) throw binResult.error;
+      setFoundItemCatalog(itemResult.data || []);
+      if (!crateAuditBins.length) {
+        setCrateAuditBins((binResult.data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || ""))));
+      }
+    } catch (error) {
+      notifications.show({ title: "Items Could Not Load", message: error.message, color: "red" });
+      setFoundItemOpen(false);
+    } finally {
+      setFoundItemLoading(false);
+    }
+  }
+
+  async function saveFoundItem() {
+    const quantity = Number(foundItemForm.quantity || 0);
+    if (!foundItemForm.itemId || !foundItemForm.binId || !Number.isFinite(quantity) || quantity <= 0) {
+      notifications.show({ title: "Choose Item, Quantity, and Crate", message: "Select the artwork, enter how many you found, and choose its crate.", color: "orange" });
+      return;
+    }
+    const item = foundItemCatalog.find((row) => row.id === foundItemForm.itemId);
+    const bin = crateAuditBins.find((row) => row.id === foundItemForm.binId);
+    setFoundItemSaving(true);
+    try {
+      const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
+        p_inventory_item_id: foundItemForm.itemId,
+        p_bin_id: foundItemForm.binId,
+        p_operation: "add",
+        p_quantity: quantity,
+        p_reason: "Found during post-show inventory audit",
+        p_notes: `${quantity} unit(s) found outside the reviewed crate lists and assigned to ${bin?.code || "the selected crate"}.`,
+        p_reference_type: "Post-Show Found Item",
+        p_reference_id: auditEvent?.id || null,
+        p_reference_number: auditEvent?.event_code || null,
+        p_performed_by: activeUser || null,
+      });
+      if (error) throw error;
+      const { error: itemError } = await supabase
+        .from("inventory_items")
+        .update({ is_active: true, default_bin_id: foundItemForm.binId })
+        .eq("id", foundItemForm.itemId);
+      if (itemError) throw itemError;
+      notifications.show({
+        title: "Found Item Added",
+        message: `${quantity} ${item?.name || "item"} added to ${bin?.code || "the selected crate"}.`,
+        color: "green",
+      });
+      setFoundItemForm((current) => ({ ...current, itemId: null, quantity: 1 }));
+      await loadData();
+    } catch (error) {
+      notifications.show({ title: "Found Item Could Not Be Added", message: error.message, color: "red" });
+    } finally {
+      setFoundItemSaving(false);
+    }
+  }
+
   async function closeAndReconcileShow() {
     if (!activeEvent) return;
     if (unresolvedLocationItems.length) {
@@ -2217,6 +2295,18 @@ function ShowSales({ setPage, activeUser }) {
             Actual quantities default to the expected remaining inventory. Change only products whose physical count is different.
           </Alert>
 
+          <Paper withBorder p="md" radius="md">
+            <Group justify="space-between" align="center" wrap="wrap">
+              <div>
+                <Text fw={900}>Found artwork that was not on a crate list?</Text>
+                <Text size="sm" c="dimmed">Add it to its crate before finalizing so the completed audit becomes the new current inventory.</Text>
+              </div>
+              <Button color="green" leftSection={<IconPlus size={18} />} onClick={openFoundItem}>
+                Add Found Item to Crate
+              </Button>
+            </Group>
+          </Paper>
+
           {unresolvedLocationItems.length > 0 && (
             <Alert color="yellow" icon={<IconMapPin size={20} />} title={`Final location check · ${unresolvedLocationItems.length} unresolved`}>
               <Stack gap="sm" mt="xs">
@@ -2373,6 +2463,64 @@ function ShowSales({ setPage, activeUser }) {
             </Group>
           </Group>
         </Stack>
+      </Modal>
+
+      <Modal
+        opened={foundItemOpen}
+        onClose={() => setFoundItemOpen(false)}
+        title={<Text fw={900} c="white">Add Found Item to Crate</Text>}
+        size="lg"
+        centered
+        zIndex={11000}
+      >
+        {foundItemLoading ? (
+          <Stack align="center" py="xl"><Loader color="green" /><Text c="dimmed">Loading artwork inventory…</Text></Stack>
+        ) : (
+          <Stack>
+            <Alert color="green" icon={<IconBox size={18} />}>
+              Search the old or current inventory first so the existing image and item record are reused instead of creating a duplicate.
+            </Alert>
+            <Select
+              label="Artwork item"
+              placeholder="Search by item name or number"
+              searchable
+              clearable
+              nothingFoundMessage="Item not found"
+              data={foundItemCatalog.map((item) => ({
+                value: item.id,
+                label: `${item.name}${item.color_name ? ` · ${item.color_name}` : ""} · ${item.item_number || "No item number"}${item.is_active ? "" : " · Archived"}`,
+              }))}
+              value={foundItemForm.itemId}
+              onChange={(value) => setFoundItemForm((current) => ({ ...current, itemId: value }))}
+            />
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <NumberInput
+                label="Quantity found"
+                min={1}
+                decimalScale={0}
+                value={foundItemForm.quantity}
+                onChange={(value) => setFoundItemForm((current) => ({ ...current, quantity: Number(value || 0) }))}
+              />
+              <Select
+                label="Crate to add it to"
+                placeholder="Select crate"
+                searchable
+                data={crateAuditBinOptions}
+                value={foundItemForm.binId}
+                onChange={(value) => setFoundItemForm((current) => ({ ...current, binId: value }))}
+              />
+            </SimpleGrid>
+            <Group justify="space-between" mt="sm">
+              <Button variant="subtle" onClick={() => { setFoundItemOpen(false); setReconcileOpen(false); setPage("newInventoryItem"); }}>
+                Item Not Listed · Create New
+              </Button>
+              <Group>
+                <Button variant="default" onClick={() => setFoundItemOpen(false)}>Done Adding</Button>
+                <Button color="green" loading={foundItemSaving} onClick={saveFoundItem}>Add to Crate</Button>
+              </Group>
+            </Group>
+          </Stack>
+        )}
       </Modal>
     </Stack>
   );
