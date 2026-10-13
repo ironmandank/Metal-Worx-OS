@@ -128,7 +128,7 @@ export async function downloadFinalShowReportPdf({ summary, products = [], inven
   const topSellers = [...soldProducts]
     .sort((left, right) => Number(right.units_sold || 0) - Number(left.units_sold || 0)
       || Number(right.product_revenue || 0) - Number(left.product_revenue || 0))
-    .slice(0, 10);
+    .slice(0, 15);
   const unpricedSoldProducts = soldProducts.filter((product) => Number(product.product_revenue || 0) <= 0);
   const finalPieces = inventory.reduce((sum, row) => sum + Number(row.quantity_on_hand || 0), 0);
   const crates = new Set(inventory.map((row) => row.bin_code).filter(Boolean)).size;
@@ -153,7 +153,7 @@ export async function downloadFinalShowReportPdf({ summary, products = [], inven
   doc.setFont("ShowReport", "bold");
   doc.setFontSize(14);
   doc.setTextColor(...COLORS.ink);
-  doc.text("Top Sellers", 34, 236);
+  doc.text("Top 15 Sellers", 34, 236);
   doc.setFont("ShowReport", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLORS.gray);
@@ -176,7 +176,7 @@ export async function downloadFinalShowReportPdf({ summary, products = [], inven
       `${Number(product.sell_through_percent || 0).toFixed(1)}%`,
     ]),
     theme: "grid",
-    styles: { font: "ShowReport", fontSize: 8, cellPadding: 5, textColor: COLORS.ink, lineColor: COLORS.line, lineWidth: 0.35 },
+    styles: { font: "ShowReport", fontSize: 7.5, cellPadding: 4, textColor: COLORS.ink, lineColor: COLORS.line, lineWidth: 0.35 },
     headStyles: { font: "ShowReport", fontStyle: "bold", fillColor: COLORS.red, textColor: COLORS.white, halign: "center" },
     alternateRowStyles: { fillColor: COLORS.pale },
     columnStyles: {
