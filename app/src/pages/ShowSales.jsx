@@ -919,14 +919,29 @@ function ShowSales({ setPage, activeUser }) {
         if (!Number.isFinite(actualQuantity) || actualQuantity < 0) {
           throw new Error(`${row.item_name} needs a valid quantity of zero or more.`);
         }
-        if (actualQuantity !== Number(row.quantity_on_hand)) {
+        const recordedQuantity = Number(row.quantity_on_hand);
+        if (actualQuantity < recordedQuantity) {
           const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
             p_inventory_item_id: row.inventory_item_id,
             p_bin_id: row.bin_id,
-            p_operation: "set",
-            p_quantity: actualQuantity,
-            p_reason: "Post-show physical recount",
-            p_notes: "Verified after the Mount Airy show and weather exposure.",
+            p_operation: "remove",
+            p_quantity: recordedQuantity - actualQuantity,
+            p_reason: "Sold at show (post-show reconciliation)",
+            p_notes: `${recordedQuantity - actualQuantity} unit(s) recorded as sold based on the physical quantity returned from the show.`,
+            p_reference_type: "Post-Show Crate Audit",
+            p_reference_id: activeEvent?.id || null,
+            p_reference_number: activeEvent?.event_code || null,
+            p_performed_by: activeUser || null,
+          });
+          if (error) throw error;
+        } else if (actualQuantity > recordedQuantity) {
+          const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
+            p_inventory_item_id: row.inventory_item_id,
+            p_bin_id: row.bin_id,
+            p_operation: "add",
+            p_quantity: actualQuantity - recordedQuantity,
+            p_reason: "Post-show physical count correction",
+            p_notes: `${actualQuantity - recordedQuantity} additional unit(s) found during the post-show crate audit.`,
             p_reference_type: "Post-Show Crate Audit",
             p_reference_id: activeEvent?.id || null,
             p_reference_number: activeEvent?.event_code || null,
@@ -1786,7 +1801,7 @@ function ShowSales({ setPage, activeUser }) {
         ) : (
           <Stack gap="lg">
             <Alert color="green" icon={<IconBox size={20} />} title="Count what physically came back">
-              Choose one crate, enter the quantity physically in front of you, and select a different crate only when the item has moved. Saving updates the current inventory immediately.
+              Enter the quantity physically in front of you. Any shortage is recorded as sold at the show. Select a different destination crate when the remaining pieces have moved; crate moves are not counted as sales.
             </Alert>
             <Group align="flex-end" justify="space-between">
               <Select
@@ -1803,13 +1818,14 @@ function ShowSales({ setPage, activeUser }) {
             {!crateAuditBinId ? (
               <Alert color="gray">No active artwork crates with inventory were found.</Alert>
             ) : (
-              <Table.ScrollContainer minWidth={850}>
+                <Table.ScrollContainer minWidth={980}>
                 <Table striped highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>Item</Table.Th>
                       <Table.Th w={170}>Recorded Quantity</Table.Th>
                       <Table.Th w={180}>Actual Quantity Now</Table.Th>
+                      <Table.Th w={160}>Show Difference</Table.Th>
                       <Table.Th w={320}>Crate After Review</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
@@ -1817,7 +1833,10 @@ function ShowSales({ setPage, activeUser }) {
                     {currentCrateAuditRows.map((row) => {
                       const key = `${row.inventory_item_id}:${row.bin_id}`;
                       const draft = crateAuditDrafts[key] || {};
-                      const changed = Number(draft.actualQuantity) !== Number(row.quantity_on_hand) || (draft.destinationBinId || row.bin_id) !== row.bin_id;
+                      const recordedQuantity = Number(row.quantity_on_hand);
+                      const actualQuantity = Number(draft.actualQuantity ?? recordedQuantity);
+                      const showDifference = recordedQuantity - actualQuantity;
+                      const changed = actualQuantity !== recordedQuantity || (draft.destinationBinId || row.bin_id) !== row.bin_id;
                       return (
                         <Table.Tr key={key} style={changed ? { background: "rgba(34,197,94,.08)" } : undefined}>
                           <Table.Td>
@@ -1832,6 +1851,15 @@ function ShowSales({ setPage, activeUser }) {
                               value={draft.actualQuantity ?? Number(row.quantity_on_hand)}
                               onChange={(value) => updateCrateAuditDraft(row, { actualQuantity: Number(value || 0) })}
                             />
+                          </Table.Td>
+                          <Table.Td>
+                            {showDifference > 0 ? (
+                              <Badge color="orange" variant="light">{showDifference} sold</Badge>
+                            ) : showDifference < 0 ? (
+                              <Badge color="blue" variant="light">+{Math.abs(showDifference)} found</Badge>
+                            ) : (
+                              <Badge color="gray" variant="light">No difference</Badge>
+                            )}
                           </Table.Td>
                           <Table.Td>
                             <Select
