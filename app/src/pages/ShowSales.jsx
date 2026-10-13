@@ -49,6 +49,7 @@ import {
   downloadCrateSheetsPdf,
   downloadShowBookPdf,
 } from "../services/showBookPdfExportService";
+import { downloadFinalShowReportPdf } from "../services/showFinalReportPdfExportService";
 
 const PAYMENT_METHODS = [
   "Cash",
@@ -398,48 +399,17 @@ function ShowSales({ setPage, activeUser }) {
     URL.revokeObjectURL(url);
   }
 
-  function downloadFinalShowReport() {
+  async function downloadFinalShowReport() {
     if (!selectedSummary) return;
-    const soldProducts = selectedSummaryProducts.filter((product) => Number(product.units_sold) > 0);
-    const rows = [
-      ["Show", selectedSummary.event_name || ""],
-      ["Dates", `${dateValue(selectedSummary.start_date)}–${dateValue(selectedSummary.end_date)}`],
-      ["Audit Finalized", dateValue(selectedSummary.audit_finalized_at)],
-      ["Starting Units", Number(selectedSummary.starting_units || 0)],
-      ["Units Sold", Number(selectedSummary.units_sold || 0)],
-      ["Final Current Inventory", finalInventoryPieces],
-      ["Estimated Product Value", Number(selectedSummary.product_sales || 0).toFixed(2)],
-      [],
-      ["SOLD ITEMS FROM POST-SHOW AUDIT"],
-      ["Item Number", "Item", "Started", "Sold", "Remaining", "Estimated Value", "Sell-Through"],
-      ...soldProducts.map((product) => [
-        product.item_number || "",
-        product.item_name || "",
-        Number(product.starting_quantity || 0),
-        Number(product.units_sold || 0),
-        Number(product.actual_ending_quantity || 0),
-        Number(product.product_revenue || 0).toFixed(2),
-        `${Number(product.sell_through_percent || 0).toFixed(1)}%`,
-      ]),
-      [],
-      ["FINAL CURRENT INVENTORY BY CRATE"],
-      ["Crate", "Item Number", "Item", "Quantity"],
-      ...selectedSummaryInventory.map((item) => [
-        item.bin_code || "",
-        item.item_number || item.sku || "",
-        item.item_name || "",
-        Number(item.quantity_on_hand || 0),
-      ]),
-    ];
-    const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${String(selectedSummary.event_name || "show").replace(/[^a-z0-9]+/gi, "-")}-final-report.csv`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    try {
+      await downloadFinalShowReportPdf({
+        summary: selectedSummary,
+        products: selectedSummaryProducts,
+        inventory: selectedSummaryInventory,
+      });
+    } catch (error) {
+      notifications.show({ title: "PDF Could Not Be Created", message: error.message, color: "red" });
+    }
   }
 
   async function finalizePostShowAudit(event) {
@@ -1869,7 +1839,7 @@ function ShowSales({ setPage, activeUser }) {
                 </div>
                 <Stack align="flex-end" gap="xs">
                   <Button color="green" variant="light" leftSection={<IconDownload size={18} />} onClick={downloadFinalShowReport}>
-                    Download Final Report
+                    Download Final PDF Report
                   </Button>
                   <Text size="sm" c="dimmed">Estimated product value</Text>
                   <Text size="xl" fw={900} c="green">{money(selectedSummary.product_sales)}</Text>
