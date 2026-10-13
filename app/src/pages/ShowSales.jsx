@@ -1437,6 +1437,11 @@ function ShowSales({ setPage, activeUser }) {
         <Group>
           <Button variant="light" color="gray" leftSection={<IconRefresh size={18} />} onClick={loadData}>Refresh</Button>
           <Button variant="light" color="green" leftSection={<IconBox size={18} />} onClick={openCrateAudit}>Post-Show Crate Audit</Button>
+          {auditEvent && (
+            <Button variant="light" color="blue" leftSection={<IconPlus size={18} />} onClick={openFoundItem}>
+              Add Found Item to Crate
+            </Button>
+          )}
           {!activeEvent && unresolvedLocationItems.length > 0 && (
             <Button variant="light" color="yellow" leftSection={<IconMapPin size={18} />} onClick={openReconciliation}>
               Review Needs Location ({unresolvedLocationItems.length})
