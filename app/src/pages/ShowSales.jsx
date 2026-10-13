@@ -1022,8 +1022,11 @@ function ShowSales({ setPage, activeUser }) {
         }
         const recordedQuantity = Number(row.quantity_on_hand);
         const missingQuantity = Math.max(0, recordedQuantity - actualQuantity);
-        if (needsLocation && missingQuantity <= 0) {
-          throw new Error(`${row.item_name}: lower the actual quantity to show how many pieces need to be located.`);
+        const quantityToLocate = needsLocation
+          ? (missingQuantity > 0 ? missingQuantity : actualQuantity)
+          : 0;
+        if (needsLocation && quantityToLocate <= 0) {
+          throw new Error(`${row.item_name} needs a quantity greater than zero for location review.`);
         }
         if (needsLocation && !row.snapshot_id) {
           throw new Error(`${row.item_name} is not part of the active show snapshot and cannot be held for location review.`);
@@ -1033,7 +1036,7 @@ function ShowSales({ setPage, activeUser }) {
             .from("show_inventory_snapshots")
             .update({
               needs_location: true,
-              location_quantity: missingQuantity,
+              location_quantity: quantityToLocate,
               location_flagged_at: new Date().toISOString(),
               location_flagged_by: activeUser || null,
               location_resolution: null,
@@ -2011,7 +2014,7 @@ function ShowSales({ setPage, activeUser }) {
         ) : (
           <Stack gap="lg">
             <Alert color="green" icon={<IconBox size={20} />} title="Count what physically came back">
-              Enter the quantity physically in front of you. A shortage is recorded as sold unless you check Needs Location. Use Needs Location when you believe the piece is in another crate; it will be held for final review instead. Crate moves are not counted as sales.
+              Enter the quantity physically in front of you. A shortage is recorded as sold unless you check Needs Location. Also use Needs Location when an item is present but still needs a new crate assignment. It will be held for final review instead of being forgotten.
             </Alert>
             <Group align="flex-end" justify="space-between">
               <Select
@@ -2084,7 +2087,9 @@ function ShowSales({ setPage, activeUser }) {
                             />
                           </Table.Td>
                           <Table.Td>
-                            {showDifference > 0 && needsLocation ? (
+                            {needsLocation && showDifference <= 0 ? (
+                              <Badge color="yellow" variant="light">{actualQuantity} needs location</Badge>
+                            ) : showDifference > 0 && needsLocation ? (
                               <Badge color="yellow" variant="light">{showDifference} to locate</Badge>
                             ) : showDifference > 0 ? (
                               <Badge color="orange" variant="light">{showDifference} sold</Badge>
@@ -2096,8 +2101,8 @@ function ShowSales({ setPage, activeUser }) {
                           </Table.Td>
                           <Table.Td>
                             <Checkbox
-                              label="Not in this crate"
-                              description="Hold for final review"
+                              label="Needs Location / New Crate"
+                              description="Missing or needs a new crate"
                               checked={needsLocation}
                               onChange={(event) => updateCrateAuditDraft(row, { needsLocation: event.currentTarget.checked })}
                             />
