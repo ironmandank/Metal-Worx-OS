@@ -893,7 +893,7 @@ function ShowSales({ setPage, activeUser }) {
     setCrateAuditOpen(true);
     setCrateAuditLoading(true);
     try {
-      const [balanceResult, binResult, locationResult] = await Promise.all([
+      const [balanceResult, binResult, locationResult, progressResult] = await Promise.all([
         supabase
           .from("inventory_bin_balances")
           .select("inventory_item_id,item_number,sku,item_name,bin_id,bin_code,bin_name,quantity_on_hand")
@@ -911,10 +911,17 @@ function ShowSales({ setPage, activeUser }) {
             .select("id,inventory_item_id,bin_id,needs_location,location_quantity")
             .eq("show_event_id", auditEvent.id)
           : Promise.resolve({ data: [], error: null }),
+        auditEvent
+          ? supabase
+            .from("show_crate_audit_progress")
+            .select("bin_id,completed_at")
+            .eq("show_event_id", auditEvent.id)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (balanceResult.error) throw balanceResult.error;
       if (binResult.error) throw binResult.error;
       if (locationResult.error) throw locationResult.error;
+      if (progressResult.error) throw progressResult.error;
       const rawRows = balanceResult.data || [];
       const itemIds = Array.from(new Set(rawRows.map((row) => row.inventory_item_id).filter(Boolean)));
       const [itemResult, imageResult] = itemIds.length ? await Promise.all([
@@ -975,7 +982,11 @@ function ShowSales({ setPage, activeUser }) {
       setCrateAuditDrafts(drafts);
       const requestedBinId = typeof preferredBinId === "string" ? preferredBinId : null;
       const savedResumeBinId = window.localStorage.getItem(`mw-show-crate-audit-resume:${auditEvent?.id || "latest"}`);
-      const resumeBinId = requestedBinId || savedResumeBinId;
+      const completedBinIds = new Set((progressResult.data || []).map((row) => row.bin_id));
+      const firstUnfinishedBinId = visibleBins.find((bin) => !completedBinIds.has(bin.id))?.id || visibleBins[0]?.id || null;
+      const resumeBinId = requestedBinId
+        || (savedResumeBinId && !completedBinIds.has(savedResumeBinId) ? savedResumeBinId : null)
+        || firstUnfinishedBinId;
       setCrateAuditBinId((current) => resumeBinId && visibleBins.some((bin) => bin.id === resumeBinId)
         ? resumeBinId
         : current && visibleBins.some((bin) => bin.id === current)
@@ -1104,6 +1115,18 @@ function ShowSales({ setPage, activeUser }) {
           });
           if (error) throw error;
         }
+      }
+      if (auditEvent?.id) {
+        const { error: progressError } = await supabase
+          .from("show_crate_audit_progress")
+          .upsert({
+            show_event_id: auditEvent.id,
+            bin_id: crateAuditBinId,
+            completed_at: new Date().toISOString(),
+            completed_by: activeUser || null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "show_event_id,bin_id" });
+        if (progressError) throw progressError;
       }
       notifications.show({
         title: "Crate Updated",
