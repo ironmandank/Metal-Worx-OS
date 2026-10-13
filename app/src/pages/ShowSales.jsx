@@ -148,6 +148,7 @@ function ShowSales({ setPage, activeUser }) {
   const [selectedSummary, setSelectedSummary] = useState(null);
   const [selectedSummaryProducts, setSelectedSummaryProducts] = useState([]);
   const [selectedSummaryPayments, setSelectedSummaryPayments] = useState([]);
+  const [selectedSummaryInventory, setSelectedSummaryInventory] = useState([]);
   const [summaryProductFilter, setSummaryProductFilter] = useState("sold");
   const [summaryProductSearch, setSummaryProductSearch] = useState("");
   const [catalogManagerOpen, setCatalogManagerOpen] = useState(false);
@@ -368,6 +369,10 @@ function ShowSales({ setPage, activeUser }) {
     })
     .filter((product) => product.ending <= 1 || product.sellThrough >= 50)
     .sort((left, right) => right.sellThrough - left.sellThrough || right.sold - left.sold), [selectedSummaryProducts]);
+  const finalInventoryPieces = useMemo(
+    () => selectedSummaryInventory.reduce((sum, row) => sum + Number(row.quantity_on_hand || 0), 0),
+    [selectedSummaryInventory]
+  );
 
   function downloadRestockList() {
     if (!selectedSummary || !restockRecommendations.length) return;
@@ -402,9 +407,10 @@ function ShowSales({ setPage, activeUser }) {
       ["Audit Finalized", dateValue(selectedSummary.audit_finalized_at)],
       ["Starting Units", Number(selectedSummary.starting_units || 0)],
       ["Units Sold", Number(selectedSummary.units_sold || 0)],
-      ["Ending Units", Number(selectedSummary.actual_ending_units || 0)],
+      ["Final Current Inventory", finalInventoryPieces],
       ["Estimated Product Value", Number(selectedSummary.product_sales || 0).toFixed(2)],
       [],
+      ["SOLD ITEMS FROM POST-SHOW AUDIT"],
       ["Item Number", "Item", "Started", "Sold", "Remaining", "Estimated Value", "Sell-Through"],
       ...soldProducts.map((product) => [
         product.item_number || "",
@@ -414,6 +420,15 @@ function ShowSales({ setPage, activeUser }) {
         Number(product.actual_ending_quantity || 0),
         Number(product.product_revenue || 0).toFixed(2),
         `${Number(product.sell_through_percent || 0).toFixed(1)}%`,
+      ]),
+      [],
+      ["FINAL CURRENT INVENTORY BY CRATE"],
+      ["Crate", "Item Number", "Item", "Quantity"],
+      ...selectedSummaryInventory.map((item) => [
+        item.bin_code || "",
+        item.item_number || item.sku || "",
+        item.item_name || "",
+        Number(item.quantity_on_hand || 0),
       ]),
     ];
     const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -1447,10 +1462,11 @@ function ShowSales({ setPage, activeUser }) {
     setSelectedSummary(null);
     setSelectedSummaryProducts([]);
     setSelectedSummaryPayments([]);
+    setSelectedSummaryInventory([]);
     setSummaryProductFilter("sold");
     setSummaryProductSearch("");
     try {
-      const [summaryResult, productsResult, paymentsResult] = await Promise.all([
+      const [summaryResult, productsResult, paymentsResult, inventoryResult] = await Promise.all([
         supabase
           .from("show_event_summary")
           .select("*")
@@ -1467,13 +1483,22 @@ function ShowSales({ setPage, activeUser }) {
           .select("*")
           .eq("show_event_id", event.id)
           .order("payment_total", { ascending: false }),
+        supabase
+          .from("inventory_bin_balances")
+          .select("inventory_item_id,item_number,sku,item_name,bin_code,bin_name,quantity_on_hand")
+          .gt("quantity_on_hand", 0)
+          .or("bin_code.ilike.CR-%,bin_code.ilike.LG-%")
+          .order("bin_code")
+          .order("item_name"),
       ]);
       if (summaryResult.error) throw summaryResult.error;
       if (productsResult.error) throw productsResult.error;
       if (paymentsResult.error) throw paymentsResult.error;
+      if (inventoryResult.error) throw inventoryResult.error;
       setSelectedSummary(summaryResult.data);
       setSelectedSummaryProducts(productsResult.data || []);
       setSelectedSummaryPayments(paymentsResult.data || []);
+      setSelectedSummaryInventory(inventoryResult.data || []);
     } catch (error) {
       notifications.show({ title: "Summary Could Not Load", message: error.message, color: "red" });
       setSummaryOpen(false);
@@ -1872,7 +1897,8 @@ function ShowSales({ setPage, activeUser }) {
                 <Stack gap="xs">
                   <Group justify="space-between"><Text c="dimmed">Starting units</Text><Text fw={800}>{Number(selectedSummary.starting_units)}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Units sold</Text><Text fw={800}>{Number(selectedSummary.units_sold)}</Text></Group>
-                  <Group justify="space-between"><Text c="dimmed">Actual ending units</Text><Text fw={800}>{Number(selectedSummary.actual_ending_units)}</Text></Group>
+                  <Group justify="space-between"><Text c="dimmed">Final current inventory</Text><Text fw={800}>{finalInventoryPieces}</Text></Group>
+                  <Group justify="space-between"><Text c="dimmed">Current product lines</Text><Text fw={800}>{selectedSummaryInventory.length}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Inventory variance</Text><Text fw={800} c={Number(selectedSummary.variance_units) ? "orange" : "green"}>{Number(selectedSummary.variance_units)}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Damage</Text><Text fw={800}>{Number(selectedSummary.damaged_units)}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Missing</Text><Text fw={800}>{Number(selectedSummary.missing_units)}</Text></Group>
