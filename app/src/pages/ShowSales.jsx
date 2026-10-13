@@ -31,6 +31,7 @@ import {
   IconCash,
   IconCheck,
   IconDownload,
+  IconMapPin,
   IconPlus,
   IconPhoto,
   IconPrinter,
@@ -133,6 +134,8 @@ function ShowSales({ setPage, activeUser }) {
   const [crateAuditBins, setCrateAuditBins] = useState([]);
   const [crateAuditBinId, setCrateAuditBinId] = useState(null);
   const [crateAuditDrafts, setCrateAuditDrafts] = useState({});
+  const [locationDestinationDrafts, setLocationDestinationDrafts] = useState({});
+  const [locationResolutionSavingId, setLocationResolutionSavingId] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState(null);
@@ -293,6 +296,10 @@ function ShowSales({ setPage, activeUser }) {
   const currentCrateAuditRows = useMemo(
     () => crateAuditRows.filter((row) => row.bin_id === crateAuditBinId),
     [crateAuditRows, crateAuditBinId]
+  );
+  const unresolvedLocationItems = useMemo(
+    () => snapshots.filter((row) => row.needs_location && Number(row.location_quantity || 0) > 0),
+    [snapshots]
   );
   const productTrends = useMemo(() => {
     const grouped = new Map();
@@ -835,16 +842,31 @@ function ShowSales({ setPage, activeUser }) {
     }
   }
 
-  function openReconciliation() {
+  async function openReconciliation() {
+    if (!crateAuditBins.length) {
+      const { data, error } = await supabase
+        .from("inventory_bins")
+        .select("id,code,name,is_active")
+        .eq("is_active", true)
+        .order("code");
+      if (error) {
+        notifications.show({ title: "Crates Could Not Load", message: error.message, color: "red" });
+        return;
+      }
+      setCrateAuditBins((data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || ""))));
+    }
     const initialCounts = {};
+    const initialDestinations = {};
     snapshots.forEach((row) => {
       initialCounts[row.id] = {
         actualQuantity: Number(row.expected_quantity || 0),
         reason: "",
         notes: "",
       };
+      if (row.needs_location) initialDestinations[row.id] = row.relocated_bin_id || null;
     });
     setReconcileCounts(initialCounts);
+    setLocationDestinationDrafts(initialDestinations);
     setReconcileSearch("");
     setReconcileOpen(true);
   }
@@ -860,7 +882,7 @@ function ShowSales({ setPage, activeUser }) {
     setCrateAuditOpen(true);
     setCrateAuditLoading(true);
     try {
-      const [balanceResult, binResult] = await Promise.all([
+      const [balanceResult, binResult, locationResult] = await Promise.all([
         supabase
           .from("inventory_bin_balances")
           .select("inventory_item_id,item_number,sku,item_name,bin_id,bin_code,bin_name,quantity_on_hand")
@@ -872,9 +894,16 @@ function ShowSales({ setPage, activeUser }) {
           .select("id,code,name,is_active")
           .eq("is_active", true)
           .order("code"),
+        activeEvent
+          ? supabase
+            .from("show_inventory_snapshots")
+            .select("id,inventory_item_id,bin_id,needs_location,location_quantity")
+            .eq("show_event_id", activeEvent.id)
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (balanceResult.error) throw balanceResult.error;
       if (binResult.error) throw binResult.error;
+      if (locationResult.error) throw locationResult.error;
       const rawRows = balanceResult.data || [];
       const itemIds = Array.from(new Set(rawRows.map((row) => row.inventory_item_id).filter(Boolean)));
       const [itemResult, imageResult] = itemIds.length ? await Promise.all([
@@ -899,14 +928,21 @@ function ShowSales({ setPage, activeUser }) {
         }
       });
       const itemById = new Map((itemResult.data || []).map((item) => [item.id, item]));
+      const snapshotByPosition = new Map(
+        (locationResult.data || []).map((snapshot) => [`${snapshot.inventory_item_id}:${snapshot.bin_id}`, snapshot])
+      );
       const rows = rawRows.map((row) => {
         const item = itemById.get(row.inventory_item_id);
+        const snapshot = snapshotByPosition.get(`${row.inventory_item_id}:${row.bin_id}`);
         return {
           ...row,
           image_url: item?.primary_image_url || imageByItem.get(row.inventory_item_id) || null,
           image_alt_text: item?.image_alt_text || row.item_name,
           selling_price: item?.selling_price ?? null,
           show_price: item?.show_price ?? null,
+          snapshot_id: snapshot?.id || null,
+          needs_location: Boolean(snapshot?.needs_location),
+          location_quantity: Number(snapshot?.location_quantity || 0),
         };
       });
       const showBins = (binResult.data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || "")));
@@ -915,9 +951,12 @@ function ShowSales({ setPage, activeUser }) {
       const drafts = {};
       rows.forEach((row) => {
         drafts[`${row.inventory_item_id}:${row.bin_id}`] = {
-          actualQuantity: Number(row.quantity_on_hand || 0),
+          actualQuantity: row.needs_location
+            ? Math.max(0, Number(row.quantity_on_hand || 0) - Number(row.location_quantity || 0))
+            : Number(row.quantity_on_hand || 0),
           destinationBinId: row.bin_id,
           showPrice: row.show_price ?? "",
+          needsLocation: row.needs_location,
         };
       });
       setCrateAuditRows(rows);
@@ -966,6 +1005,7 @@ function ShowSales({ setPage, activeUser }) {
         const enteredShowPrice = draft.showPrice === "" || draft.showPrice === null || draft.showPrice === undefined
           ? null
           : Number(draft.showPrice);
+        const needsLocation = Boolean(draft.needsLocation);
         if (!Number.isFinite(actualQuantity) || actualQuantity < 0) {
           throw new Error(`${row.item_name} needs a valid quantity of zero or more.`);
         }
@@ -981,7 +1021,29 @@ function ShowSales({ setPage, activeUser }) {
           if (priceError) throw priceError;
         }
         const recordedQuantity = Number(row.quantity_on_hand);
-        if (actualQuantity < recordedQuantity) {
+        const missingQuantity = Math.max(0, recordedQuantity - actualQuantity);
+        if (needsLocation && missingQuantity <= 0) {
+          throw new Error(`${row.item_name}: lower the actual quantity to show how many pieces need to be located.`);
+        }
+        if (needsLocation && !row.snapshot_id) {
+          throw new Error(`${row.item_name} is not part of the active show snapshot and cannot be held for location review.`);
+        }
+        if (needsLocation) {
+          const { error: locationError } = await supabase
+            .from("show_inventory_snapshots")
+            .update({
+              needs_location: true,
+              location_quantity: missingQuantity,
+              location_flagged_at: new Date().toISOString(),
+              location_flagged_by: activeUser || null,
+              location_resolution: null,
+              relocated_bin_id: null,
+              location_resolved_at: null,
+              location_resolved_by: null,
+            })
+            .eq("id", row.snapshot_id);
+          if (locationError) throw locationError;
+        } else if (actualQuantity < recordedQuantity) {
           const soldQuantity = recordedQuantity - actualQuantity;
           const unitPrice = enteredShowPrice ?? (row.selling_price === null || row.selling_price === undefined ? null : Number(row.selling_price));
           const priceNote = unitPrice !== null
@@ -1032,6 +1094,7 @@ function ShowSales({ setPage, activeUser }) {
         message: `${sourceBin?.code || "The crate"} was saved. Quantities and crate moves are now reflected in current inventory.`,
         color: "green",
       });
+      await loadData();
       await openCrateAudit(nextBinId);
     } catch (error) {
       notifications.show({ title: "Crate Could Not Be Saved", message: error.message, color: "red" });
@@ -1040,8 +1103,89 @@ function ShowSales({ setPage, activeUser }) {
     }
   }
 
+  async function resolveLocationItem(snapshot, resolution) {
+    const quantity = Number(snapshot.location_quantity || 0);
+    const destinationBinId = locationDestinationDrafts[snapshot.id] || null;
+    const sourceBinId = snapshot.bin_id;
+    if (resolution === "found" && !destinationBinId) {
+      notifications.show({ title: "Choose the Crate", message: `Select where ${snapshot.item_name} was found.`, color: "orange" });
+      return;
+    }
+    const destinationBin = crateAuditBins.find((bin) => bin.id === destinationBinId);
+    const sourceBin = crateAuditBins.find((bin) => bin.id === sourceBinId);
+    const confirmation = resolution === "found"
+      ? `Confirm ${quantity} ${snapshot.item_name} was found in ${destinationBin?.code || "the selected crate"}?`
+      : `Confirm ${quantity} ${snapshot.item_name} was not found and should be recorded as sold?`;
+    if (!window.confirm(confirmation)) return;
+
+    setLocationResolutionSavingId(snapshot.id);
+    try {
+      if (resolution === "found" && destinationBinId !== sourceBinId) {
+        const { error } = await supabase.rpc("mw_transfer_inventory_quantity", {
+          p_inventory_item_id: snapshot.inventory_item_id,
+          p_from_bin_id: sourceBinId,
+          p_to_bin_id: destinationBinId,
+          p_quantity: quantity,
+          p_notes: `Found during final post-show location review; moved from ${snapshot.bin_code || sourceBin?.code || "recorded crate"}.`,
+          p_performed_by: activeUser || null,
+        });
+        if (error) throw error;
+      } else if (resolution === "sold") {
+        const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
+          p_inventory_item_id: snapshot.inventory_item_id,
+          p_bin_id: sourceBinId,
+          p_operation: "remove",
+          p_quantity: quantity,
+          p_reason: "Sold at show (final location review)",
+          p_notes: `${quantity} unit(s) were not found during the final post-show crate audit and were confirmed as sold.`,
+          p_reference_type: "Post-Show Location Review",
+          p_reference_id: activeEvent?.id || null,
+          p_reference_number: activeEvent?.event_code || null,
+          p_performed_by: activeUser || null,
+        });
+        if (error) throw error;
+      }
+
+      const resolutionText = resolution === "found"
+        ? `Found in ${destinationBin?.code || sourceBin?.code || "recorded crate"}`
+        : "Not found - recorded sold";
+      const { error: updateError } = await supabase
+        .from("show_inventory_snapshots")
+        .update({
+          needs_location: false,
+          location_resolution: resolutionText,
+          relocated_bin_id: resolution === "found" ? destinationBinId : null,
+          location_resolved_at: new Date().toISOString(),
+          location_resolved_by: activeUser || null,
+        })
+        .eq("id", snapshot.id);
+      if (updateError) throw updateError;
+
+      notifications.show({
+        title: resolution === "found" ? "Item Located" : "Item Recorded as Sold",
+        message: resolution === "found"
+          ? `${snapshot.item_name} is now assigned to ${destinationBin?.code || "the selected crate"}.`
+          : `${snapshot.item_name} was removed from current inventory.`,
+        color: "green",
+      });
+      await loadData();
+    } catch (error) {
+      notifications.show({ title: "Location Review Could Not Save", message: error.message, color: "red" });
+    } finally {
+      setLocationResolutionSavingId(null);
+    }
+  }
+
   async function closeAndReconcileShow() {
     if (!activeEvent) return;
+    if (unresolvedLocationItems.length) {
+      notifications.show({
+        title: "Location Review Required",
+        message: `Resolve ${unresolvedLocationItems.length} item${unresolvedLocationItems.length === 1 ? "" : "s"} marked Needs Location before closing the show.`,
+        color: "orange",
+      });
+      return;
+    }
     const missingReason = snapshots.find((row) => {
       const count = reconcileCounts[row.id];
       return (
@@ -1867,7 +2011,7 @@ function ShowSales({ setPage, activeUser }) {
         ) : (
           <Stack gap="lg">
             <Alert color="green" icon={<IconBox size={20} />} title="Count what physically came back">
-              Enter the quantity physically in front of you. Any shortage is recorded as sold at the show. Select a different destination crate when the remaining pieces have moved; crate moves are not counted as sales.
+              Enter the quantity physically in front of you. A shortage is recorded as sold unless you check Needs Location. Use Needs Location when you believe the piece is in another crate; it will be held for final review instead. Crate moves are not counted as sales.
             </Alert>
             <Group align="flex-end" justify="space-between">
               <Select
@@ -1884,7 +2028,7 @@ function ShowSales({ setPage, activeUser }) {
             {!crateAuditBinId ? (
               <Alert color="gray">No active artwork crates with inventory were found.</Alert>
             ) : (
-                <Table.ScrollContainer minWidth={1380}>
+                <Table.ScrollContainer minWidth={1540}>
                 <Table striped highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
@@ -1893,6 +2037,7 @@ function ShowSales({ setPage, activeUser }) {
                       <Table.Th w={170}>Recorded Quantity</Table.Th>
                       <Table.Th w={180}>Actual Quantity Now</Table.Th>
                       <Table.Th w={160}>Show Difference</Table.Th>
+                      <Table.Th w={180}>Needs Location</Table.Th>
                       <Table.Th w={150}>Regular Price</Table.Th>
                       <Table.Th w={190}>Show/Tag Price</Table.Th>
                       <Table.Th w={320}>Crate After Review</Table.Th>
@@ -1905,7 +2050,8 @@ function ShowSales({ setPage, activeUser }) {
                       const recordedQuantity = Number(row.quantity_on_hand);
                       const actualQuantity = Number(draft.actualQuantity ?? recordedQuantity);
                       const showDifference = recordedQuantity - actualQuantity;
-                      const changed = actualQuantity !== recordedQuantity || (draft.destinationBinId || row.bin_id) !== row.bin_id;
+                      const needsLocation = Boolean(draft.needsLocation);
+                      const changed = actualQuantity !== recordedQuantity || needsLocation || (draft.destinationBinId || row.bin_id) !== row.bin_id;
                       return (
                         <Table.Tr key={key} style={changed ? { background: "rgba(34,197,94,.08)" } : undefined}>
                           <Table.Td>
@@ -1938,13 +2084,23 @@ function ShowSales({ setPage, activeUser }) {
                             />
                           </Table.Td>
                           <Table.Td>
-                            {showDifference > 0 ? (
+                            {showDifference > 0 && needsLocation ? (
+                              <Badge color="yellow" variant="light">{showDifference} to locate</Badge>
+                            ) : showDifference > 0 ? (
                               <Badge color="orange" variant="light">{showDifference} sold</Badge>
                             ) : showDifference < 0 ? (
                               <Badge color="blue" variant="light">+{Math.abs(showDifference)} found</Badge>
                             ) : (
                               <Badge color="gray" variant="light">No difference</Badge>
                             )}
+                          </Table.Td>
+                          <Table.Td>
+                            <Checkbox
+                              label="Not in this crate"
+                              description="Hold for final review"
+                              checked={needsLocation}
+                              onChange={(event) => updateCrateAuditDraft(row, { needsLocation: event.currentTarget.checked })}
+                            />
                           </Table.Td>
                           <Table.Td>
                             <Badge color="gray" variant="light">
@@ -1996,6 +2152,53 @@ function ShowSales({ setPage, activeUser }) {
           <Alert color="blue" icon={<IconCheck size={20} />}>
             Actual quantities default to the expected remaining inventory. Change only products whose physical count is different.
           </Alert>
+
+          {unresolvedLocationItems.length > 0 && (
+            <Alert color="yellow" icon={<IconMapPin size={20} />} title={`Final location check · ${unresolvedLocationItems.length} unresolved`}>
+              <Stack gap="sm" mt="xs">
+                <Text size="sm">
+                  These pieces were not in their recorded crates. Confirm where each one was found, or confirm it was not found and should be recorded as sold. The show cannot close until this list is cleared.
+                </Text>
+                {unresolvedLocationItems.map((row) => (
+                  <Paper key={row.id} withBorder p="sm" radius="md">
+                    <Group justify="space-between" align="flex-end" wrap="wrap">
+                      <div style={{ minWidth: 220 }}>
+                        <Text fw={900}>{row.item_name}</Text>
+                        <Text size="xs" c="dimmed">
+                          {row.item_number || "No item number"} · {Number(row.location_quantity || 0)} to locate · recorded in {row.bin_code || "unknown crate"}
+                        </Text>
+                      </div>
+                      <Select
+                        label="Crate where it was found"
+                        placeholder="Select crate"
+                        searchable
+                        data={crateAuditBinOptions}
+                        value={locationDestinationDrafts[row.id] || null}
+                        onChange={(value) => setLocationDestinationDrafts((current) => ({ ...current, [row.id]: value }))}
+                        style={{ minWidth: 260, flex: 1 }}
+                      />
+                      <Button
+                        color="green"
+                        variant="light"
+                        loading={locationResolutionSavingId === row.id}
+                        onClick={() => resolveLocationItem(row, "found")}
+                      >
+                        Found · Assign Crate
+                      </Button>
+                      <Button
+                        color="red"
+                        variant="light"
+                        loading={locationResolutionSavingId === row.id}
+                        onClick={() => resolveLocationItem(row, "sold")}
+                      >
+                        Not Found · Record Sold
+                      </Button>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </Alert>
+          )}
 
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Paper withBorder p="md" radius="md">
@@ -2091,7 +2294,7 @@ function ShowSales({ setPage, activeUser }) {
             </Text>
             <Group>
               <Button variant="default" onClick={() => setReconcileOpen(false)}>Keep Show Open</Button>
-              <Button color="orange" loading={saving} onClick={closeAndReconcileShow}>Close & Reconcile Show</Button>
+              <Button color="orange" loading={saving} disabled={unresolvedLocationItems.length > 0} onClick={closeAndReconcileShow}>Close & Reconcile Show</Button>
             </Group>
           </Group>
         </Stack>
