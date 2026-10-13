@@ -392,6 +392,76 @@ function ShowSales({ setPage, activeUser }) {
     link.remove();
     URL.revokeObjectURL(url);
   }
+
+  function downloadFinalShowReport() {
+    if (!selectedSummary) return;
+    const soldProducts = selectedSummaryProducts.filter((product) => Number(product.units_sold) > 0);
+    const rows = [
+      ["Show", selectedSummary.event_name || ""],
+      ["Dates", `${dateValue(selectedSummary.start_date)}–${dateValue(selectedSummary.end_date)}`],
+      ["Audit Finalized", dateValue(selectedSummary.audit_finalized_at)],
+      ["Starting Units", Number(selectedSummary.starting_units || 0)],
+      ["Units Sold", Number(selectedSummary.units_sold || 0)],
+      ["Ending Units", Number(selectedSummary.actual_ending_units || 0)],
+      ["Estimated Product Value", Number(selectedSummary.product_sales || 0).toFixed(2)],
+      [],
+      ["Item Number", "Item", "Started", "Sold", "Remaining", "Estimated Value", "Sell-Through"],
+      ...soldProducts.map((product) => [
+        product.item_number || "",
+        product.item_name || "",
+        Number(product.starting_quantity || 0),
+        Number(product.units_sold || 0),
+        Number(product.actual_ending_quantity || 0),
+        Number(product.product_revenue || 0).toFixed(2),
+        `${Number(product.sell_through_percent || 0).toFixed(1)}%`,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${String(selectedSummary.event_name || "show").replace(/[^a-z0-9]+/gi, "-")}-final-report.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function finalizePostShowAudit(event) {
+    if (!event || event.audit_finalized_at) {
+      if (event) openShowSummary(event);
+      return;
+    }
+    if (unresolvedLocationItems.length > 0) {
+      notifications.show({
+        title: "Location Review Still Needed",
+        message: `Resolve the ${unresolvedLocationItems.length} flagged item(s) before finalizing.`,
+        color: "yellow",
+      });
+      openReconciliation();
+      return;
+    }
+    if (!window.confirm(`Finalize the completed inventory audit for ${event.event_name} and build the sold-item report? This will not change the current crate quantities again.`)) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.rpc("mw_finalize_post_show_audit", {
+        p_show_event_id: event.id,
+        p_finalized_by: activeUser || null,
+      });
+      if (error) throw error;
+      notifications.show({
+        title: "Audit Finalized",
+        message: `${Number(data?.units_sold || 0)} sold piece(s) were added to the final show report.`,
+        color: "green",
+      });
+      await loadData();
+      await openShowSummary(event);
+    } catch (error) {
+      notifications.show({ title: "Audit Could Not Be Finalized", message: error.message, color: "red" });
+    } finally {
+      setSaving(false);
+    }
+  }
   const filteredCatalogItems = useMemo(() => {
     const term = catalogSearch.trim().toLowerCase();
     return catalogItems.filter((item) => {
@@ -1651,7 +1721,15 @@ function ShowSales({ setPage, activeUser }) {
                         <Button size="xs" color="green" loading={saving} onClick={() => startEvent(event)}>Start Show</Button>
                       )}
                       {event.status === "Closed" && (
-                        <Button size="xs" color="red" variant="light" onClick={() => openShowSummary(event)}>View Summary</Button>
+                        <Button
+                          size="xs"
+                          color={event.audit_finalized_at ? "red" : "green"}
+                          variant={event.audit_finalized_at ? "light" : "filled"}
+                          loading={saving}
+                          onClick={() => event.audit_finalized_at ? openShowSummary(event) : finalizePostShowAudit(event)}
+                        >
+                          {event.audit_finalized_at ? "Open Final Report" : "Finalize Audit & Build Report"}
+                        </Button>
                       )}
                     </Table.Td>
                   </Table.Tr>
@@ -1758,19 +1836,27 @@ function ShowSales({ setPage, activeUser }) {
             <Paper withBorder p="lg" radius="lg">
               <Group justify="space-between" align="flex-start">
                 <div>
-                  <Badge color="gray" variant="light" mb="xs">Closed Show</Badge>
+                  <Badge color={selectedSummary.audit_finalized_at ? "green" : "gray"} variant="light" mb="xs">
+                    {selectedSummary.audit_finalized_at ? "Final Audit Report" : "Closed Show"}
+                  </Badge>
                   <Title order={2} c="white">{selectedSummary.event_name}</Title>
                   <Text c="dimmed">{selectedSummary.venue_name || "Mobile sales event"} · {dateValue(selectedSummary.start_date)}–{dateValue(selectedSummary.end_date)}</Text>
                 </div>
-                <Text size="xl" fw={900} c="green">{money(selectedSummary.gross_sales)}</Text>
+                <Stack align="flex-end" gap="xs">
+                  <Button color="green" variant="light" leftSection={<IconDownload size={18} />} onClick={downloadFinalShowReport}>
+                    Download Final Report
+                  </Button>
+                  <Text size="sm" c="dimmed">Estimated product value</Text>
+                  <Text size="xl" fw={900} c="green">{money(selectedSummary.product_sales)}</Text>
+                </Stack>
               </Group>
             </Paper>
 
             <SimpleGrid cols={{ base: 2, md: 4 }}>
               {[
-                ["Valid Sales", Number(selectedSummary.completed_sales), "green"],
+                ["Recorded Transactions", Number(selectedSummary.completed_sales), "green"],
                 ["Units Sold", Number(selectedSummary.units_sold), "blue"],
-                ["Average Sale", money(selectedSummary.average_sale), "orange"],
+                ["Estimated Product Value", money(selectedSummary.product_sales), "orange"],
                 ["Voided Sales", Number(selectedSummary.voided_sales), "red"],
               ].map(([label, value, color]) => (
                 <Paper key={label} withBorder p="md" radius="md">
@@ -1797,7 +1883,7 @@ function ShowSales({ setPage, activeUser }) {
                 <Title order={4} c="white" mb="md">Financial Results</Title>
                 <Stack gap="xs">
                   <Group justify="space-between"><Text c="dimmed">Collected sales</Text><Text fw={800}>{money(selectedSummary.gross_sales)}</Text></Group>
-                  <Group justify="space-between"><Text c="dimmed">Product sales</Text><Text fw={800}>{money(selectedSummary.product_sales)}</Text></Group>
+                  <Group justify="space-between"><Text c="dimmed">Estimated product value</Text><Text fw={800}>{money(selectedSummary.product_sales)}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Discounts</Text><Text fw={800}>{money(selectedSummary.discount_total)}</Text></Group>
                   <Group justify="space-between"><Text c="dimmed">Sales tax</Text><Text fw={800}>{money(selectedSummary.tax_total)}</Text></Group>
                   <Divider my="xs" />
