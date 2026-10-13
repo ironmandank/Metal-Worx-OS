@@ -186,7 +186,11 @@ function ShowSales({ setPage, activeUser }) {
     setLoading(true);
     try {
       const [eventResult, summaryResult, performanceResult] = await Promise.all([
-        supabase.from("show_events").select("*").order("start_date", { ascending: false }),
+        supabase
+          .from("show_events")
+          .select("*")
+          .order("start_date", { ascending: false })
+          .order("created_at", { ascending: false }),
         supabase.from("show_event_summary").select("*").order("start_date", { ascending: false }),
         supabase.from("show_product_performance").select("*"),
       ]);
