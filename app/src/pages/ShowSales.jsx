@@ -880,7 +880,7 @@ function ShowSales({ setPage, activeUser }) {
       const [itemResult, imageResult] = itemIds.length ? await Promise.all([
         supabase
           .from("inventory_items")
-          .select("id,primary_image_url,image_alt_text")
+          .select("id,primary_image_url,image_alt_text,selling_price,show_price")
           .in("id", itemIds),
         supabase
           .from("inventory_item_images")
@@ -905,6 +905,8 @@ function ShowSales({ setPage, activeUser }) {
           ...row,
           image_url: item?.primary_image_url || imageByItem.get(row.inventory_item_id) || null,
           image_alt_text: item?.image_alt_text || row.item_name,
+          selling_price: item?.selling_price ?? null,
+          show_price: item?.show_price ?? null,
         };
       });
       const showBins = (binResult.data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || "")));
@@ -915,6 +917,7 @@ function ShowSales({ setPage, activeUser }) {
         drafts[`${row.inventory_item_id}:${row.bin_id}`] = {
           actualQuantity: Number(row.quantity_on_hand || 0),
           destinationBinId: row.bin_id,
+          showPrice: row.show_price ?? "",
         };
       });
       setCrateAuditRows(rows);
@@ -960,18 +963,37 @@ function ShowSales({ setPage, activeUser }) {
         const draft = crateAuditDrafts[key] || {};
         const actualQuantity = Number(draft.actualQuantity ?? row.quantity_on_hand);
         const destinationBinId = draft.destinationBinId || row.bin_id;
+        const enteredShowPrice = draft.showPrice === "" || draft.showPrice === null || draft.showPrice === undefined
+          ? null
+          : Number(draft.showPrice);
         if (!Number.isFinite(actualQuantity) || actualQuantity < 0) {
           throw new Error(`${row.item_name} needs a valid quantity of zero or more.`);
         }
+        if (enteredShowPrice !== null && (!Number.isFinite(enteredShowPrice) || enteredShowPrice < 0)) {
+          throw new Error(`${row.item_name} needs a valid show price.`);
+        }
+        const savedShowPrice = row.show_price === null || row.show_price === undefined ? null : Number(row.show_price);
+        if (enteredShowPrice !== savedShowPrice) {
+          const { error: priceError } = await supabase
+            .from("inventory_items")
+            .update({ show_price: enteredShowPrice })
+            .eq("id", row.inventory_item_id);
+          if (priceError) throw priceError;
+        }
         const recordedQuantity = Number(row.quantity_on_hand);
         if (actualQuantity < recordedQuantity) {
+          const soldQuantity = recordedQuantity - actualQuantity;
+          const unitPrice = enteredShowPrice ?? (row.selling_price === null || row.selling_price === undefined ? null : Number(row.selling_price));
+          const priceNote = unitPrice !== null
+            ? ` Tag price ${money(unitPrice)} each; estimated sales value ${money(soldQuantity * unitPrice)}.`
+            : " No tag price was recorded.";
           const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
             p_inventory_item_id: row.inventory_item_id,
             p_bin_id: row.bin_id,
             p_operation: "remove",
-            p_quantity: recordedQuantity - actualQuantity,
+            p_quantity: soldQuantity,
             p_reason: "Sold at show (post-show reconciliation)",
-            p_notes: `${recordedQuantity - actualQuantity} unit(s) recorded as sold based on the physical quantity returned from the show.`,
+            p_notes: `${soldQuantity} unit(s) recorded as sold based on the physical quantity returned from the show.${priceNote}`,
             p_reference_type: "Post-Show Crate Audit",
             p_reference_id: activeEvent?.id || null,
             p_reference_number: activeEvent?.event_code || null,
@@ -1862,7 +1884,7 @@ function ShowSales({ setPage, activeUser }) {
             {!crateAuditBinId ? (
               <Alert color="gray">No active artwork crates with inventory were found.</Alert>
             ) : (
-                <Table.ScrollContainer minWidth={1100}>
+                <Table.ScrollContainer minWidth={1380}>
                 <Table striped highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
@@ -1871,6 +1893,8 @@ function ShowSales({ setPage, activeUser }) {
                       <Table.Th w={170}>Recorded Quantity</Table.Th>
                       <Table.Th w={180}>Actual Quantity Now</Table.Th>
                       <Table.Th w={160}>Show Difference</Table.Th>
+                      <Table.Th w={150}>Regular Price</Table.Th>
+                      <Table.Th w={190}>Show/Tag Price</Table.Th>
                       <Table.Th w={320}>Crate After Review</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
@@ -1921,6 +1945,22 @@ function ShowSales({ setPage, activeUser }) {
                             ) : (
                               <Badge color="gray" variant="light">No difference</Badge>
                             )}
+                          </Table.Td>
+                          <Table.Td>
+                            <Badge color="gray" variant="light">
+                              {row.selling_price === null || row.selling_price === undefined ? "Not set" : money(row.selling_price)}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td>
+                            <NumberInput
+                              min={0}
+                              decimalScale={2}
+                              fixedDecimalScale
+                              prefix="$"
+                              placeholder={row.selling_price === null || row.selling_price === undefined ? "Enter tag price" : money(row.selling_price)}
+                              value={draft.showPrice ?? ""}
+                              onChange={(value) => updateCrateAuditDraft(row, { showPrice: value })}
+                            />
                           </Table.Td>
                           <Table.Td>
                             <Select
