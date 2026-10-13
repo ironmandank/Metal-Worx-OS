@@ -32,6 +32,7 @@ import {
   IconCheck,
   IconDownload,
   IconPlus,
+  IconPhoto,
   IconPrinter,
   IconRefresh,
   IconScan,
@@ -855,7 +856,7 @@ function ShowSales({ setPage, activeUser }) {
     }));
   }
 
-  async function openCrateAudit() {
+  async function openCrateAudit(preferredBinId = null) {
     setCrateAuditOpen(true);
     setCrateAuditLoading(true);
     try {
@@ -874,7 +875,38 @@ function ShowSales({ setPage, activeUser }) {
       ]);
       if (balanceResult.error) throw balanceResult.error;
       if (binResult.error) throw binResult.error;
-      const rows = balanceResult.data || [];
+      const rawRows = balanceResult.data || [];
+      const itemIds = Array.from(new Set(rawRows.map((row) => row.inventory_item_id).filter(Boolean)));
+      const [itemResult, imageResult] = itemIds.length ? await Promise.all([
+        supabase
+          .from("inventory_items")
+          .select("id,primary_image_url,image_alt_text")
+          .in("id", itemIds),
+        supabase
+          .from("inventory_item_images")
+          .select("inventory_item_id,public_url,is_primary,is_active,sort_order")
+          .in("inventory_item_id", itemIds)
+          .eq("is_active", true)
+          .order("is_primary", { ascending: false })
+          .order("sort_order", { ascending: true }),
+      ]) : [{ data: [], error: null }, { data: [], error: null }];
+      if (itemResult.error) throw itemResult.error;
+      if (imageResult.error) throw imageResult.error;
+      const imageByItem = new Map();
+      (imageResult.data || []).forEach((image) => {
+        if (!imageByItem.has(image.inventory_item_id) && image.public_url) {
+          imageByItem.set(image.inventory_item_id, image.public_url);
+        }
+      });
+      const itemById = new Map((itemResult.data || []).map((item) => [item.id, item]));
+      const rows = rawRows.map((row) => {
+        const item = itemById.get(row.inventory_item_id);
+        return {
+          ...row,
+          image_url: item?.primary_image_url || imageByItem.get(row.inventory_item_id) || null,
+          image_alt_text: item?.image_alt_text || row.item_name,
+        };
+      });
       const showBins = (binResult.data || []).filter((bin) => /^(CR|LG)-/i.test(String(bin.code || "")));
       const rowBinIds = new Set(rows.map((row) => row.bin_id));
       const visibleBins = showBins.filter((bin) => rowBinIds.has(bin.id));
@@ -888,7 +920,12 @@ function ShowSales({ setPage, activeUser }) {
       setCrateAuditRows(rows);
       setCrateAuditBins(showBins);
       setCrateAuditDrafts(drafts);
-      setCrateAuditBinId((current) => current && visibleBins.some((bin) => bin.id === current) ? current : visibleBins[0]?.id || null);
+      const requestedBinId = typeof preferredBinId === "string" ? preferredBinId : null;
+      setCrateAuditBinId((current) => requestedBinId && visibleBins.some((bin) => bin.id === requestedBinId)
+        ? requestedBinId
+        : current && visibleBins.some((bin) => bin.id === current)
+          ? current
+          : visibleBins[0]?.id || null);
     } catch (error) {
       notifications.show({ title: "Crate Audit Could Not Load", message: error.message, color: "red" });
       setCrateAuditOpen(false);
@@ -908,6 +945,13 @@ function ShowSales({ setPage, activeUser }) {
   async function saveCurrentCrateAudit() {
     if (!crateAuditBinId || !currentCrateAuditRows.length) return;
     const sourceBin = crateAuditBins.find((bin) => bin.id === crateAuditBinId);
+    const visibleBinIds = crateAuditBins
+      .filter((bin) => crateAuditRows.some((row) => row.bin_id === bin.id))
+      .map((bin) => bin.id);
+    const currentBinIndex = visibleBinIds.indexOf(crateAuditBinId);
+    const nextBinId = currentBinIndex >= 0 && currentBinIndex < visibleBinIds.length - 1
+      ? visibleBinIds[currentBinIndex + 1]
+      : null;
     if (!window.confirm(`Save the physical counts and crate moves for ${sourceBin?.code || "this crate"}?`)) return;
     setCrateAuditSaving(true);
     try {
@@ -966,7 +1010,7 @@ function ShowSales({ setPage, activeUser }) {
         message: `${sourceBin?.code || "The crate"} was saved. Quantities and crate moves are now reflected in current inventory.`,
         color: "green",
       });
-      await openCrateAudit();
+      await openCrateAudit(nextBinId);
     } catch (error) {
       notifications.show({ title: "Crate Could Not Be Saved", message: error.message, color: "red" });
     } finally {
@@ -1818,10 +1862,11 @@ function ShowSales({ setPage, activeUser }) {
             {!crateAuditBinId ? (
               <Alert color="gray">No active artwork crates with inventory were found.</Alert>
             ) : (
-                <Table.ScrollContainer minWidth={980}>
+                <Table.ScrollContainer minWidth={1100}>
                 <Table striped highlightOnHover verticalSpacing="sm">
                   <Table.Thead>
                     <Table.Tr>
+                      <Table.Th w={120}>Image</Table.Th>
                       <Table.Th>Item</Table.Th>
                       <Table.Th w={170}>Recorded Quantity</Table.Th>
                       <Table.Th w={180}>Actual Quantity Now</Table.Th>
@@ -1839,6 +1884,22 @@ function ShowSales({ setPage, activeUser }) {
                       const changed = actualQuantity !== recordedQuantity || (draft.destinationBinId || row.bin_id) !== row.bin_id;
                       return (
                         <Table.Tr key={key} style={changed ? { background: "rgba(34,197,94,.08)" } : undefined}>
+                          <Table.Td>
+                            {row.image_url ? (
+                              <img
+                                src={row.image_url}
+                                alt={row.image_alt_text || row.item_name}
+                                style={{ width: 96, height: 78, objectFit: "contain", borderRadius: 8, background: "white", display: "block" }}
+                              />
+                            ) : (
+                              <Paper withBorder radius="md" p="xs" style={{ width: 96, height: 78 }}>
+                                <Stack gap={3} align="center" justify="center" h="100%">
+                                  <IconPhoto size={24} color="gray" />
+                                  <Text size="xs" c="dimmed" ta="center">Image Needed</Text>
+                                </Stack>
+                              </Paper>
+                            )}
+                          </Table.Td>
                           <Table.Td>
                             <Text fw={900}>{row.item_name}</Text>
                             <Text size="xs" c="dimmed">{row.item_number || row.sku || "No item number"} · {row.bin_code}</Text>
