@@ -135,6 +135,7 @@ function ShowSales({ setPage, activeUser }) {
   const [crateAuditBinId, setCrateAuditBinId] = useState(null);
   const [crateAuditDrafts, setCrateAuditDrafts] = useState({});
   const [locationDestinationDrafts, setLocationDestinationDrafts] = useState({});
+  const [locationQuantityDrafts, setLocationQuantityDrafts] = useState({});
   const [locationResolutionSavingId, setLocationResolutionSavingId] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -857,6 +858,7 @@ function ShowSales({ setPage, activeUser }) {
     }
     const initialCounts = {};
     const initialDestinations = {};
+    const initialLocationQuantities = {};
     snapshots.forEach((row) => {
       initialCounts[row.id] = {
         actualQuantity: Number(row.expected_quantity || 0),
@@ -864,9 +866,11 @@ function ShowSales({ setPage, activeUser }) {
         notes: "",
       };
       if (row.needs_location) initialDestinations[row.id] = row.relocated_bin_id || null;
+      if (row.needs_location) initialLocationQuantities[row.id] = Number(row.location_quantity || 0);
     });
     setReconcileCounts(initialCounts);
     setLocationDestinationDrafts(initialDestinations);
+    setLocationQuantityDrafts(initialLocationQuantities);
     setReconcileSearch("");
     setReconcileOpen(true);
   }
@@ -1107,9 +1111,21 @@ function ShowSales({ setPage, activeUser }) {
   }
 
   async function resolveLocationItem(snapshot, resolution) {
-    const quantity = Number(snapshot.location_quantity || 0);
+    const quantityToLocate = Number(snapshot.location_quantity || 0);
+    const quantityFound = resolution === "found"
+      ? Number(locationQuantityDrafts[snapshot.id] ?? quantityToLocate)
+      : 0;
+    const quantityNotFound = quantityToLocate - quantityFound;
     const destinationBinId = locationDestinationDrafts[snapshot.id] || null;
     const sourceBinId = snapshot.bin_id;
+    if (!Number.isFinite(quantityFound) || quantityFound < 0 || quantityFound > quantityToLocate) {
+      notifications.show({ title: "Check the Quantity", message: `Quantity found must be between 0 and ${quantityToLocate}.`, color: "orange" });
+      return;
+    }
+    if (resolution === "found" && quantityFound <= 0) {
+      notifications.show({ title: "No Quantity Found", message: "Use Not Found · Record Sold when none were located.", color: "orange" });
+      return;
+    }
     if (resolution === "found" && !destinationBinId) {
       notifications.show({ title: "Choose the Crate", message: `Select where ${snapshot.item_name} was found.`, color: "orange" });
       return;
@@ -1117,30 +1133,32 @@ function ShowSales({ setPage, activeUser }) {
     const destinationBin = crateAuditBins.find((bin) => bin.id === destinationBinId);
     const sourceBin = crateAuditBins.find((bin) => bin.id === sourceBinId);
     const confirmation = resolution === "found"
-      ? `Confirm ${quantity} ${snapshot.item_name} was found in ${destinationBin?.code || "the selected crate"}?`
-      : `Confirm ${quantity} ${snapshot.item_name} was not found and should be recorded as sold?`;
+      ? `Confirm ${quantityFound} of ${quantityToLocate} ${snapshot.item_name} was found in ${destinationBin?.code || "the selected crate"}${quantityNotFound > 0 ? `, and ${quantityNotFound} was not found and should be recorded as sold` : ""}?`
+      : `Confirm ${quantityToLocate} ${snapshot.item_name} was not found and should be recorded as sold?`;
     if (!window.confirm(confirmation)) return;
 
     setLocationResolutionSavingId(snapshot.id);
     try {
-      if (resolution === "found" && destinationBinId !== sourceBinId) {
+      if (resolution === "found" && destinationBinId !== sourceBinId && quantityFound > 0) {
         const { error } = await supabase.rpc("mw_transfer_inventory_quantity", {
           p_inventory_item_id: snapshot.inventory_item_id,
           p_from_bin_id: sourceBinId,
           p_to_bin_id: destinationBinId,
-          p_quantity: quantity,
+          p_quantity: quantityFound,
           p_notes: `Found during final post-show location review; moved from ${snapshot.bin_code || sourceBin?.code || "recorded crate"}.`,
           p_performed_by: activeUser || null,
         });
         if (error) throw error;
-      } else if (resolution === "sold") {
+      }
+      const soldQuantity = resolution === "sold" ? quantityToLocate : quantityNotFound;
+      if (soldQuantity > 0) {
         const { error } = await supabase.rpc("mw_adjust_inventory_quantity", {
           p_inventory_item_id: snapshot.inventory_item_id,
           p_bin_id: sourceBinId,
           p_operation: "remove",
-          p_quantity: quantity,
+          p_quantity: soldQuantity,
           p_reason: "Sold at show (final location review)",
-          p_notes: `${quantity} unit(s) were not found during the final post-show crate audit and were confirmed as sold.`,
+          p_notes: `${soldQuantity} unit(s) were not found during the final post-show crate audit and were confirmed as sold.`,
           p_reference_type: "Post-Show Location Review",
           p_reference_id: activeEvent?.id || null,
           p_reference_number: activeEvent?.event_code || null,
@@ -1150,7 +1168,7 @@ function ShowSales({ setPage, activeUser }) {
       }
 
       const resolutionText = resolution === "found"
-        ? `Found in ${destinationBin?.code || sourceBin?.code || "recorded crate"}`
+        ? `${quantityFound} found in ${destinationBin?.code || sourceBin?.code || "recorded crate"}${quantityNotFound > 0 ? `; ${quantityNotFound} recorded sold` : ""}`
         : "Not found - recorded sold";
       const { error: updateError } = await supabase
         .from("show_inventory_snapshots")
@@ -1167,7 +1185,7 @@ function ShowSales({ setPage, activeUser }) {
       notifications.show({
         title: resolution === "found" ? "Item Located" : "Item Recorded as Sold",
         message: resolution === "found"
-          ? `${snapshot.item_name} is now assigned to ${destinationBin?.code || "the selected crate"}.`
+          ? `${quantityFound} ${snapshot.item_name} assigned to ${destinationBin?.code || "the selected crate"}${quantityNotFound > 0 ? `; ${quantityNotFound} recorded sold` : ""}.`
           : `${snapshot.item_name} was removed from current inventory.`,
         color: "green",
       });
@@ -2173,6 +2191,15 @@ function ShowSales({ setPage, activeUser }) {
                           {row.item_number || "No item number"} · {Number(row.location_quantity || 0)} to locate · recorded in {row.bin_code || "unknown crate"}
                         </Text>
                       </div>
+                      <NumberInput
+                        label="Quantity found"
+                        min={0}
+                        max={Number(row.location_quantity || 0)}
+                        decimalScale={0}
+                        value={locationQuantityDrafts[row.id] ?? Number(row.location_quantity || 0)}
+                        onChange={(value) => setLocationQuantityDrafts((current) => ({ ...current, [row.id]: Number(value ?? 0) }))}
+                        style={{ width: 150 }}
+                      />
                       <Select
                         label="Crate where it was found"
                         placeholder="Select crate"
