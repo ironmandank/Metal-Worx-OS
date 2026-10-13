@@ -120,6 +120,7 @@ function ShowSales({ setPage, activeUser }) {
   const [showSummaries, setShowSummaries] = useState([]);
   const [allProductPerformance, setAllProductPerformance] = useState([]);
   const [activeEvent, setActiveEvent] = useState(null);
+  const [auditEvent, setAuditEvent] = useState(null);
   const [snapshots, setSnapshots] = useState([]);
   const [sales, setSales] = useState([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -197,10 +198,12 @@ function ShowSales({ setPage, activeUser }) {
       setAllProductPerformance(performanceResult.data || []);
 
       const current = (eventRows || []).find((event) => event.status === "Active") || null;
+      const currentAuditEvent = current || eventRows[0] || null;
       setEvents(eventRows || []);
       setActiveEvent(current);
+      setAuditEvent(currentAuditEvent);
 
-      if (!current) {
+      if (!currentAuditEvent) {
         setSnapshots([]);
         setSales([]);
         return;
@@ -210,12 +213,12 @@ function ShowSales({ setPage, activeUser }) {
         supabase
           .from("show_inventory_snapshots")
           .select("*")
-          .eq("show_event_id", current.id)
+          .eq("show_event_id", currentAuditEvent.id)
           .order("item_name"),
         supabase
           .from("show_sales")
           .select("*")
-          .eq("show_event_id", current.id)
+          .eq("show_event_id", currentAuditEvent.id)
           .order("sold_at", { ascending: false })
           .limit(50),
       ]);
@@ -898,11 +901,11 @@ function ShowSales({ setPage, activeUser }) {
           .select("id,code,name,is_active")
           .eq("is_active", true)
           .order("code"),
-        activeEvent
+        auditEvent
           ? supabase
             .from("show_inventory_snapshots")
             .select("id,inventory_item_id,bin_id,needs_location,location_quantity")
-            .eq("show_event_id", activeEvent.id)
+            .eq("show_event_id", auditEvent.id)
           : Promise.resolve({ data: [], error: null }),
       ]);
       if (balanceResult.error) throw balanceResult.error;
@@ -967,8 +970,10 @@ function ShowSales({ setPage, activeUser }) {
       setCrateAuditBins(showBins);
       setCrateAuditDrafts(drafts);
       const requestedBinId = typeof preferredBinId === "string" ? preferredBinId : null;
-      setCrateAuditBinId((current) => requestedBinId && visibleBins.some((bin) => bin.id === requestedBinId)
-        ? requestedBinId
+      const savedResumeBinId = window.localStorage.getItem(`mw-show-crate-audit-resume:${auditEvent?.id || "latest"}`);
+      const resumeBinId = requestedBinId || savedResumeBinId;
+      setCrateAuditBinId((current) => resumeBinId && visibleBins.some((bin) => bin.id === resumeBinId)
+        ? resumeBinId
         : current && visibleBins.some((bin) => bin.id === current)
           ? current
           : visibleBins[0]?.id || null);
@@ -1064,8 +1069,8 @@ function ShowSales({ setPage, activeUser }) {
             p_reason: "Sold at show (post-show reconciliation)",
             p_notes: `${soldQuantity} unit(s) recorded as sold based on the physical quantity returned from the show.${priceNote}`,
             p_reference_type: "Post-Show Crate Audit",
-            p_reference_id: activeEvent?.id || null,
-            p_reference_number: activeEvent?.event_code || null,
+            p_reference_id: auditEvent?.id || null,
+            p_reference_number: auditEvent?.event_code || null,
             p_performed_by: activeUser || null,
           });
           if (error) throw error;
@@ -1078,8 +1083,8 @@ function ShowSales({ setPage, activeUser }) {
             p_reason: "Post-show physical count correction",
             p_notes: `${actualQuantity - recordedQuantity} additional unit(s) found during the post-show crate audit.`,
             p_reference_type: "Post-Show Crate Audit",
-            p_reference_id: activeEvent?.id || null,
-            p_reference_number: activeEvent?.event_code || null,
+            p_reference_id: auditEvent?.id || null,
+            p_reference_number: auditEvent?.event_code || null,
             p_performed_by: activeUser || null,
           });
           if (error) throw error;
@@ -1101,6 +1106,10 @@ function ShowSales({ setPage, activeUser }) {
         message: `${sourceBin?.code || "The crate"} was saved. Quantities and crate moves are now reflected in current inventory.`,
         color: "green",
       });
+      window.localStorage.setItem(
+        `mw-show-crate-audit-resume:${auditEvent?.id || "latest"}`,
+        nextBinId || crateAuditBinId
+      );
       await loadData();
       await openCrateAudit(nextBinId);
     } catch (error) {
@@ -1160,8 +1169,8 @@ function ShowSales({ setPage, activeUser }) {
           p_reason: "Sold at show (final location review)",
           p_notes: `${soldQuantity} unit(s) were not found during the final post-show crate audit and were confirmed as sold.`,
           p_reference_type: "Post-Show Location Review",
-          p_reference_id: activeEvent?.id || null,
-          p_reference_number: activeEvent?.event_code || null,
+          p_reference_id: auditEvent?.id || null,
+          p_reference_number: auditEvent?.event_code || null,
           p_performed_by: activeUser || null,
         });
         if (error) throw error;
@@ -1323,6 +1332,11 @@ function ShowSales({ setPage, activeUser }) {
         <Group>
           <Button variant="light" color="gray" leftSection={<IconRefresh size={18} />} onClick={loadData}>Refresh</Button>
           <Button variant="light" color="green" leftSection={<IconBox size={18} />} onClick={openCrateAudit}>Post-Show Crate Audit</Button>
+          {!activeEvent && unresolvedLocationItems.length > 0 && (
+            <Button variant="light" color="yellow" leftSection={<IconMapPin size={18} />} onClick={openReconciliation}>
+              Review Needs Location ({unresolvedLocationItems.length})
+            </Button>
+          )}
           <Button variant="light" color="red" leftSection={<IconSettings size={18} />} onClick={openCatalogManager}>Manage Quick-Sell Catalog</Button>
           <Button color="red" leftSection={<IconPlus size={18} />} onClick={() => setCreateOpen(true)}>Create Show</Button>
         </Group>
@@ -2167,7 +2181,7 @@ function ShowSales({ setPage, activeUser }) {
       <Modal
         opened={reconcileOpen}
         onClose={() => setReconcileOpen(false)}
-        title={<Text fw={900} c="white">Close & Reconcile Show</Text>}
+        title={<Text fw={900} c="white">{activeEvent ? "Close & Reconcile Show" : "Final Needs Location Review"}</Text>}
         size="xl"
         centered
       >
@@ -2232,7 +2246,7 @@ function ShowSales({ setPage, activeUser }) {
             </Alert>
           )}
 
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          {activeEvent && <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Paper withBorder p="md" radius="md">
               <Text size="xs" c="dimmed" fw={800}>POSITIONS TO COUNT</Text>
               <Text size="xl" fw={900}>{snapshots.length}</Text>
@@ -2245,16 +2259,16 @@ function ShowSales({ setPage, activeUser }) {
               <Text size="xs" c="dimmed" fw={800}>DIFFERENCES</Text>
               <Text size="xl" fw={900} c={reconciliationVarianceCount ? "orange" : "green"}>{reconciliationVarianceCount}</Text>
             </Paper>
-          </SimpleGrid>
+          </SimpleGrid>}
 
-          <TextInput
+          {activeEvent && <TextInput
             label="Search products or crates"
             placeholder="Search by product, item number, or crate"
             value={reconcileSearch}
             onChange={(event) => setReconcileSearch(event.target.value)}
-          />
+          />}
 
-          <Stack gap="sm" style={{ maxHeight: 430, overflowY: "auto", paddingRight: 6 }}>
+          {activeEvent && <Stack gap="sm" style={{ maxHeight: 430, overflowY: "auto", paddingRight: 6 }}>
             {filteredReconciliationSnapshots.map((row) => {
               const count = reconcileCounts[row.id] || {
                 actualQuantity: Number(row.expected_quantity),
@@ -2318,15 +2332,17 @@ function ShowSales({ setPage, activeUser }) {
                 </Paper>
               );
             })}
-          </Stack>
+          </Stack>}
 
           <Group justify="space-between">
             <Text size="sm" c="dimmed">
-              Closing creates permanent corrections only for inventory differences.
+              {activeEvent
+                ? "Closing creates permanent corrections only for inventory differences."
+                : "Resolve every flagged piece by assigning its crate or recording it as not found."}
             </Text>
             <Group>
-              <Button variant="default" onClick={() => setReconcileOpen(false)}>Keep Show Open</Button>
-              <Button color="orange" loading={saving} disabled={unresolvedLocationItems.length > 0} onClick={closeAndReconcileShow}>Close & Reconcile Show</Button>
+              <Button variant="default" onClick={() => setReconcileOpen(false)}>{activeEvent ? "Keep Show Open" : "Done"}</Button>
+              {activeEvent && <Button color="orange" loading={saving} disabled={unresolvedLocationItems.length > 0} onClick={closeAndReconcileShow}>Close & Reconcile Show</Button>}
             </Group>
           </Group>
         </Stack>
