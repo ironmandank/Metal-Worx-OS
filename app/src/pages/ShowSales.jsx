@@ -2491,6 +2491,7 @@ function ShowSales({ setPage, activeUser }) {
               searchable
               clearable
               nothingFoundMessage="Item not found"
+              comboboxProps={{ withinPortal: true, zIndex: 12000 }}
               data={foundItemCatalog.map((item) => ({
                 value: item.id,
                 label: `${item.name}${item.color_name ? ` · ${item.color_name}` : ""} · ${item.item_number || "No item number"}${item.is_active ? "" : " · Archived"}`,
@@ -2510,6 +2511,7 @@ function ShowSales({ setPage, activeUser }) {
                 label="Crate to add it to"
                 placeholder="Select crate"
                 searchable
+                comboboxProps={{ withinPortal: true, zIndex: 12000 }}
                 data={crateAuditBinOptions}
                 value={foundItemForm.binId}
                 onChange={(value) => setFoundItemForm((current) => ({ ...current, binId: value }))}
