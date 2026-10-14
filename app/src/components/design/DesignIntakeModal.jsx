@@ -165,19 +165,19 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       const { data, error } = await supabase
         .from("customers")
         .select("*")
-        .eq("email", clean(form.email))
-        .maybeSingle();
+        .ilike("email", clean(form.email))
+        .limit(25);
       if (error) throw error;
-      customer = matchesEnteredName(data) ? data : null;
+      customer = (data || []).find(matchesEnteredName) || null;
     }
     if (!customer && clean(form.phone)) {
       const { data, error } = await supabase
         .from("customers")
         .select("*")
         .eq("phone", clean(form.phone))
-        .maybeSingle();
+        .limit(25);
       if (error) throw error;
-      customer = matchesEnteredName(data) ? data : null;
+      customer = (data || []).find(matchesEnteredName) || null;
     }
     if (customer) return customer;
 
