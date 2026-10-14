@@ -56,6 +56,7 @@ function getItemId(item) {
 
 const REASON_OPTIONS = {
   add: [
+    "Newly Made Item",
     "Found stock",
     "Returned to inventory",
     "Opening balance correction",
