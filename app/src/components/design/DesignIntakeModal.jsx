@@ -8,6 +8,7 @@ import {
   Group,
   Image,
   Modal,
+  NumberInput,
   Paper,
   Select,
   SimpleGrid,
@@ -24,6 +25,7 @@ import { supabase } from "../../lib/supabase";
 import { releaseCustomerOrder } from "../../lib/productionWorkflow";
 import { notifyTeam } from "../../services/teamNotificationService";
 import { uploadOrderImages } from "../../services/orderImageService";
+import { canUnlockProjectMoney } from "../../lib/projectMoneyPrivacy";
 
 const DEFAULT_FORM = {
   jobType: "Artwork",
@@ -41,6 +43,7 @@ const DEFAULT_FORM = {
   paymentMethod: "Card",
   assignedDesigner: "Kory",
   rush: false,
+  salePrice: "",
 };
 
 function clean(value) {
@@ -240,7 +243,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             `Date ordered: ${dateValue(form.dateOrdered) || "Not entered"}`,
             clean(form.specialInstructions) ? `Special instructions: ${clean(form.specialInstructions)}` : "",
           ].filter(Boolean).join("\n"),
-          total_amount: 0,
+          total_amount: Number(form.salePrice || 0),
           deposit_received: false,
           deposit_amount: 0,
           order_type: isSmallFabrication ? "Small Fabrication" : "Custom Artwork",
@@ -271,7 +274,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         item_name: clean(form.projectName),
         description: clean(form.description),
         quantity: 1,
-        unit_price: 0,
+        unit_price: Number(form.salePrice || 0),
         notes: clean(form.specialInstructions) || null,
       });
       if (itemError) throw itemError;
@@ -358,6 +361,18 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         </SimpleGrid>
 
         <TextInput label="Project / Item Name" required value={form.projectName} onChange={(event) => update("projectName", event.currentTarget.value)} />
+        {canUnlockProjectMoney(activeUser) && (
+          <NumberInput
+            label="Sale Price (Optional)"
+            description="Enter it now if known, or leave it blank and add or edit the final price later."
+            prefix="$"
+            decimalScale={2}
+            fixedDecimalScale
+            min={0}
+            value={form.salePrice}
+            onChange={(value) => update("salePrice", value)}
+          />
+        )}
         <Textarea label="Description of Project" required minRows={3} value={form.description} onChange={(event) => update("description", event.currentTarget.value)} />
         <Textarea label="Special Instructions" minRows={2} value={form.specialInstructions} onChange={(event) => update("specialInstructions", event.currentTarget.value)} />
 
