@@ -107,8 +107,8 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
     setJobEditDraft({
       customerName,
       title: order?.title || itemNames,
-      phone: customer?.phone || "",
-      email: customer?.email?.toLowerCase() === "na" ? "" : customer?.email || "",
+      phone: order?.artwork_customer_phone || "",
+      email: order?.artwork_customer_email || "",
       dueDate: job?.due_date ? String(job.due_date).slice(0, 10) : "",
       notes: order?.notes || job?.notes || "",
     });
@@ -138,18 +138,11 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
         updates.push(
           supabase.from("customer_orders").update({
             artwork_customer_name: jobEditDraft.customerName.trim(),
+            artwork_customer_phone: jobEditDraft.phone.trim() || null,
+            artwork_customer_email: jobEditDraft.email.trim() || null,
             title: jobEditDraft.title.trim() || null,
             notes: jobEditDraft.notes.trim() || null,
           }).eq("id", order.id)
-        );
-      }
-
-      if (customer?.id) {
-        updates.push(
-          supabase.from("customers").update({
-            phone: jobEditDraft.phone.trim() || null,
-            email: jobEditDraft.email.trim() || null,
-          }).eq("id", customer.id)
         );
       }
 
@@ -736,14 +729,14 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             <Text fw={900} size="lg">{customerName}</Text>
           </div>
           <Group gap="lg" wrap="wrap">
-            {customer?.phone ? (
-              <Button component="a" href={`tel:${customer.phone}`} variant="light" color="gray" leftSection={<IconPhone size={17} />}>
-                {customer.phone}
+            {order?.artwork_customer_phone ? (
+              <Button component="a" href={`tel:${order.artwork_customer_phone}`} variant="light" color="gray" leftSection={<IconPhone size={17} />}>
+                {order.artwork_customer_phone}
               </Button>
             ) : <Text c="dimmed">Phone not provided</Text>}
-            {customer?.email && customer.email.toLowerCase() !== "na" ? (
-              <Button component="a" href={`mailto:${customer.email}`} variant="light" color="gray" leftSection={<IconMail size={17} />}>
-                {customer.email}
+            {order?.artwork_customer_email ? (
+              <Button component="a" href={`mailto:${order.artwork_customer_email}`} variant="light" color="gray" leftSection={<IconMail size={17} />}>
+                {order.artwork_customer_email}
               </Button>
             ) : <Text c="dimmed">Email not provided</Text>}
             <Button color="red" variant="light" leftSection={<IconPencil size={17} />} onClick={openJobEditor}>
@@ -937,9 +930,9 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                   <Text size="xs" fw={800} c="dimmed">
                     PHONE
                   </Text>
-                  {customer?.phone ? (
-                    <Button component="a" href={`tel:${customer.phone}`} variant="subtle" color="gray" p={0} leftSection={<IconPhone size={15} />}>
-                      {customer.phone}
+                  {order?.artwork_customer_phone ? (
+                    <Button component="a" href={`tel:${order.artwork_customer_phone}`} variant="subtle" color="gray" p={0} leftSection={<IconPhone size={15} />}>
+                      {order.artwork_customer_phone}
                     </Button>
                   ) : <Text fw={700}>Not provided</Text>}
                 </div>
@@ -947,9 +940,9 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                   <Text size="xs" fw={800} c="dimmed">
                     EMAIL
                   </Text>
-                  {customer?.email && customer.email.toLowerCase() !== "na" ? (
-                    <Button component="a" href={`mailto:${customer.email}`} variant="subtle" color="gray" p={0} leftSection={<IconMail size={15} />}>
-                      {customer.email}
+                  {order?.artwork_customer_email ? (
+                    <Button component="a" href={`mailto:${order.artwork_customer_email}`} variant="subtle" color="gray" p={0} leftSection={<IconMail size={15} />}>
+                      {order.artwork_customer_email}
                     </Button>
                   ) : <Text fw={700}>Not provided</Text>}
                 </div>
