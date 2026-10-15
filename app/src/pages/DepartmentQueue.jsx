@@ -218,7 +218,12 @@ function DepartmentQueue({
           return groups;
         }, {}))
           .filter((route) => route.some((row) => canonicalStation(row.department) === "Design"))
-          .map(selectCurrentArtworkWorkOrder)
+          .map((route) => {
+            const selected = selectCurrentArtworkWorkOrder(route);
+            if (!selected) return null;
+            const routeNotes = [...new Set(route.map((row) => row.notes).filter(Boolean))].join("\n");
+            return routeNotes ? { ...selected, notes: routeNotes } : selected;
+          })
           .filter(Boolean)
       : rows;
 
@@ -847,17 +852,54 @@ function DepartmentQueue({
     if (!noteTarget || !noteText.trim() || savingAction) return;
     setSavingAction(true);
     try {
-      const nextNotes = [noteTarget.notes, `${activeUser || "Production Team"}: ${noteText.trim()}`]
+      const detail = jobDetails[noteTarget.production_job_id];
+      const attributedNote = `${activeUser || "Production Team"}: ${noteText.trim()}`;
+      const nextWorkOrderNotes = [noteTarget.notes, attributedNote]
         .filter(Boolean)
         .join("\n");
-      await updateWorkOrder(
-        noteTarget,
-        { notes: nextNotes },
-        "Station Note Added",
-        noteText.trim()
-      );
+      const nextJobNotes = [detail?.job?.notes, attributedNote]
+        .filter(Boolean)
+        .join("\n");
+
+      const updates = [
+        supabase.from("work_orders").update({ notes: nextWorkOrderNotes }).eq("id", noteTarget.id),
+      ];
+      if (noteTarget.production_job_id) {
+        updates.push(
+          supabase.from("production_jobs").update({ notes: nextJobNotes }).eq("id", noteTarget.production_job_id)
+        );
+      }
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+
+      const { error: activityError } = await supabase.from("work_order_activity").insert({
+        work_order_id: noteTarget.id,
+        production_job_id: noteTarget.production_job_id,
+        event_type: "Station Note Added",
+        from_status: noteTarget.status,
+        to_status: noteTarget.status,
+        from_department: noteTarget.department,
+        to_department: noteTarget.department,
+        actor: activeUser || "Production Team",
+        notes: noteText.trim(),
+      });
+      if (activityError) throw activityError;
+
       setNoteTarget(null);
       setNoteText("");
+      notifications.show({
+        title: "Job Note Saved",
+        message: "The note is now visible on this item and will follow it through every station.",
+        color: "green",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Note Could Not Be Saved",
+        message: error?.message || "Please try again.",
+        color: "red",
+      });
     } finally {
       setSavingAction(false);
     }
@@ -1516,10 +1558,10 @@ function DepartmentQueue({
 
           {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
             <Paper withBorder radius="md" p="xs">
-              <Text size="xs" fw={900} c="dimmed">SPECIAL INSTRUCTIONS</Text>
+              <Text size="xs" fw={900} c="dimmed">JOB NOTES / SPECIAL INSTRUCTIONS</Text>
               <Text size="xs" mt={4} lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
-                {[order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
-                  .filter(Boolean)
+                {[...new Set([order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
+                  .filter(Boolean))]
                   .join("\n")}
               </Text>
             </Paper>
