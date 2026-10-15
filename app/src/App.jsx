@@ -49,6 +49,7 @@ const NewProductTemplate = page("NewProductTemplate");
 const WorkflowTemplates = page("WorkflowTemplates");
 const Customers = page("Customers");
 const CustomerOrders = page("CustomerOrders");
+const SalesHistory = page("SalesHistory");
 const OrderBuilder = page("OrderBuilder");
 const CustomerDetails = page("CustomerDetails");
 const CustomerOrderDetails = page("CustomerOrderDetails");
@@ -827,6 +828,16 @@ function App() {
           setSelectedProductionJob={setSelectedProductionJob}
           activeUser={activeUser}
           accessLevel={authenticatedProfile?.access_level}
+        />
+      );
+    }
+
+    if (page === "salesHistory") {
+      return (
+        <SalesHistory
+          setPage={setPage}
+          setSelectedCustomerOrder={setSelectedCustomerOrder}
+          activeUser={activeUser}
         />
       );
     }
