@@ -178,6 +178,11 @@ const NAV_GROUPS = [
         icon: IconClipboardList,
       },
       {
+        page: "salesHistory",
+        label: "Sales History",
+        icon: IconHistory,
+      },
+      {
         page: "customers",
         label: "Customers",
         icon: IconUsers,
