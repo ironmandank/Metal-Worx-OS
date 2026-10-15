@@ -10,7 +10,6 @@ import {
   Select,
   SimpleGrid,
   Stack,
-  Table,
   Text,
   TextInput,
   Title,
@@ -301,44 +300,36 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
             <Alert color="gray" icon={<IconArchive size={19} />}>No completed or archived orders match this search.</Alert>
           )}
 
-          <Paper withBorder radius="lg" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            <Table striped highlightOnHover verticalSpacing="md" miw={900}>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th w={42}>Select</Table.Th>
-                  <Table.Th>Date</Table.Th>
-                  <Table.Th>Customer</Table.Th>
-                  <Table.Th>Order / Item</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Final Sale Price</Table.Th>
-                  <Table.Th
-                    w={132}
-                    style={{ position: "sticky", right: 0, zIndex: 3, background: "var(--mantine-color-dark-7)" }}
-                  >
-                    Actions
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {visibleOrders.map((order) => (
-                  <Table.Tr key={order.id}>
-                    <Table.Td>
+          <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">
+            {visibleOrders.map((order) => (
+              <Paper key={order.id} withBorder radius="lg" p="lg">
+                <Stack gap="md">
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <Group align="flex-start" wrap="nowrap">
                       <Checkbox
+                        mt={4}
                         aria-label={`Select ${order.order_number || `order ${order.id}`}`}
                         checked={selectedIds.includes(order.id)}
                         onChange={(event) => setSelectedIds((current) => event.currentTarget.checked
                           ? [...new Set([...current, order.id])]
                           : current.filter((id) => id !== order.id))}
                       />
-                    </Table.Td>
-                    <Table.Td><Text size="sm" fw={700}>{formatDate(historyDate(order))}</Text></Table.Td>
-                    <Table.Td><Text fw={800}>{customerName(order, customersById)}</Text></Table.Td>
-                    <Table.Td>
-                      <Text fw={750}>{itemNames(order.id, itemsByOrderId)}</Text>
-                      <Text size="xs" c="dimmed">{order.order_number || `Order ${order.id}`}</Text>
-                    </Table.Td>
-                    <Table.Td><Badge color={displayStatus(order) === "Archived" ? "gray" : "green"}>{displayStatus(order)}</Badge></Table.Td>
-                    <Table.Td>
+                      <div>
+                        <Text size="xs" c="dimmed" fw={800}>{order.order_number || `ORDER ${order.id}`}</Text>
+                        <Title order={4}>{customerName(order, customersById)}</Title>
+                        <Text mt={3}>{itemNames(order.id, itemsByOrderId)}</Text>
+                      </div>
+                    </Group>
+                    <Badge color={displayStatus(order) === "Archived" ? "gray" : "green"}>{displayStatus(order)}</Badge>
+                  </Group>
+
+                  <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+                    <div>
+                      <Text size="xs" c="dimmed" fw={800}>COMPLETED / ARCHIVED</Text>
+                      <Text fw={700}>{formatDate(historyDate(order))}</Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed" fw={800}>FINAL SALE PRICE</Text>
                       {editingId === order.id && moneyPrivacy.unlocked ? (
                         <NumberInput
                           value={priceDraft}
@@ -348,42 +339,42 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
                           fixedDecimalScale
                           prefix="$"
                           thousandSeparator=","
-                          w={170}
+                          w={180}
                         />
                       ) : (
-                        <Text fw={850}>{moneyPrivacy.unlocked ? Number(order.total_amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$••••••"}</Text>
+                        <Text size="xl" fw={900} c={moneyPrivacy.unlocked ? undefined : "dimmed"}>
+                          {moneyPrivacy.unlocked
+                            ? Number(order.total_amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" })
+                            : "$•••••• — Unlock above"}
+                        </Text>
                       )}
-                    </Table.Td>
-                    <Table.Td
-                      style={{ position: "sticky", right: 0, zIndex: 2, background: "var(--mantine-color-body)" }}
+                    </div>
+                  </Group>
+
+                  <Group gap="xs" wrap="wrap">
+                    {editingId === order.id ? (
+                      <>
+                        <Button size="sm" color="green" loading={saving} onClick={() => savePrice(order)}>Save Price</Button>
+                        <Button size="sm" variant="default" onClick={() => setEditingId(null)}>Cancel</Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="light" leftSection={<IconEdit size={16} />} onClick={() => beginPriceEdit(order)}>Edit Price</Button>
+                    )}
+                    <Button size="sm" variant="light" color="gray" leftSection={<IconEye size={16} />} onClick={() => openOrder(order)}>Open Order</Button>
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color={order.sales_history_hidden ? "green" : "red"}
+                      leftSection={order.sales_history_hidden ? <IconRestore size={16} /> : <IconTrash size={16} />}
+                      onClick={() => setHistoryVisibility([order.id], !order.sales_history_hidden)}
                     >
-                      <Stack gap={5} miw={112}>
-                        {editingId === order.id ? (
-                          <>
-                            <Button fullWidth size="compact-xs" color="green" loading={saving} onClick={() => savePrice(order)}>Save</Button>
-                            <Button fullWidth size="compact-xs" variant="default" onClick={() => setEditingId(null)}>Cancel</Button>
-                          </>
-                        ) : (
-                          <Button fullWidth size="compact-xs" variant="light" leftSection={<IconEdit size={14} />} onClick={() => beginPriceEdit(order)}>Edit Price</Button>
-                        )}
-                        <Button fullWidth size="compact-xs" variant="subtle" color="gray" leftSection={<IconEye size={14} />} onClick={() => openOrder(order)}>Open</Button>
-                        <Button
-                          fullWidth
-                          size="compact-xs"
-                          variant="subtle"
-                          color={order.sales_history_hidden ? "green" : "red"}
-                          leftSection={order.sales_history_hidden ? <IconRestore size={14} /> : <IconTrash size={14} />}
-                          onClick={() => setHistoryVisibility([order.id], !order.sales_history_hidden)}
-                        >
-                          {order.sales_history_hidden ? "Restore" : "Remove"}
-                        </Button>
-                      </Stack>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Paper>
+                      {order.sales_history_hidden ? "Restore to History" : "Remove from History"}
+                    </Button>
+                  </Group>
+                </Stack>
+              </Paper>
+            ))}
+          </SimpleGrid>
         </Stack>
       </MWSection>
     </Stack>
