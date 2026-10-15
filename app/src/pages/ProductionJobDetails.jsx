@@ -33,6 +33,7 @@ import {
   IconHistory,
   IconMail,
   IconPackage,
+  IconPencil,
   IconPhoto,
   IconPhone,
   IconRefresh,
@@ -88,9 +89,91 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [loading, setLoading] = useState(true);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [designModalOpen, setDesignModalOpen] = useState(false);
+  const [jobEditModalOpen, setJobEditModalOpen] = useState(false);
+  const [savingJobInformation, setSavingJobInformation] = useState(false);
+  const [jobEditDraft, setJobEditDraft] = useState({
+    customerName: "",
+    title: "",
+    phone: "",
+    email: "",
+    dueDate: "",
+    notes: "",
+  });
   const [savingDesignInstructions, setSavingDesignInstructions] = useState(false);
   const [designDraft, setDesignDraft] = useState(parseDesignInstructions(""));
   const [errorMessage, setErrorMessage] = useState("");
+
+  function openJobEditor() {
+    setJobEditDraft({
+      customerName,
+      title: order?.title || itemNames,
+      phone: customer?.phone || "",
+      email: customer?.email?.toLowerCase() === "na" ? "" : customer?.email || "",
+      dueDate: job?.due_date ? String(job.due_date).slice(0, 10) : "",
+      notes: order?.notes || job?.notes || "",
+    });
+    setJobEditModalOpen(true);
+  }
+
+  async function saveJobInformation() {
+    if (!jobEditDraft.customerName.trim()) {
+      notifications.show({
+        title: "Customer Name Required",
+        message: "Enter the customer or job name before saving.",
+        color: "orange",
+      });
+      return;
+    }
+
+    setSavingJobInformation(true);
+    try {
+      const updates = [
+        supabase.from("production_jobs").update({
+          due_date: jobEditDraft.dueDate || null,
+          notes: jobEditDraft.notes.trim() || null,
+        }).eq("id", job.id),
+      ];
+
+      if (order?.id) {
+        updates.push(
+          supabase.from("customer_orders").update({
+            artwork_customer_name: jobEditDraft.customerName.trim(),
+            title: jobEditDraft.title.trim() || null,
+            notes: jobEditDraft.notes.trim() || null,
+          }).eq("id", order.id)
+        );
+      }
+
+      if (customer?.id) {
+        updates.push(
+          supabase.from("customers").update({
+            phone: jobEditDraft.phone.trim() || null,
+            email: jobEditDraft.email.trim() || null,
+          }).eq("id", customer.id)
+        );
+      }
+
+      const results = await Promise.all(updates);
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+
+      await loadJobFolder();
+      setJobEditModalOpen(false);
+      notifications.show({
+        title: "Job Information Updated",
+        message: "The customer, contact, title, due date, and notes were saved.",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Job Information Could Not Be Saved",
+        message: error?.message || "Please try again.",
+        color: "red",
+      });
+    } finally {
+      setSavingJobInformation(false);
+    }
+  }
 
   function openDesignInstructions() {
     setDesignDraft(parseDesignInstructions(order?.design_notes));
@@ -357,7 +440,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
       : "Unspecified Product";
   }, [orderItems, productsById]);
 
-  const jobDisplayName = `${customerName} — ${itemNames}`;
+  const jobDisplayName = `${customerName} — ${order?.title || itemNames}`;
 
   const completedSteps = workOrders.filter(
     (workOrder) => workOrder.status === "Completed"
@@ -519,6 +602,58 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   return (
     <>
       <Modal
+        opened={jobEditModalOpen}
+        onClose={() => setJobEditModalOpen(false)}
+        title="Edit Job Information"
+        centered
+        size="lg"
+      >
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+            <TextInput
+              label="Customer / Order Name"
+              value={jobEditDraft.customerName}
+              onChange={(event) => setJobEditDraft((current) => ({ ...current, customerName: event.currentTarget.value }))}
+              required
+            />
+            <TextInput
+              label="Job Title"
+              value={jobEditDraft.title}
+              onChange={(event) => setJobEditDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+            />
+            <TextInput
+              label="Phone"
+              value={jobEditDraft.phone}
+              onChange={(event) => setJobEditDraft((current) => ({ ...current, phone: event.currentTarget.value }))}
+            />
+            <TextInput
+              label="Email"
+              type="email"
+              value={jobEditDraft.email}
+              onChange={(event) => setJobEditDraft((current) => ({ ...current, email: event.currentTarget.value }))}
+            />
+            <TextInput
+              label="Due Date"
+              type="date"
+              value={jobEditDraft.dueDate}
+              onChange={(event) => setJobEditDraft((current) => ({ ...current, dueDate: event.currentTarget.value }))}
+            />
+          </SimpleGrid>
+          <Textarea
+            label="Production Notes"
+            minRows={4}
+            autosize
+            value={jobEditDraft.notes}
+            onChange={(event) => setJobEditDraft((current) => ({ ...current, notes: event.currentTarget.value }))}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setJobEditModalOpen(false)}>Cancel</Button>
+            <Button color="red" loading={savingJobInformation} onClick={saveJobInformation}>Save Job Information</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
         opened={designModalOpen}
         onClose={() => setDesignModalOpen(false)}
         title="Edit Design Instructions"
@@ -611,6 +746,9 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
                 {customer.email}
               </Button>
             ) : <Text c="dimmed">Email not provided</Text>}
+            <Button color="red" variant="light" leftSection={<IconPencil size={17} />} onClick={openJobEditor}>
+              Edit Job Information
+            </Button>
           </Group>
         </Group>
       </Paper>
