@@ -3,6 +3,7 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   Group,
   NumberInput,
   Paper,
@@ -21,6 +22,8 @@ import {
   IconEye,
   IconHistory,
   IconSearch,
+  IconRestore,
+  IconTrash,
 } from "@tabler/icons-react";
 
 import MWPageHeader from "../components/ui/MWPageHeader";
@@ -67,6 +70,8 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
   const [itemsByOrderId, setItemsByOrderId] = useState({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [visibilityFilter, setVisibilityFilter] = useState("Sales History");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [priceDraft, setPriceDraft] = useState(0);
@@ -122,6 +127,9 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
   const visibleOrders = useMemo(() => {
     const term = search.trim().toLowerCase();
     return orders.filter((order) => {
+      const removed = Boolean(order.sales_history_hidden);
+      if (visibilityFilter === "Sales History" && removed) return false;
+      if (visibilityFilter === "Removed" && !removed) return false;
       if (statusFilter !== "All" && displayStatus(order) !== statusFilter) return false;
       if (!term) return true;
       return [
@@ -134,7 +142,7 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
         String(order.total_amount ?? ""),
       ].some((value) => String(value || "").toLowerCase().includes(term));
     });
-  }, [customersById, itemsByOrderId, orders, search, statusFilter]);
+  }, [customersById, itemsByOrderId, orders, search, statusFilter, visibilityFilter]);
 
   const recordedPriceCount = visibleOrders.filter((order) => Number(order.total_amount || 0) > 0).length;
   const visibleTotal = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
@@ -171,6 +179,61 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
     notifications.show({ title: "Final Sale Price Saved", message: "The permanent order history has been updated.", color: "green" });
   }
 
+  async function setHistoryVisibility(orderIds, hidden) {
+    if (!orderIds.length || saving) return;
+    const action = hidden ? "remove" : "restore";
+    const label = orderIds.length === 1 ? "this order" : `${orderIds.length} selected orders`;
+    if (!window.confirm(
+      hidden
+        ? `Remove ${label} from Sales History? The original order will be preserved and can be restored later.`
+        : `Restore ${label} to Sales History?`
+    )) return;
+
+    setSaving(true);
+    const { error } = await supabase
+      .from("customer_orders")
+      .update({
+        sales_history_hidden: hidden,
+        sales_history_hidden_at: hidden ? new Date().toISOString() : null,
+        sales_history_hidden_by: hidden ? (activeUser || "Employee") : null,
+      })
+      .in("id", orderIds);
+    setSaving(false);
+    if (error) {
+      notifications.show({
+        title: `Orders Could Not Be ${hidden ? "Removed" : "Restored"}`,
+        message: error.message,
+        color: "red",
+      });
+      return;
+    }
+    setOrders((current) => current.map((order) => orderIds.includes(order.id)
+      ? {
+          ...order,
+          sales_history_hidden: hidden,
+          sales_history_hidden_at: hidden ? new Date().toISOString() : null,
+          sales_history_hidden_by: hidden ? (activeUser || "Employee") : null,
+        }
+      : order));
+    setSelectedIds([]);
+    notifications.show({
+      title: hidden ? "Removed from Sales History" : "Restored to Sales History",
+      message: `${orderIds.length} order${orderIds.length === 1 ? " was" : "s were"} ${action}d. The original order record was not deleted.`,
+      color: hidden ? "orange" : "green",
+    });
+  }
+
+  const allVisibleSelected = visibleOrders.length > 0 && visibleOrders.every((order) => selectedIds.includes(order.id));
+
+  function toggleAllVisible() {
+    if (allVisibleSelected) {
+      const visibleIds = new Set(visibleOrders.map((order) => order.id));
+      setSelectedIds((current) => current.filter((id) => !visibleIds.has(id)));
+      return;
+    }
+    setSelectedIds((current) => [...new Set([...current, ...visibleOrders.map((order) => order.id)])]);
+  }
+
   return (
     <Stack gap="lg">
       <MWPageHeader
@@ -203,6 +266,35 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
               onChange={(value) => setStatusFilter(value || "All")}
               data={["All", "Completed", "Archived"]}
             />
+            <Select
+              label="History View"
+              value={visibilityFilter}
+              onChange={(value) => {
+                setVisibilityFilter(value || "Sales History");
+                setSelectedIds([]);
+              }}
+              data={["Sales History", "Removed"]}
+            />
+          </Group>
+
+          <Group justify="space-between" align="center">
+            <Checkbox
+              label={allVisibleSelected ? "Clear visible selection" : "Select all visible orders"}
+              checked={allVisibleSelected}
+              indeterminate={selectedIds.length > 0 && !allVisibleSelected}
+              onChange={toggleAllVisible}
+            />
+            {selectedIds.length > 0 && (
+              <Button
+                color={visibilityFilter === "Removed" ? "green" : "red"}
+                variant="light"
+                loading={saving}
+                leftSection={visibilityFilter === "Removed" ? <IconRestore size={17} /> : <IconTrash size={17} />}
+                onClick={() => setHistoryVisibility(selectedIds, visibilityFilter !== "Removed")}
+              >
+                {visibilityFilter === "Removed" ? "Restore" : "Remove"} Selected ({selectedIds.length})
+              </Button>
+            )}
           </Group>
 
           {!loading && visibleOrders.length === 0 && (
@@ -213,6 +305,7 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
             <Table striped highlightOnHover verticalSpacing="md" miw={980}>
               <Table.Thead>
                 <Table.Tr>
+                  <Table.Th w={42}>Select</Table.Th>
                   <Table.Th>Date</Table.Th>
                   <Table.Th>Customer</Table.Th>
                   <Table.Th>Order / Item</Table.Th>
@@ -224,6 +317,15 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
               <Table.Tbody>
                 {visibleOrders.map((order) => (
                   <Table.Tr key={order.id}>
+                    <Table.Td>
+                      <Checkbox
+                        aria-label={`Select ${order.order_number || `order ${order.id}`}`}
+                        checked={selectedIds.includes(order.id)}
+                        onChange={(event) => setSelectedIds((current) => event.currentTarget.checked
+                          ? [...new Set([...current, order.id])]
+                          : current.filter((id) => id !== order.id))}
+                      />
+                    </Table.Td>
                     <Table.Td><Text size="sm" fw={700}>{formatDate(historyDate(order))}</Text></Table.Td>
                     <Table.Td><Text fw={800}>{customerName(order, customersById)}</Text></Table.Td>
                     <Table.Td>
@@ -258,6 +360,15 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
                           <Button size="xs" variant="light" leftSection={<IconEdit size={15} />} onClick={() => beginPriceEdit(order)}>Edit Price</Button>
                         )}
                         <Button size="xs" variant="subtle" color="gray" leftSection={<IconEye size={15} />} onClick={() => openOrder(order)}>Open</Button>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color={order.sales_history_hidden ? "green" : "red"}
+                          leftSection={order.sales_history_hidden ? <IconRestore size={15} /> : <IconTrash size={15} />}
+                          onClick={() => setHistoryVisibility([order.id], !order.sales_history_hidden)}
+                        >
+                          {order.sales_history_hidden ? "Restore" : "Remove"}
+                        </Button>
                       </Group>
                     </Table.Td>
                   </Table.Tr>
