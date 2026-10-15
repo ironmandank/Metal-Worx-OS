@@ -9,6 +9,7 @@ import {
   Group,
   Image,
   Modal,
+  NumberInput,
   Paper,
   Progress,
   Select,
@@ -55,6 +56,7 @@ import { selectCurrentArtworkWorkOrder } from "../lib/artworkRoute";
 import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { getTodaysHotTodayItems } from "../services/hotTodayService";
+import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
 import {
   getDesignComplexity,
   getDesignPriority,
@@ -177,6 +179,7 @@ function DepartmentQueue({
     email: "",
   });
   const [hotTodayItems, setHotTodayItems] = useState([]);
+  const moneyPrivacy = useProjectMoneyPrivacy(activeUser);
 
   useEffect(() => {
     loadQueue();
@@ -263,12 +266,14 @@ function DepartmentQueue({
   }
 
   function updateArtworkDraft(workOrder, field, value) {
-    if (!value) return;
+    if (value === null || value === undefined) return;
+    const order = jobDetails[workOrder.production_job_id]?.order;
     setArtworkDrafts((current) => ({
       ...current,
       [workOrder.id]: {
         stage: current[workOrder.id]?.stage ?? stationFor(workOrder),
         status: current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder),
+        salePrice: current[workOrder.id]?.salePrice ?? Number(order?.total_amount || 0),
         ...(field === "stage" && value !== "Design" &&
           (current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder)) === "Awaiting Customer Approval"
           ? { status: "Ready" }
@@ -279,10 +284,12 @@ function DepartmentQueue({
   }
 
   function artworkDraft(workOrder) {
+    const order = jobDetails[workOrder.production_job_id]?.order;
     const savedDraft = artworkDrafts[workOrder.id];
     if (!savedDraft) return {
       stage: stationFor(workOrder),
       status: currentWorkflowStatus(workOrder),
+      salePrice: Number(order?.total_amount || 0),
     };
     const validStatuses = artworkStatusOptions({
       ...workOrder,
@@ -291,12 +298,16 @@ function DepartmentQueue({
     return {
       stage: SHOP_STATIONS.includes(savedDraft.stage) ? savedDraft.stage : stationFor(workOrder),
       status: validStatuses.includes(savedDraft.status) ? savedDraft.status : currentWorkflowStatus(workOrder),
+      salePrice: Number(savedDraft.salePrice || 0),
     };
   }
 
   function artworkDraftChanged(workOrder) {
     const draft = artworkDraft(workOrder);
-    return draft.stage !== stationFor(workOrder) || draft.status !== currentWorkflowStatus(workOrder);
+    const order = jobDetails[workOrder.production_job_id]?.order;
+    return draft.stage !== stationFor(workOrder) ||
+      draft.status !== currentWorkflowStatus(workOrder) ||
+      Number(draft.salePrice || 0) !== Number(order?.total_amount || 0);
   }
 
   async function applyArtworkUpdate(workOrder, draft, blockedNote = "") {
@@ -305,8 +316,10 @@ function DepartmentQueue({
     }
     const currentStage = stationFor(workOrder);
     const currentStatus = currentWorkflowStatus(workOrder);
+    const order = jobDetails[workOrder.production_job_id]?.order;
     const statusChanged = draft.status !== currentStatus;
     const stageChanged = draft.stage !== currentStage;
+    const priceChanged = Number(draft.salePrice || 0) !== Number(order?.total_amount || 0);
     const terminalStatus = [
       "Waiting for Customer Pickup",
       "Ready to Ship",
@@ -336,7 +349,16 @@ function DepartmentQueue({
       );
     }
 
-    return { stageChanged, statusChanged };
+    if (priceChanged) {
+      if (!order?.id) throw new Error("This artwork job is not linked to a customer order, so its sale price could not be saved.");
+      const { error: priceError } = await supabase
+        .from("customer_orders")
+        .update({ total_amount: Number(draft.salePrice || 0), updated_at: new Date().toISOString() })
+        .eq("id", order.id);
+      if (priceError) throw priceError;
+    }
+
+    return { stageChanged, statusChanged, priceChanged };
   }
 
   async function saveArtworkUpdate(workOrder) {
@@ -349,7 +371,8 @@ function DepartmentQueue({
       blockedNote = window.prompt("Why is this artwork blocked?", "") || "";
       if (!blockedNote.trim()) return;
     }
-    if (["Completed — Picked Up", "Completed — Shipped"].includes(draft.status) &&
+    if (draft.status !== currentWorkflowStatus(workOrder) &&
+        ["Completed — Picked Up", "Completed — Shipped"].includes(draft.status) &&
         !window.confirm(`Mark this artwork ${draft.status.toLowerCase()} and move it to the archive?`)) return;
 
     setSavingAction(true);
@@ -359,7 +382,7 @@ function DepartmentQueue({
 
       notifications.show({
         title: "Artwork Updated",
-        message: "The stage and status were saved together. Images, files, notes, and history stayed with the job.",
+        message: "The stage, status, and final sale price were saved. Images, files, notes, and history stayed with the job.",
         color: "green",
       });
       setDetailTarget(null);
@@ -401,6 +424,7 @@ function DepartmentQueue({
     if (changedOrders.length === 0) return;
 
     const completedCount = changedOrders.filter((workOrder) =>
+      artworkDraft(workOrder).status !== currentWorkflowStatus(workOrder) &&
       ["Completed — Picked Up", "Completed — Shipped"].includes(artworkDraft(workOrder).status)
     ).length;
     if (completedCount > 0 && !window.confirm(
@@ -1371,14 +1395,29 @@ function DepartmentQueue({
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
                 </SimpleGrid>
-                {isAdministrator && workflowStage(workOrder) !== "Completed / Archive" && (
+                {moneyPrivacy.unlocked ? (
+                  <NumberInput
+                    label="Final Sale Price"
+                    description="Saved permanently with this order for future lookup and reports"
+                    prefix="$"
+                    decimalScale={2}
+                    fixedDecimalScale
+                    min={0}
+                    value={artworkDraft(workOrder).salePrice}
+                    disabled={!isAdministrator || savingAction}
+                    onChange={(value) => updateArtworkDraft(workOrder, "salePrice", Number(value || 0))}
+                  />
+                ) : (
+                  <Text size="sm" c="dimmed">Final Sale Price: $••••••</Text>
+                )}
+                {isAdministrator && (workflowStage(workOrder) !== "Completed / Archive" || artworkDraftChanged(workOrder)) && (
                   <Button
                     color="red"
                     loading={savingAction || movingStageId === workOrder.id}
                     disabled={!artworkDraftChanged(workOrder)}
                     onClick={() => saveArtworkUpdate(workOrder)}
                   >
-                    Update Stage & Status
+                    {workflowStage(workOrder) === "Completed / Archive" ? "Save Final Sale Price" : "Update Stage, Status & Price"}
                   </Button>
                 )}
               </Stack>
@@ -1719,7 +1758,22 @@ function DepartmentQueue({
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
                 </SimpleGrid>
-                {isAdministrator && workflowStage(workOrder) !== "Completed / Archive" && (
+                {moneyPrivacy.unlocked ? (
+                  <NumberInput
+                    size="xs"
+                    label="Final Sale Price"
+                    prefix="$"
+                    decimalScale={2}
+                    fixedDecimalScale
+                    min={0}
+                    value={artworkDraft(workOrder).salePrice}
+                    disabled={!isAdministrator || savingAction}
+                    onChange={(value) => updateArtworkDraft(workOrder, "salePrice", Number(value || 0))}
+                  />
+                ) : (
+                  <Text size="xs" c="dimmed">Final Sale Price: $••••••</Text>
+                )}
+                {isAdministrator && (workflowStage(workOrder) !== "Completed / Archive" || artworkDraftChanged(workOrder)) && (
                   <Button
                     size="xs"
                     color="red"
@@ -1727,7 +1781,7 @@ function DepartmentQueue({
                     disabled={!artworkDraftChanged(workOrder)}
                     onClick={() => saveArtworkUpdate(workOrder)}
                   >
-                    Update Stage & Status
+                    {workflowStage(workOrder) === "Completed / Archive" ? "Save Final Sale Price" : "Update Stage, Status & Price"}
                   </Button>
                 )}
               </Stack>
@@ -1816,9 +1870,12 @@ function DepartmentQueue({
       />
 
       {unifiedArtwork ? (
-        <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="One job, one record">
-          Artwork and small fabrication jobs stay together here. Images, files, customer details, notes, and history remain attached while Stage and Status move the job through the shop.
-        </Alert>
+        <Stack gap="md" mb="md">
+          <Alert icon={<IconInfoCircle />} color="blue" title="One job, one record">
+            Artwork and small fabrication jobs stay together here. Images, files, customer details, notes, final sale price, and history remain attached while Stage and Status move the job through the shop.
+          </Alert>
+          {moneyPrivacy.controls}
+        </Stack>
       ) : department === "Design" && (
         <Alert icon={<IconInfoCircle />} color="blue" mb="md" title="How design work moves">
           Add the customer request here. New artwork waits for the $50 design fee, Kory or the design team uploads the proof,
