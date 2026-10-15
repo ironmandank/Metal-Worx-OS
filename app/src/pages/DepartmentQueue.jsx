@@ -687,8 +687,8 @@ function DepartmentQueue({
         detail?.order?.design_fee_paid ||
         detail?.order?.design_fee_status === "Paid"
       ),
-      phone: detail?.customer?.phone || "",
-      email: detail?.customer?.email || "",
+      phone: detail?.order?.artwork_customer_phone || "",
+      email: detail?.order?.artwork_customer_email || "",
     });
     setAdditionalDesignPhotos([]);
     setEditDesignTarget(workOrder);
@@ -762,6 +762,8 @@ function DepartmentQueue({
         updates.push(
           supabase.from("customer_orders").update({
             artwork_customer_name: designDraft.customerName.trim(),
+            artwork_customer_phone: designDraft.phone.trim() || null,
+            artwork_customer_email: designDraft.email.trim() || null,
             design_notes: designNotes,
             design_fee_required: designDraft.feeRequired,
             design_fee_paid: designDraft.feeRequired && designDraft.feePaid,
@@ -769,15 +771,6 @@ function DepartmentQueue({
               ? "Not Required"
               : designDraft.feePaid ? "Paid" : "Pending",
           }).eq("id", detail.order.id)
-        );
-      }
-
-      if (detail?.customer?.id) {
-        updates.push(
-          supabase.from("customers").update({
-            phone: designDraft.phone.trim() || null,
-            email: designDraft.email.trim() || null,
-          }).eq("id", detail.customer.id)
         );
       }
 
@@ -1414,6 +1407,16 @@ function DepartmentQueue({
             {customerName} — {project?.project_name || productNames}
           </Title>
 
+          {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
+            <Alert color="blue" variant="light" title="Job Notes / Special Instructions" icon={<IconNotes size={17} />}>
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                {[...new Set([order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
+                  .filter(Boolean))]
+                  .join("\n")}
+              </Text>
+            </Alert>
+          )}
+
           {unifiedArtwork && (
             <Paper withBorder radius="md" p="sm">
               <Stack gap="sm">
@@ -1476,9 +1479,9 @@ function DepartmentQueue({
             {(department === "Design" || unifiedArtwork) && designWork.fileName && (
               <Text size="sm"><b>Find File:</b> {designWork.fileName}</Text>
             )}
-            {(department === "Design" || unifiedArtwork) && (customer?.phone || customer?.email) && (
+            {(department === "Design" || unifiedArtwork) && (order?.artwork_customer_phone || order?.artwork_customer_email) && (
               <Text size="sm" c="dimmed">
-                {[customer.phone, customer.email].filter(Boolean).join(" • ")}
+                {[order.artwork_customer_phone, order.artwork_customer_email].filter(Boolean).join(" • ")}
               </Text>
             )}
             <Text size="sm" c="dimmed">
@@ -1555,17 +1558,6 @@ function DepartmentQueue({
               </Stack>
             </Paper>
           </SimpleGrid>
-
-          {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
-            <Paper withBorder radius="md" p="xs">
-              <Text size="xs" fw={900} c="dimmed">JOB NOTES / SPECIAL INSTRUCTIONS</Text>
-              <Text size="xs" mt={4} lineClamp={3} style={{ whiteSpace: "pre-wrap" }}>
-                {[...new Set([order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
-                  .filter(Boolean))]
-                  .join("\n")}
-              </Text>
-            </Paper>
-          )}
 
           {images.length > 0 && (
             <div>
