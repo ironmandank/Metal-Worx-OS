@@ -301,8 +301,8 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
             <Alert color="gray" icon={<IconArchive size={19} />}>No completed or archived orders match this search.</Alert>
           )}
 
-          <Paper withBorder radius="lg" style={{ overflowX: "auto" }}>
-            <Table striped highlightOnHover verticalSpacing="md" miw={980}>
+          <Paper withBorder radius="lg" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            <Table striped highlightOnHover verticalSpacing="md" miw={900}>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th w={42}>Select</Table.Th>
@@ -311,7 +311,12 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
                   <Table.Th>Order / Item</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th>Final Sale Price</Table.Th>
-                  <Table.Th>Actions</Table.Th>
+                  <Table.Th
+                    w={132}
+                    style={{ position: "sticky", right: 0, zIndex: 3, background: "var(--mantine-color-dark-7)" }}
+                  >
+                    Actions
+                  </Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -349,27 +354,30 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
                         <Text fw={850}>{moneyPrivacy.unlocked ? Number(order.total_amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$••••••"}</Text>
                       )}
                     </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs" wrap="nowrap">
+                    <Table.Td
+                      style={{ position: "sticky", right: 0, zIndex: 2, background: "var(--mantine-color-body)" }}
+                    >
+                      <Stack gap={5} miw={112}>
                         {editingId === order.id ? (
                           <>
-                            <Button size="xs" color="green" loading={saving} onClick={() => savePrice(order)}>Save</Button>
-                            <Button size="xs" variant="default" onClick={() => setEditingId(null)}>Cancel</Button>
+                            <Button fullWidth size="compact-xs" color="green" loading={saving} onClick={() => savePrice(order)}>Save</Button>
+                            <Button fullWidth size="compact-xs" variant="default" onClick={() => setEditingId(null)}>Cancel</Button>
                           </>
                         ) : (
-                          <Button size="xs" variant="light" leftSection={<IconEdit size={15} />} onClick={() => beginPriceEdit(order)}>Edit Price</Button>
+                          <Button fullWidth size="compact-xs" variant="light" leftSection={<IconEdit size={14} />} onClick={() => beginPriceEdit(order)}>Edit Price</Button>
                         )}
-                        <Button size="xs" variant="subtle" color="gray" leftSection={<IconEye size={15} />} onClick={() => openOrder(order)}>Open</Button>
+                        <Button fullWidth size="compact-xs" variant="subtle" color="gray" leftSection={<IconEye size={14} />} onClick={() => openOrder(order)}>Open</Button>
                         <Button
-                          size="xs"
+                          fullWidth
+                          size="compact-xs"
                           variant="subtle"
                           color={order.sales_history_hidden ? "green" : "red"}
-                          leftSection={order.sales_history_hidden ? <IconRestore size={15} /> : <IconTrash size={15} />}
+                          leftSection={order.sales_history_hidden ? <IconRestore size={14} /> : <IconTrash size={14} />}
                           onClick={() => setHistoryVisibility([order.id], !order.sales_history_hidden)}
                         >
                           {order.sales_history_hidden ? "Restore" : "Remove"}
                         </Button>
-                      </Group>
+                      </Stack>
                     </Table.Td>
                   </Table.Tr>
                 ))}
