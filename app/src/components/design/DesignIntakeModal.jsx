@@ -236,6 +236,8 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           order_number: orderNumber,
           customer_id: customer?.id || null,
           artwork_customer_name: enteredCustomerName || (isSmallFabrication ? "Customer not entered" : null),
+          artwork_customer_phone: clean(form.phone) || null,
+          artwork_customer_email: clean(form.email) || null,
           status: needsDesign ? "Design Needed" : "Ready for Production",
           due_date: dateValue(form.dateRequested),
           rush: form.rush,
