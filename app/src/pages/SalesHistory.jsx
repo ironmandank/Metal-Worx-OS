@@ -5,6 +5,8 @@ import {
   Button,
   Checkbox,
   Group,
+  Image,
+  Modal,
   NumberInput,
   Paper,
   Select,
@@ -20,6 +22,7 @@ import {
   IconEdit,
   IconEye,
   IconHistory,
+  IconPhoto,
   IconSearch,
   IconRestore,
   IconTrash,
@@ -67,6 +70,7 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
   const [orders, setOrders] = useState([]);
   const [customersById, setCustomersById] = useState({});
   const [itemsByOrderId, setItemsByOrderId] = useState({});
+  const [imagesByOrderId, setImagesByOrderId] = useState({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [visibilityFilter, setVisibilityFilter] = useState("Sales History");
@@ -75,6 +79,7 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
   const [editingId, setEditingId] = useState(null);
   const [priceDraft, setPriceDraft] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
   const moneyPrivacy = useProjectMoneyPrivacy(activeUser);
 
   useEffect(() => {
@@ -93,16 +98,24 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
 
       const orderIds = orderRows.map((order) => order.id).filter(Boolean);
       const customerIds = [...new Set(orderRows.map((order) => order.customer_id).filter(Boolean))];
-      const [itemsResult, customersResult] = await Promise.all([
+      const [itemsResult, customersResult, imagesResult] = await Promise.all([
         orderIds.length
           ? supabase.from("customer_order_items").select("*").in("order_id", orderIds)
           : Promise.resolve({ data: [], error: null }),
         customerIds.length
           ? supabase.from("customers").select("*").in("id", customerIds)
           : Promise.resolve({ data: [], error: null }),
+        orderIds.length
+          ? supabase
+              .from("customer_order_reference_images")
+              .select("*")
+              .in("customer_order_id", orderIds)
+              .order("sort_order", { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
       ]);
       if (itemsResult.error) throw itemsResult.error;
       if (customersResult.error) throw customersResult.error;
+      if (imagesResult.error) throw imagesResult.error;
 
       setOrders(orderRows);
       setCustomersById(Object.fromEntries((customersResult.data || []).map((row) => [String(row.id), row])));
@@ -110,6 +123,12 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
         const key = String(item.order_id);
         groups[key] = groups[key] || [];
         groups[key].push(item);
+        return groups;
+      }, {}));
+      setImagesByOrderId((imagesResult.data || []).reduce((groups, image) => {
+        const key = String(image.customer_order_id);
+        groups[key] = groups[key] || [];
+        groups[key].push(image);
         return groups;
       }, {}));
     } catch (error) {
@@ -314,6 +333,49 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
                           ? [...new Set([...current, order.id])]
                           : current.filter((id) => id !== order.id))}
                       />
+                      {imagesByOrderId[String(order.id)]?.[0]?.image_url ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage({
+                            ...imagesByOrderId[String(order.id)][0],
+                            orderLabel: order.order_number || `Order ${order.id}`,
+                            customerLabel: customerName(order, customersById),
+                          })}
+                          aria-label={`Enlarge image for ${customerName(order, customersById)}`}
+                          style={{
+                            width: 72,
+                            height: 72,
+                            padding: 0,
+                            flex: "0 0 72px",
+                            overflow: "hidden",
+                            borderRadius: 10,
+                            border: "1px solid var(--mantine-color-dark-4)",
+                            background: "var(--mantine-color-dark-7)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <Image
+                            src={imagesByOrderId[String(order.id)][0].image_url}
+                            alt={imagesByOrderId[String(order.id)][0].caption || customerName(order, customersById)}
+                            w={72}
+                            h={72}
+                            fit="cover"
+                          />
+                        </button>
+                      ) : (
+                        <Paper
+                          w={72}
+                          h={72}
+                          radius="md"
+                          withBorder
+                          style={{ flex: "0 0 72px", display: "grid", placeItems: "center" }}
+                        >
+                          <Stack gap={2} align="center">
+                            <IconPhoto size={20} color="gray" />
+                            <Text size="9px" c="dimmed" ta="center">No image</Text>
+                          </Stack>
+                        </Paper>
+                      )}
                       <div>
                         <Text size="xs" c="dimmed" fw={800}>{order.order_number || `ORDER ${order.id}`}</Text>
                         <Title order={4}>{customerName(order, customersById)}</Title>
@@ -377,6 +439,27 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
           </SimpleGrid>
         </Stack>
       </MWSection>
+
+      <Modal
+        opened={Boolean(previewImage)}
+        onClose={() => setPreviewImage(null)}
+        title={previewImage ? `${previewImage.customerLabel} · ${previewImage.orderLabel}` : "Order Image"}
+        size="xl"
+        centered
+      >
+        {previewImage && (
+          <Stack gap="sm">
+            <Image
+              src={previewImage.image_url}
+              alt={previewImage.caption || previewImage.customerLabel || "Order image"}
+              mah="70vh"
+              fit="contain"
+              radius="md"
+            />
+            {previewImage.caption && <Text size="sm" c="dimmed" ta="center">{previewImage.caption}</Text>}
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 }
