@@ -315,6 +315,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [savingBillingProjectId, setSavingBillingProjectId] = useState(null);
   const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
   const [savingCardProjectId, setSavingCardProjectId] = useState(null);
+  const [scheduleDateDrafts, setScheduleDateDrafts] = useState({});
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -1365,8 +1366,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       if (error) throw error;
       notifications.show({ title: "Job Updated", message: successMessage, color: "green" });
       await loadProjects(false);
+      return true;
     } catch (error) {
       notifications.show({ title: "Could Not Update Job", message: error.message, color: "red" });
+      return false;
     } finally {
       setSavingCardProjectId(null);
     }
@@ -2721,24 +2724,39 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                           </SimpleGrid>
                           <DateInput
                             label="Scheduled Date"
-                            description="Saving this date adds the job to the Company Calendar."
+                            description="Choose a date, then click Add to Calendar."
                             clearable
-                            value={dateInputValue(project.planned_start_date)}
+                            value={Object.prototype.hasOwnProperty.call(scheduleDateDrafts, project.id) ? scheduleDateDrafts[project.id] : dateInputValue(project.planned_start_date)}
                             disabled={savingCardProjectId === project.id}
-                            onChange={(value) => {
-                              const scheduledDateKey = dateInputKey(value);
-                              if (scheduledDateKey !== (project.planned_start_date || null)) {
-                                updateJobCard(project, { planned_start_date: scheduledDateKey }, scheduledDateKey ? "Scheduled date saved to the Company Calendar." : "Scheduled date cleared from the job.");
-                              }
-                            }}
+                            onChange={(value) => setScheduleDateDrafts((current) => ({ ...current, [project.id]: value }))}
                           />
                           <Button
                             variant="light"
                             color="blue"
                             leftSection={<IconCalendarEvent size={17} />}
-                            onClick={() => setPage("companyCalendar")}
+                            loading={savingCardProjectId === project.id}
+                            onClick={async () => {
+                              const draftDate = Object.prototype.hasOwnProperty.call(scheduleDateDrafts, project.id)
+                                ? scheduleDateDrafts[project.id]
+                                : dateInputValue(project.planned_start_date);
+                              const scheduledDateKey = dateInputKey(draftDate);
+                              if (!scheduledDateKey) {
+                                notifications.show({ title: "Choose a Date First", message: "Select the scheduled date above, then click Add to Calendar.", color: "orange" });
+                                return;
+                              }
+                              const updates = { planned_start_date: scheduledDateKey };
+                              if (["New", "Needs Scheduling", "Ready for Production"].includes(project.status)) updates.status = "Scheduled";
+                              const saved = await updateJobCard(project, updates, `Added to Company Calendar for ${formatDate(scheduledDateKey)}.`);
+                              if (saved) {
+                                setScheduleDateDrafts((current) => {
+                                  const next = { ...current };
+                                  delete next[project.id];
+                                  return next;
+                                });
+                              }
+                            }}
                           >
-                            Open Company Calendar
+                            Add to Calendar
                           </Button>
                         </Stack>
                       </Paper>
