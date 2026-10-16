@@ -1825,6 +1825,10 @@ export async function getDashboardData() {
   const allActions =
     actionCenterData.actions || [];
 
+  const huddleActions = allActions.filter(
+    (action) => !(action.sourceType === "project" && outsideFabricationProjectIds.has(String(action.sourceId)))
+  );
+
   const dailyAttention =
     allActions
       .slice(0, 8)
@@ -2242,7 +2246,7 @@ export async function getDashboardData() {
     });
 
   const todayFocus =
-    allActions
+    huddleActions
       .filter((action) => {
         const dueText =
           normalizeStatus(action.dueDate);
