@@ -134,8 +134,8 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
   return (
     <>
       <MWPageHeader
-        title="New Outside Job"
-        subtitle="Create the job first. Add a quote later if one applies."
+        title="Add Fabrication Job"
+        subtitle="Create the job directly. Add a quote later if one applies."
         setPage={setPage}
         showBack
         backPage="projects"
