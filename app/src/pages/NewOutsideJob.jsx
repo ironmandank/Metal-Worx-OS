@@ -40,7 +40,7 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
     project_name: "",
     customer_id: null,
     project_type: "Other Project",
-    status: "New",
+    status: "Needs Scheduling",
     priority: "Normal",
     assigned_to: "",
     job_address: "",
@@ -150,7 +150,7 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
             <Select label="Customer" placeholder="Choose a customer (optional)" searchable clearable data={customers.map((customer) => ({ value: String(customer.id), label: customerLabel(customer) }))} value={form.customer_id ? String(form.customer_id) : null} onChange={(value) => update("customer_id", value)} />
             <Group grow align="flex-start">
               <Select label="Job Type" data={["Other Project", "Railings & Handrails", "Gates & Fences", "Repair & Restoration", "Custom Fabrication", "Install & Field Work"]} value={form.project_type} onChange={(value) => update("project_type", value || "Other Project")} allowDeselect={false} />
-              <Select label="Status" data={["New", "Scheduled", "In Progress", "On Hold", "Completed"]} value={form.status} onChange={(value) => update("status", value || "New")} allowDeselect={false} />
+              <Select label="Status" data={["Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Finish / Powder", "Assembly", "Install", "On Hold"]} value={form.status} onChange={(value) => update("status", value || "Needs Scheduling")} allowDeselect={false} />
               <Select label="Priority" data={["Low", "Normal", "High", "Rush"]} value={form.priority} onChange={(value) => update("priority", value || "Normal")} allowDeselect={false} />
             </Group>
             <Group grow>
