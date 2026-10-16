@@ -139,10 +139,48 @@ const capacityCalendarStyles = `
   @media (max-width:700px) { .mw-month-weekdays, .mw-month-grid { grid-template-columns:repeat(7,120px); min-width:840px; } .mw-month-day { min-height:112px; } }
 `;
 
+const OUTSIDE_JOB_STATIONS = [
+  { key: "all", label: "All Active Jobs", color: "gray" },
+  { key: "Needs Scheduling", label: "Needs Scheduling", color: "blue" },
+  { key: "Scheduled", label: "Scheduled", color: "cyan" },
+  { key: "Fabrication", label: "Fabrication", color: "orange" },
+  { key: "Test Fit", label: "Test Fit", color: "violet" },
+  { key: "Finish / Powder", label: "Finish / Powder", color: "grape" },
+  { key: "Assembly", label: "Assembly", color: "indigo" },
+  { key: "Install", label: "Install", color: "teal" },
+  { key: "On Hold", label: "On Hold", color: "red" },
+  { key: "Completed", label: "Completed / Archive", color: "green" },
+];
+
+const COMPLETED_STAGE_VALUES = ["Completed", "Not Required", "Passed", "Approved", "Paid", "Received"];
+
+function getOutsideJobStation(project) {
+  if (["Completed", "Cancelled"].includes(project?.status)) return "Completed";
+  if (project?.status === "On Hold") return "On Hold";
+  if (["New", "Needs Scheduling", "Awaiting Deposit", "Ready for Production"].includes(project?.status)) return "Needs Scheduling";
+  if (project?.status === "Scheduled") return "Scheduled";
+  if (["Test Fit", "Finish / Powder", "Assembly", "Install", "Fabrication"].includes(project?.status)) return project.status;
+
+  const workStages = [
+    ["fabrication_required", "fabrication_status", "Fabrication"],
+    ["test_fit_required", "test_fit_status", "Test Fit"],
+    ["finish_required", "finish_status", "Finish / Powder"],
+    ["assembly_required", "assembly_status", "Assembly"],
+    ["install_required", "install_status", "Install"],
+  ];
+  const activeRequiredStage = workStages.find(([requiredField, statusField]) =>
+    project?.[requiredField] && !COMPLETED_STAGE_VALUES.includes(project?.[statusField])
+  );
+  if (activeRequiredStage) return activeRequiredStage[2];
+  if (project?.planned_start_date) return "Scheduled";
+  if (project?.status === "In Progress") return "Fabrication";
+  return "Needs Scheduling";
+}
+
 function getStatusColor(status) {
-  if (status === "Completed") return "green";
-  if (["In Progress", "Needs Scheduling", "Scheduled"].includes(status)) return "blue";
-  if (["On Hold", "Awaiting Deposit"].includes(status)) return "orange";
+  if (["Completed", "Completed / Archive"].includes(status)) return "green";
+  if (["In Progress", "Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Install"].includes(status)) return "blue";
+  if (["On Hold", "Awaiting Deposit", "Finish / Powder", "Assembly"].includes(status)) return "orange";
   if (status === "Cancelled") return "red";
   return "gray";
 }
@@ -248,6 +286,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
   const [selectedTrackerStage, setSelectedTrackerStage] = useState("all");
+  const [selectedOutsideStation, setSelectedOutsideStation] = useState("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -487,6 +526,21 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         .includes(term);
     });
   }, [archivedProjects, completedProjects, customers, projects, search, workspaceView]);
+
+  const outsideStationCounts = useMemo(() => Object.fromEntries(
+    OUTSIDE_JOB_STATIONS.map((station) => [
+      station.key,
+      station.key === "all"
+        ? projects.length
+        : station.key === "Completed"
+          ? completedProjects.length
+          : projects.filter((project) => getOutsideJobStation(project) === station.key).length,
+    ])
+  ), [completedProjects, projects]);
+
+  const visibleJobTrackerProjects = selectedOutsideStation === "all" || workspaceView !== "list"
+    ? filteredProjects
+    : filteredProjects.filter((project) => getOutsideJobStation(project) === selectedOutsideStation);
 
   const filteredSiteVisits = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1565,6 +1619,46 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       />
 
       <MWPanel
+        title="Outside Fabrication Stations"
+        subtitle="Select a station to filter outside jobs. Quotes remain separate and can be attached to a job when needed."
+        icon={IconTool}
+      >
+        <SimpleGrid cols={{ base: 2, sm: 3, md: 4, xl: 5 }} spacing="xs">
+          {OUTSIDE_JOB_STATIONS.map((station) => {
+            const selected = selectedOutsideStation === station.key;
+            return (
+              <Button
+                key={station.key}
+                size="sm"
+                color={station.color}
+                variant={selected ? "filled" : "light"}
+                h="auto"
+                mih={52}
+                py={9}
+                px={8}
+                styles={{
+                  root: { minWidth: 0 },
+                  label: { whiteSpace: "normal", lineHeight: 1.15, textAlign: "center", overflow: "visible" },
+                }}
+                onClick={() => {
+                  setSelectedOutsideStation(station.key);
+                  if (station.key === "Completed") {
+                    setWorkspaceView("completed");
+                    setViewMode("completed");
+                  } else {
+                    setWorkspaceView("list");
+                    setViewMode("active");
+                  }
+                }}
+              >
+                {station.label} ({outsideStationCounts[station.key] || 0})
+              </Button>
+            );
+          })}
+        </SimpleGrid>
+      </MWPanel>
+
+      <MWPanel
         title="Outside Operations Workspace"
         subtitle="Use the workflow queue for daily operations, then open the calendar when work has been scheduled."
         icon={IconTool}
@@ -1573,6 +1667,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           fullWidth
           value={workspaceView}
           onChange={(value) => {
+            setSelectedOutsideStation("all");
             setWorkspaceView(value);
             setViewMode(value === "completed" ? "completed" : value === "archived" ? "archived" : "active");
           }}
@@ -2442,10 +2537,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         title={viewMode === "completed" ? "Completed Job Library" : viewMode === "archived" ? "Archived Job Library" : "Job Tracker"}
         subtitle={
           viewMode === "completed"
-            ? `${filteredProjects.length} of ${completedProjects.length} completed jobs shown`
+            ? `${visibleJobTrackerProjects.length} of ${completedProjects.length} completed jobs shown`
             : viewMode === "archived"
-              ? `${filteredProjects.length} of ${archivedProjects.length} archived jobs shown`
-            : `${filteredProjects.length} of ${projects.length} active jobs shown`
+              ? `${visibleJobTrackerProjects.length} of ${archivedProjects.length} archived jobs shown`
+            : `${visibleJobTrackerProjects.length} of ${projects.length} active jobs shown`
         }
         icon={IconTool}
       >
@@ -2470,13 +2565,13 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           </Button>
         </Group>
 
-        {!filteredProjects.length ? (
+        {!visibleJobTrackerProjects.length ? (
           <Alert color="gray" icon={<IconTool size={18} />}>
             No {viewMode === "completed" ? "completed jobs" : viewMode === "archived" ? "archived jobs" : "active jobs"} match the current search.
           </Alert>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg">
-            {filteredProjects.map((project) => {
+            {visibleJobTrackerProjects.map((project) => {
               const customer = customers[project.customer_id];
               const person = getProjectPerson(project, customer);
               const company = getProjectCompany(
@@ -2597,15 +2692,15 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         <Stack gap="sm">
                           <SimpleGrid cols={{ base: 1, sm: 2 }}>
                             <Select
-                              label="Job Status"
+                              label="Current Station"
                               allowDeselect={false}
-                              data={["New", "Needs Scheduling", "Scheduled", "In Progress", "On Hold", "Awaiting Deposit", "Completed"]}
-                              value={project.status || "New"}
+                              data={["Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Finish / Powder", "Assembly", "Install", "On Hold", "Completed"]}
+                              value={getOutsideJobStation(project)}
                               disabled={savingCardProjectId === project.id || completingProjectId === project.id}
                               onChange={(value) => {
-                                if (!value || value === project.status) return;
+                                if (!value || value === getOutsideJobStation(project)) return;
                                 if (value === "Completed") completeProject(project);
-                                else updateJobCard(project, { status: value }, `Status changed to ${value}.`);
+                                else updateJobCard(project, { status: value }, "Moved to " + value + ".");
                               }}
                             />
                             <Select
