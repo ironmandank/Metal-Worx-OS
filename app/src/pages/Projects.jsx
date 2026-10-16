@@ -24,6 +24,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { DateInput } from "@mantine/dates";
 import {
   IconAlertTriangle,
   IconArrowRight,
@@ -274,6 +275,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [billingDrafts, setBillingDrafts] = useState({});
   const [savingBillingProjectId, setSavingBillingProjectId] = useState(null);
   const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
+  const [savingCardProjectId, setSavingCardProjectId] = useState(null);
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
@@ -1297,6 +1299,40 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     }
     popup.document.write(`<!doctype html><html><head><title>Daily Project Update Sheets</title><style>@page{size:letter portrait;margin:.25in}*{box-sizing:border-box}body{margin:0;background:#d9dde0;font:10px Arial,Helvetica,sans-serif;color:#111}.sheet{page-break-after:always;width:8in;min-height:10.5in;margin:16px auto;background:#fff;border:1px solid #20252a;padding:14px 16px 11px;position:relative;box-shadow:0 8px 28px rgba(0,0,0,.18)}.sheet:last-child{page-break-after:auto}header{height:72px;display:flex;align-items:center;justify-content:space-between;border-top:8px solid #b00012;border-bottom:2px solid #20252a;padding:7px 4px}.brand{display:flex;align-items:center;gap:16px}.brand img{width:130px;height:48px;object-fit:contain}.brand h1{margin:0;font-size:22px;letter-spacing:.055em}.brand p{margin:4px 0 0;color:#555;font-size:9px;font-weight:800;letter-spacing:.07em}.doc{text-align:right;border-left:1px solid #999;padding-left:12px}.doc b,.doc span{display:block}.doc b{color:#b00012;font-size:11px}.doc span{color:#666;font-size:8px;margin-top:3px}.instructions{padding:7px 9px;background:#f0f1f2;border-left:5px solid #b00012;margin:8px 0;line-height:1.35}.meta{display:flex;border:1px solid #555;border-bottom:0}.meta span{flex:1;min-height:38px;padding:6px 8px;border-right:1px solid #555;font-size:12px}.meta span:last-child{border-right:0}.meta .wide{flex:2}.meta b,.bottom b{display:block;font-size:7px;letter-spacing:.1em;color:#596168;margin-bottom:5px}.status{display:flex;align-items:center;gap:16px;border:1px solid #555;padding:8px;font-size:10px}.status b{margin-right:4px;letter-spacing:.06em}.field{margin-top:6px}.field b{display:block;background:#252a2e;color:#fff;border-left:6px solid #c60018;padding:4px 7px;font-size:9px;letter-spacing:.045em}.field div{height:50px;border:1px solid #777;border-top:0;background:repeating-linear-gradient(#fff,#fff 23px,#d7dadd 24px)}.field.large div{height:62px}.two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}.bottom{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;border:1px solid #555;margin-top:8px;padding:7px;gap:10px}.bottom span{border-right:1px solid #bbb;padding-right:6px}.bottom span:last-child{border:0}footer{display:flex;justify-content:space-between;align-items:center;margin-top:9px;border-top:3px solid #b00012;padding-top:5px;color:#555;font-size:7px;letter-spacing:.05em}footer b{color:#111}@media print{body{background:#fff}.sheet{margin:0;width:auto;min-height:10.45in;box-shadow:none}}</style></head><body>${pages}<script>window.onload=()=>window.print()</script></body></html>`);
     popup.document.close();
+  }
+
+  async function updateJobCard(project, updates, successMessage) {
+    setSavingCardProjectId(project.id);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update(updates)
+        .eq("id", project.id);
+      if (error) throw error;
+      notifications.show({ title: "Job Updated", message: successMessage, color: "green" });
+      await loadProjects(false);
+    } catch (error) {
+      notifications.show({ title: "Could Not Update Job", message: error.message, color: "red" });
+    } finally {
+      setSavingCardProjectId(null);
+    }
+  }
+
+  function dateInputValue(value) {
+    if (!value) return null;
+    const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function dateInputKey(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, "0");
+      const day = String(value.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    return String(value).slice(0, 10) || null;
   }
 
   function openProject(project) {
@@ -2555,6 +2591,63 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Group>
                       </Stack>
                     </Paper>
+
+                    {viewMode !== "archived" && (
+                      <Paper p="sm" radius="md" style={{ background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.06)" }}>
+                        <Stack gap="sm">
+                          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                            <Select
+                              label="Job Status"
+                              allowDeselect={false}
+                              data={["New", "Needs Scheduling", "Scheduled", "In Progress", "On Hold", "Awaiting Deposit", "Completed"]}
+                              value={project.status || "New"}
+                              disabled={savingCardProjectId === project.id || completingProjectId === project.id}
+                              onChange={(value) => {
+                                if (!value || value === project.status) return;
+                                if (value === "Completed") completeProject(project);
+                                else updateJobCard(project, { status: value }, `Status changed to ${value}.`);
+                              }}
+                            />
+                            <Select
+                              label="Down Payment"
+                              allowDeselect={false}
+                              data={[
+                                { value: "Not Required", label: "Not Required" },
+                                { value: "Pending", label: "Pending" },
+                                { value: "Received", label: "Paid" },
+                              ]}
+                              value={project.down_payment_status === "Paid" ? "Received" : (project.down_payment_status || (project.down_payment_required ? "Pending" : "Not Required"))}
+                              disabled={savingCardProjectId === project.id}
+                              onChange={(value) => value && updateJobCard(project, {
+                                down_payment_status: value,
+                                down_payment_required: value !== "Not Required",
+                              }, value === "Received" ? "Down payment marked as paid." : `Down payment set to ${value.toLowerCase()}.`)}
+                            />
+                          </SimpleGrid>
+                          <DateInput
+                            label="Scheduled Date"
+                            description="Saving this date adds the job to the Company Calendar."
+                            clearable
+                            value={dateInputValue(project.planned_start_date)}
+                            disabled={savingCardProjectId === project.id}
+                            onChange={(value) => {
+                              const scheduledDateKey = dateInputKey(value);
+                              if (scheduledDateKey !== (project.planned_start_date || null)) {
+                                updateJobCard(project, { planned_start_date: scheduledDateKey }, scheduledDateKey ? "Scheduled date saved to the Company Calendar." : "Scheduled date cleared from the job.");
+                              }
+                            }}
+                          />
+                          <Button
+                            variant="light"
+                            color="blue"
+                            leftSection={<IconCalendarEvent size={17} />}
+                            onClick={() => setPage("companyCalendar")}
+                          >
+                            Open Company Calendar
+                          </Button>
+                        </Stack>
+                      </Paper>
+                    )}
 
                     <Text size="sm" c="dimmed" lineClamp={2}>
                       {project.notes || "No job notes yet."}
