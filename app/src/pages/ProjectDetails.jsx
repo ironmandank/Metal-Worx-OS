@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Divider,
   Group,
   Loader,
@@ -3349,6 +3350,14 @@ function ProjectDetails({
                   color="orange"
                 >
                   <Stack gap="md">
+                    {(project.project_category === "Outside Job" || project.work_location === "Outside Job") && (
+                      <Checkbox
+                        label="This job needs a plaque"
+                        checked={Boolean(project.plaque_required)}
+                        disabled={saving}
+                        onChange={(event) => updateProject({ plaque_required: event.currentTarget.checked })}
+                      />
+                    )}
                     {project.design_required && (
                       <Select
                         label="Design Status"
