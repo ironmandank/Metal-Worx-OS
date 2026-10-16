@@ -2727,6 +2727,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                 : project.down_payment_required
                   ? "Deposit Due"
                   : "No Deposit";
+              const plaqueLabel = project.plaque_required ? "Plaque Needed" : "No Plaque";
 
               return (
                 <Paper
@@ -2754,6 +2755,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                       <Group gap={5} wrap="wrap">
                         <Badge size="sm" color={getStatusColor(getOutsideJobStation(project))} variant="light">{getOutsideJobStation(project)}</Badge>
                         <Badge size="sm" color={depositLabel === "Deposit Paid" ? "green" : depositLabel === "Deposit Due" ? "orange" : "gray"} variant="light">{depositLabel}</Badge>
+                        <Badge size="sm" color={project.plaque_required ? "violet" : "gray"} variant="light">{plaqueLabel}</Badge>
                       </Group>
                       <Text size="xs" c="dimmed" fw={700}>{project.project_number || "No job #"}</Text>
                     </Group>
