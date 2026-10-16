@@ -58,6 +58,7 @@ const ImageToDxf = page("ImageToDxf");
 const AccessDenied = page("AccessDenied");
 const Projects = page("Projects");
 const NewProject = page("NewProject");
+const NewOutsideJob = page("NewOutsideJob");
 const ProjectDetails = page("ProjectDetails");
 const EditProject = page("EditProject");
 const FieldSchedule = page("FieldSchedule");
@@ -670,13 +671,17 @@ function App() {
           setSelectedQuote={setSelectedQuote}
           activeUser={activeUser}
           accessLevel={authenticatedProfile?.access_level}
-          initialWorkspaceView={page === "projectBilling" ? "billing" : "board"}
+          initialWorkspaceView={page === "projectBilling" ? "billing" : "list"}
         />
       );
     }
 
     if (page === "newProject") {
       return <NewProject setPage={setPage} />;
+    }
+
+    if (page === "newOutsideJob") {
+      return <NewOutsideJob setPage={setPage} setSelectedProject={setSelectedProject} />;
     }
 
     if (page === "editProject") {
