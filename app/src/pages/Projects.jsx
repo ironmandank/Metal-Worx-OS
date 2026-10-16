@@ -154,11 +154,24 @@ const OUTSIDE_JOB_STATIONS = [
   { key: "Completed", label: "Completed / Archive", color: "green" },
 ];
 
+const OUTSIDE_JOB_STAGE_OPTIONS = OUTSIDE_JOB_STATIONS.filter((station) => station.key !== "all").map((station) => station.key);
+const OUTSIDE_JOB_STATUS_OPTIONS = [
+  "Ready",
+  "In Progress",
+  "Blocked",
+  "Waiting for Customer",
+  "Waiting for Customer Pickup",
+  "Ready to Ship",
+  "Completed — Picked Up",
+  "Completed — Shipped",
+];
+
 const COMPLETED_STAGE_VALUES = ["Completed", "Not Required", "Passed", "Approved", "Paid", "Received"];
 
 function getOutsideJobStation(project) {
   if (["Completed", "Cancelled"].includes(project?.status)) return "Completed";
   if (project?.status === "On Hold") return "On Hold";
+  if (OUTSIDE_JOB_STAGE_OPTIONS.includes(project?.outside_job_stage)) return project.outside_job_stage;
   if (["New", "Needs Scheduling", "Awaiting Deposit", "Ready for Production"].includes(project?.status)) return "Needs Scheduling";
   if (project?.status === "Scheduled") return "Scheduled";
   if (["Test Fit", "Finish / Powder", "Assembly", "Install", "Fabrication"].includes(project?.status)) return project.status;
@@ -177,6 +190,12 @@ function getOutsideJobStation(project) {
   if (project?.status === "In Progress") return "Fabrication";
   if (project?.planned_start_date) return "Scheduled";
   return "Needs Scheduling";
+}
+
+function getOutsideJobStatus(project) {
+  if (OUTSIDE_JOB_STATUS_OPTIONS.includes(project?.outside_job_status)) return project.outside_job_status;
+  if (project?.status === "Completed") return "Completed — Shipped";
+  return "Ready";
 }
 
 function getStatusColor(status) {
@@ -317,6 +336,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [savingBillingProjectId, setSavingBillingProjectId] = useState(null);
   const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
   const [savingCardProjectId, setSavingCardProjectId] = useState(null);
+  const [outsideJobDrafts, setOutsideJobDrafts] = useState({});
   const [scheduleDateDrafts, setScheduleDateDrafts] = useState({});
   const [scheduleTarget, setScheduleTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
@@ -1385,6 +1405,63 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       return false;
     } finally {
       setSavingCardProjectId(null);
+    }
+  }
+
+  function outsideJobDraft(project) {
+    const savedDraft = outsideJobDrafts[project.id];
+    return {
+      stage: OUTSIDE_JOB_STAGE_OPTIONS.includes(savedDraft?.stage) ? savedDraft.stage : getOutsideJobStation(project),
+      status: OUTSIDE_JOB_STATUS_OPTIONS.includes(savedDraft?.status) ? savedDraft.status : getOutsideJobStatus(project),
+    };
+  }
+
+  function updateOutsideJobDraft(project, field, value) {
+    if (!value) return;
+    setOutsideJobDrafts((current) => ({
+      ...current,
+      [project.id]: {
+        ...outsideJobDraft(project),
+        [field]: value,
+      },
+    }));
+  }
+
+  function outsideJobDraftChanged(project) {
+    const draft = outsideJobDraft(project);
+    return draft.stage !== getOutsideJobStation(project) || draft.status !== getOutsideJobStatus(project);
+  }
+
+  async function saveOutsideJobUpdate(project) {
+    const draft = outsideJobDraft(project);
+    if (!OUTSIDE_JOB_STAGE_OPTIONS.includes(draft.stage) || !OUTSIDE_JOB_STATUS_OPTIONS.includes(draft.status)) return;
+    if (draft.stage === "Completed" && project.status !== "Completed" &&
+        !window.confirm(`Mark "${project.project_name || project.project_number}" complete and move it to the Completed jobs?`)) return;
+
+    const timestamp = new Date().toISOString();
+    const updates = {
+      outside_job_stage: draft.stage,
+      outside_job_status: draft.status,
+      status: draft.stage,
+    };
+    if (draft.stage === "Completed") {
+      Object.assign(updates, {
+        percent_complete: 100,
+        completed_at: project.completed_at || timestamp,
+        next_action: "Project complete",
+        is_active: false,
+      });
+    } else if (project.status === "Completed") {
+      Object.assign(updates, { completed_at: null, is_active: true });
+    }
+
+    const saved = await updateJobCard(project, updates, "Stage and status were updated.");
+    if (saved) {
+      setOutsideJobDrafts((current) => {
+        const next = { ...current };
+        delete next[project.id];
+        return next;
+      });
     }
   }
 
@@ -2703,6 +2780,47 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         {project.notes || "Click job to edit or add notes"}
                       </Text>
                     </Group>
+
+                    {viewMode !== "archived" && (
+                      <Paper withBorder radius="md" p="xs" onClick={(event) => event.stopPropagation()}>
+                        <Stack gap="xs">
+                          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                            <Select
+                              size="xs"
+                              label="Stage"
+                              description="Choose where the job belongs"
+                              data={OUTSIDE_JOB_STAGE_OPTIONS}
+                              value={outsideJobDraft(project).stage}
+                              allowDeselect={false}
+                              disabled={savingCardProjectId === project.id}
+                              onChange={(value) => updateOutsideJobDraft(project, "stage", value)}
+                            />
+                            <Select
+                              size="xs"
+                              label="Status"
+                              description="Choose its current work or delivery status"
+                              data={OUTSIDE_JOB_STATUS_OPTIONS}
+                              value={outsideJobDraft(project).status}
+                              allowDeselect={false}
+                              disabled={savingCardProjectId === project.id}
+                              onChange={(value) => updateOutsideJobDraft(project, "status", value)}
+                            />
+                          </SimpleGrid>
+                          <Button
+                            size="xs"
+                            color="red"
+                            loading={savingCardProjectId === project.id}
+                            disabled={!outsideJobDraftChanged(project)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              saveOutsideJobUpdate(project);
+                            }}
+                          >
+                            Update Stage, Status
+                          </Button>
+                        </Stack>
+                      </Paper>
+                    )}
 
                     <Group gap="xs" grow onClick={(event) => event.stopPropagation()}>
                       {viewMode === "active" && (
