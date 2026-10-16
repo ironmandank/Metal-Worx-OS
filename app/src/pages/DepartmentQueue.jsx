@@ -273,12 +273,14 @@ function DepartmentQueue({
   function updateArtworkDraft(workOrder, field, value) {
     if (value === null || value === undefined) return;
     const order = jobDetails[workOrder.production_job_id]?.order;
+    const job = jobDetails[workOrder.production_job_id]?.job;
     setArtworkDrafts((current) => ({
       ...current,
       [workOrder.id]: {
         stage: current[workOrder.id]?.stage ?? stationFor(workOrder),
         status: current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder),
         salePrice: current[workOrder.id]?.salePrice ?? Number(order?.total_amount || 0),
+        plaqueRequired: current[workOrder.id]?.plaqueRequired ?? Boolean(job?.plaque_required),
         ...(field === "stage" && value !== "Design" &&
           (current[workOrder.id]?.status ?? currentWorkflowStatus(workOrder)) === "Awaiting Customer Approval"
           ? { status: "Ready" }
@@ -290,11 +292,13 @@ function DepartmentQueue({
 
   function artworkDraft(workOrder) {
     const order = jobDetails[workOrder.production_job_id]?.order;
+    const job = jobDetails[workOrder.production_job_id]?.job;
     const savedDraft = artworkDrafts[workOrder.id];
     if (!savedDraft) return {
       stage: stationFor(workOrder),
       status: currentWorkflowStatus(workOrder),
       salePrice: Number(order?.total_amount || 0),
+      plaqueRequired: Boolean(job?.plaque_required),
     };
     const validStatuses = artworkStatusOptions({
       ...workOrder,
@@ -304,15 +308,18 @@ function DepartmentQueue({
       stage: SHOP_STATIONS.includes(savedDraft.stage) ? savedDraft.stage : stationFor(workOrder),
       status: validStatuses.includes(savedDraft.status) ? savedDraft.status : currentWorkflowStatus(workOrder),
       salePrice: Number(savedDraft.salePrice || 0),
+      plaqueRequired: savedDraft.plaqueRequired ?? Boolean(job?.plaque_required),
     };
   }
 
   function artworkDraftChanged(workOrder) {
     const draft = artworkDraft(workOrder);
     const order = jobDetails[workOrder.production_job_id]?.order;
+    const job = jobDetails[workOrder.production_job_id]?.job;
     return draft.stage !== stationFor(workOrder) ||
       draft.status !== currentWorkflowStatus(workOrder) ||
-      Number(draft.salePrice || 0) !== Number(order?.total_amount || 0);
+      Number(draft.salePrice || 0) !== Number(order?.total_amount || 0) ||
+      Boolean(draft.plaqueRequired) !== Boolean(job?.plaque_required);
   }
 
   async function applyArtworkUpdate(workOrder, draft, blockedNote = "") {
@@ -322,9 +329,11 @@ function DepartmentQueue({
     const currentStage = stationFor(workOrder);
     const currentStatus = currentWorkflowStatus(workOrder);
     const order = jobDetails[workOrder.production_job_id]?.order;
+    const job = jobDetails[workOrder.production_job_id]?.job;
     const statusChanged = draft.status !== currentStatus;
     const stageChanged = draft.stage !== currentStage;
     const priceChanged = Number(draft.salePrice || 0) !== Number(order?.total_amount || 0);
+    const plaqueChanged = Boolean(draft.plaqueRequired) !== Boolean(job?.plaque_required);
     const terminalStatus = [
       "Waiting for Customer Pickup",
       "Ready to Ship",
@@ -363,7 +372,16 @@ function DepartmentQueue({
       if (priceError) throw priceError;
     }
 
-    return { stageChanged, statusChanged, priceChanged };
+    if (plaqueChanged) {
+      if (!workOrder.production_job_id) throw new Error("This artwork card is not linked to a production job, so its plaque setting could not be saved.");
+      const { error: plaqueError } = await supabase
+        .from("production_jobs")
+        .update({ plaque_required: Boolean(draft.plaqueRequired), updated_at: new Date().toISOString() })
+        .eq("id", workOrder.production_job_id);
+      if (plaqueError) throw plaqueError;
+    }
+
+    return { stageChanged, statusChanged, priceChanged, plaqueChanged };
   }
 
   async function saveArtworkUpdate(workOrder) {
@@ -387,7 +405,7 @@ function DepartmentQueue({
 
       notifications.show({
         title: "Artwork Updated",
-        message: "The stage, status, and final sale price were saved. Images, files, notes, and history stayed with the job.",
+        message: "Stage, status, plaque requirement, and final sale price were saved. Images, files, notes, and history stayed with the job.",
         color: "green",
       });
       setDetailTarget(null);
@@ -1386,6 +1404,11 @@ function DepartmentQueue({
                 </Badge>
               )}
               {overdue && <Badge color="red" variant="outline">Overdue</Badge>}
+              {unifiedArtwork && (
+                <Badge color={job?.plaque_required ? "orange" : "gray"} variant="light">
+                  {job?.plaque_required ? "Needs Plaque" : "No Plaque"}
+                </Badge>
+              )}
               {isDesignStation(workOrder) && (
                 <Badge
                   color={order?.design_fee_required
@@ -1440,6 +1463,12 @@ function DepartmentQueue({
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
                 </SimpleGrid>
+                <Checkbox
+                  label="This job needs a plaque"
+                  checked={artworkDraft(workOrder).plaqueRequired}
+                  disabled={!isAdministrator || savingAction}
+                  onChange={(event) => updateArtworkDraft(workOrder, "plaqueRequired", event.currentTarget.checked)}
+                />
                 {moneyPrivacy.unlocked ? (
                   <NumberInput
                     label="Final Sale Price"
@@ -1734,6 +1763,11 @@ function DepartmentQueue({
               )}
               <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
               {unifiedArtwork && <Badge color="violet" variant="light">{workflowStage(workOrder)}</Badge>}
+              {unifiedArtwork && (
+                <Badge color={job?.plaque_required ? "orange" : "gray"} variant="light">
+                  {job?.plaque_required ? "Needs Plaque" : "No Plaque"}
+                </Badge>
+              )}
               {isDesignStation(workOrder) && (
                 <Badge
                   color={order?.design_fee_required
@@ -1792,6 +1826,13 @@ function DepartmentQueue({
                     onChange={(value) => updateArtworkDraft(workOrder, "status", value)}
                   />
                 </SimpleGrid>
+                <Checkbox
+                  size="xs"
+                  label="This job needs a plaque"
+                  checked={artworkDraft(workOrder).plaqueRequired}
+                  disabled={!isAdministrator || savingAction}
+                  onChange={(event) => updateArtworkDraft(workOrder, "plaqueRequired", event.currentTarget.checked)}
+                />
                 {moneyPrivacy.unlocked ? (
                   <NumberInput
                     size="xs"
