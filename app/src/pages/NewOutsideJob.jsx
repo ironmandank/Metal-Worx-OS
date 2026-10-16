@@ -88,6 +88,8 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
         project_name: form.project_name.trim(),
         project_type: form.project_type,
         project_category: "Outside Job",
+        outside_job_stage: form.status,
+        outside_job_status: "Ready",
         customer_id: form.customer_id ? Number(form.customer_id) : null,
         contact_name: [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || null,
         contact_phone: customer?.phone || null,
