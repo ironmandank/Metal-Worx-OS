@@ -1481,9 +1481,9 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     <Stack gap="xl">
       <style>{capacityCalendarStyles}</style>
       <MWPageHeader
-        title="Outside Jobs"
+        title="Outside Fabrication Projects"
         subtitle="Track each job by its status and scheduled date. Quotes are separate and can be attached when needed."
-        buttonText="+ New Job"
+        buttonText="+ Add Fabrication Job"
         onButtonClick={() => setPage("newOutsideJob")}
         setPage={setPage}
         showDashboard
