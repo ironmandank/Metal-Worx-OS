@@ -66,6 +66,8 @@ import companyLogo from "../assets/metal-worx-official-transparent.png";
 import { exportProjectBillingStatement } from "../services/projectBillingStatementService";
 import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
 import { formatProjectMoney } from "../lib/projectMoneyPrivacy";
+import { createCallback } from "../services/callbackService";
+import { getActiveProfiles } from "../services/notificationService";
 
 const CALENDAR_TYPES = [
   { label: "Railings & Handrails", color: "#1677c8", terms: ["rail", "handrail"] },
@@ -316,10 +318,20 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
   const [savingCardProjectId, setSavingCardProjectId] = useState(null);
   const [scheduleDateDrafts, setScheduleDateDrafts] = useState({});
+  const [followUpTarget, setFollowUpTarget] = useState(null);
+  const [followUpPeople, setFollowUpPeople] = useState([]);
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
+  const [followUpDraft, setFollowUpDraft] = useState({ type: "Follow-Up", dueDate: null, assignedTo: "", notes: "" });
 
   useEffect(() => {
     window.localStorage.setItem("mw-outside-workspace", activeWorkspace);
   }, [activeWorkspace]);
+
+  useEffect(() => {
+    getActiveProfiles()
+      .then((profiles) => setFollowUpPeople(profiles.filter((profile) => profile.profile_type === "Person").map((profile) => profile.display_name).filter(Boolean)))
+      .catch((error) => console.error("Could not load callback assignees", error));
+  }, []);
 
   const activeUserName = typeof activeUser === "string"
     ? activeUser
@@ -1372,6 +1384,38 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       return false;
     } finally {
       setSavingCardProjectId(null);
+    }
+  }
+
+  async function saveOutsideJobFollowUp() {
+    if (!followUpTarget) return;
+    setSavingFollowUp(true);
+    try {
+      const customer = customers[followUpTarget.customer_id];
+      const person = getProjectPerson(followUpTarget, customer);
+      const company = getProjectCompany(followUpTarget, customer, person);
+      const dueDateKey = dateInputKey(followUpDraft.dueDate);
+      const dueDate = dueDateKey ? new Date(`${dueDateKey}T09:00:00`).toISOString() : null;
+      await createCallback({
+        title: `${followUpDraft.type}: ${getProjectIdentity(followUpTarget, customer)}`,
+        contact_name: person || null,
+        company_name: company || null,
+        phone: followUpTarget.phone || customer?.phone || null,
+        callback_type: followUpDraft.type,
+        assigned_to: followUpDraft.assignedTo || activeUserName,
+        due_at: dueDate,
+        priority: "Medium",
+        notes: [followUpDraft.notes.trim(), `Outside fabrication job: ${followUpTarget.project_number || followUpTarget.project_name || followUpTarget.id}`].filter(Boolean).join("\n\n"),
+        project_id: followUpTarget.id,
+        customer_id: followUpTarget.customer_id || null,
+      });
+      notifications.show({ title: "Follow-Up Added", message: "It is linked to this job and now appears in Callbacks.", color: "green" });
+      setFollowUpTarget(null);
+      setFollowUpDraft({ type: "Follow-Up", dueDate: null, assignedTo: followUpPeople.includes(activeUserName) ? activeUserName : followUpPeople[0] || "", notes: "" });
+    } catch (error) {
+      notifications.show({ title: "Could Not Add Follow-Up", message: error.message, color: "red" });
+    } finally {
+      setSavingFollowUp(false);
     }
   }
 
@@ -2573,7 +2617,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             No {viewMode === "completed" ? "completed jobs" : viewMode === "archived" ? "archived jobs" : "active jobs"} match the current search.
           </Alert>
         ) : (
-          <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg">
+          <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="md">
             {visibleJobTrackerProjects.map((project) => {
               const customer = customers[project.customer_id];
               const person = getProjectPerson(project, customer);
@@ -2590,8 +2634,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
               return (
                 <Paper
                   key={project.id}
-                  p="lg"
-                  radius="lg"
+                  p="md"
+                  radius="md"
                   style={{
                     background:
                       project.priority === "Rush"
@@ -2604,7 +2648,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     }`,
                   }}
                 >
-                  <Stack gap="md">
+                  <Stack gap="sm">
                     <Group justify="space-between" align="flex-start">
                       <Group gap="xs" wrap="wrap">
                         <Badge
@@ -2625,7 +2669,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
                     <Box>
                       <Title
-                        order={3}
+                        order={4}
                         c="white"
                         style={{
                           lineHeight: 1.25,
@@ -2645,7 +2689,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     </Box>
 
                     <Paper
-                      p="sm"
+                      p="xs"
                       radius="md"
                       style={{
                         background: "rgba(0,0,0,.2)",
@@ -2654,36 +2698,36 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     >
                       <Stack gap="xs">
                         <Group justify="space-between" wrap="nowrap">
-                          <Text size="sm" c="dimmed">
+                          <Text size="xs" c="dimmed">
                             Owner
                           </Text>
-                          <Text size="sm" fw={750} ta="right">
+                          <Text size="xs" fw={750} ta="right">
                             {project.assigned_to ||
                               project.intake_owner ||
                               "Unassigned"}
                           </Text>
                         </Group>
                         <Group justify="space-between" wrap="nowrap">
-                          <Text size="sm" c="dimmed">
+                          <Text size="xs" c="dimmed">
                             Location
                           </Text>
-                          <Text size="sm" fw={750} ta="right">
+                          <Text size="xs" fw={750} ta="right">
                             {project.work_location ||
                               project.job_address ||
                               "Not set"}
                           </Text>
                         </Group>
                         <Group justify="space-between" wrap="nowrap">
-                          <Text size="sm" c="dimmed">
+                          <Text size="xs" c="dimmed">
                             Scheduled
                           </Text>
-                          <Text size="sm" fw={750} ta="right">
+                          <Text size="xs" fw={750} ta="right">
                             {formatDate(scheduledDate, Boolean(project.install_start))}
                           </Text>
                         </Group>
                         <Group justify="space-between" wrap="nowrap">
-                          <Text size="sm" c="dimmed">Quote</Text>
-                          <Text size="sm" fw={750} ta="right">
+                          <Text size="xs" c="dimmed">Quote</Text>
+                          <Text size="xs" fw={750} ta="right">
                             {tracking.quoteCount ? `${tracking.quoteCount} attached` : "None attached"}
                           </Text>
                         </Group>
@@ -2691,11 +2735,12 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                     </Paper>
 
                     {viewMode !== "archived" && (
-                      <Paper p="sm" radius="md" style={{ background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.06)" }}>
-                        <Stack gap="sm">
-                          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                      <Paper p="xs" radius="md" style={{ background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.06)" }}>
+                        <Stack gap="xs">
+                          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
                             <Select
-                              label="Current Station"
+                              size="xs"
+                              label="Station"
                               allowDeselect={false}
                               data={["Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Finish / Powder", "Assembly", "Install", "On Hold", "Completed"]}
                               value={getOutsideJobStation(project)}
@@ -2707,7 +2752,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                               }}
                             />
                             <Select
-                              label="Down Payment"
+                              size="xs"
+                              label="Deposit"
                               allowDeselect={false}
                               data={[
                                 { value: "Not Required", label: "Not Required" },
@@ -2723,14 +2769,15 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                             />
                           </SimpleGrid>
                           <DateInput
+                            size="xs"
                             label="Scheduled Date"
-                            description="Choose a date, then click Add to Calendar."
                             clearable
                             value={Object.prototype.hasOwnProperty.call(scheduleDateDrafts, project.id) ? scheduleDateDrafts[project.id] : dateInputValue(project.planned_start_date)}
                             disabled={savingCardProjectId === project.id}
                             onChange={(value) => setScheduleDateDrafts((current) => ({ ...current, [project.id]: value }))}
                           />
                           <Button
+                            size="xs"
                             variant="light"
                             color="blue"
                             leftSection={<IconCalendarEvent size={17} />}
@@ -2762,93 +2809,35 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                       </Paper>
                     )}
 
-                    <Text size="sm" c="dimmed" lineClamp={2}>
+                    <Text size="xs" c="dimmed" lineClamp={2}>
                       {project.notes || "No job notes yet."}
                     </Text>
 
-                    <Stack gap="xs">
-                      <Button
-                        fullWidth
-                        color="red"
-                        rightSection={<IconArrowRight size={17} />}
-                        onClick={() => openProject(project)}
-                      >
-                          {viewMode === "completed" ? "Open Job Package" : "Open Job"}
+                    <SimpleGrid cols={2} spacing="xs">
+                      <Button size="xs" fullWidth color="red" rightSection={<IconArrowRight size={15} />} onClick={() => openProject(project)}>
+                        {viewMode === "completed" ? "Open Package" : "Open Job"}
                       </Button>
                       {viewMode === "completed" ? (
-                        <Button
-                          fullWidth
-                          variant="light"
-                          color="blue"
-                          leftSection={<IconPackage size={17} />}
-                          onClick={() => {
-                            setSelectedProject({ ...project, initialTab: "package" });
-                            setPage("projectDetails");
-                          }}
-                        >
-                          Files & Reuse Checklist
+                        <Button size="xs" fullWidth variant="light" color="blue" leftSection={<IconPackage size={15} />} onClick={() => { setSelectedProject({ ...project, initialTab: "package" }); setPage("projectDetails"); }}>
+                          Files & Reuse
                         </Button>
                       ) : (
-                        <Button
-                          fullWidth
-                          variant="light"
-                          color="blue"
-                          leftSection={<IconClipboardCheck size={17} />}
-                          onClick={() => openProjectChecklist(project)}
-                        >
-                          Checklist & Updates
+                        <Button size="xs" fullWidth variant="light" color="blue" leftSection={<IconClipboardCheck size={15} />} onClick={() => openProjectChecklist(project)}>
+                          Checklist
                         </Button>
                       )}
-                      {viewMode !== "archived" && <Button
-                        fullWidth
-                        variant="light"
-                        color="gray"
-                        onClick={() => editProject(project)}
-                      >
-                        Edit Project
+                      {viewMode !== "archived" && <Button size="xs" fullWidth variant="light" color="gray" onClick={() => editProject(project)}>Edit</Button>}
+                      {viewMode === "active" && <Button size="xs" fullWidth variant="light" color="orange" leftSection={<IconPhone size={15} />} onClick={() => { setFollowUpTarget(project); setFollowUpDraft({ type: "Follow-Up", dueDate: null, assignedTo: followUpPeople.includes(activeUserName) ? activeUserName : followUpPeople[0] || "", notes: "" }); }}>
+                        Follow-Up / Call Back
                       </Button>}
-                      {viewMode === "archived" && isAdministrator && (
-                        <Button
-                          fullWidth
-                          color="green"
-                          leftSection={<IconRotateClockwise size={17} />}
-                          loading={restoringProjectId === project.id}
-                          onClick={() => restoreArchivedProject(project)}
-                        >
-                          Restore Project
-                        </Button>
-                      )}
+                      {viewMode === "archived" && isAdministrator && <Button size="xs" fullWidth color="green" leftSection={<IconRotateClockwise size={15} />} loading={restoringProjectId === project.id} onClick={() => restoreArchivedProject(project)}>Restore</Button>}
                       {viewMode !== "archived" && (project.status === "Completed" ? (
-                        <Button
-                          fullWidth
-                          variant="light"
-                          color="green"
-                          leftSection={<IconRotateClockwise size={17} />}
-                          onClick={() => reopenProject(project)}
-                        >
-                          Reopen Project
-                        </Button>
+                        <Button size="xs" fullWidth variant="light" color="green" leftSection={<IconRotateClockwise size={15} />} onClick={() => reopenProject(project)}>Reopen</Button>
                       ) : (
-                        <Button
-                          fullWidth
-                          variant="light"
-                          color="green"
-                          leftSection={<IconCircleCheck size={17} />}
-                          onClick={() => completeProject(project)}
-                        >
-                          Mark Complete
-                        </Button>
+                        <Button size="xs" fullWidth variant="light" color="green" leftSection={<IconCircleCheck size={15} />} onClick={() => completeProject(project)}>Complete</Button>
                       ))}
-                      {isAdministrator && viewMode !== "archived" && <Button
-                        fullWidth
-                        variant="subtle"
-                        color="red"
-                        leftSection={<IconTrash size={17} />}
-                        onClick={() => removeProject(project)}
-                      >
-                        Archive Project
-                      </Button>}
-                    </Stack>
+                      {isAdministrator && viewMode !== "archived" && <Button size="xs" fullWidth variant="subtle" color="red" leftSection={<IconTrash size={15} />} onClick={() => removeProject(project)}>Archive</Button>}
+                    </SimpleGrid>
                   </Stack>
                 </Paper>
               );
@@ -2856,6 +2845,19 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           </SimpleGrid>
         )}
       </MWPanel>}
+      <Modal opened={Boolean(followUpTarget)} onClose={() => setFollowUpTarget(null)} title="Add Job Follow-Up" centered>
+        <Stack>
+          <Text size="sm" c="dimmed">{followUpTarget ? getProjectIdentity(followUpTarget, customers[followUpTarget.customer_id]) : ""}</Text>
+          <Select label="Type" data={["Follow-Up", "Callback", "Quote Follow-Up", "Site Visit Follow-Up"]} value={followUpDraft.type} onChange={(value) => setFollowUpDraft((current) => ({ ...current, type: value || "Follow-Up" }))} allowDeselect={false} />
+          <DateInput label="Due date" clearable value={followUpDraft.dueDate} onChange={(value) => setFollowUpDraft((current) => ({ ...current, dueDate: value }))} />
+          <Select label="Assigned to" data={followUpPeople} value={followUpDraft.assignedTo} onChange={(value) => setFollowUpDraft((current) => ({ ...current, assignedTo: value || "" }))} searchable clearable placeholder="Select a person" />
+          <Textarea label="Notes" value={followUpDraft.notes} onChange={(event) => setFollowUpDraft((current) => ({ ...current, notes: event.currentTarget.value }))} minRows={3} placeholder="What needs to be followed up?" />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setFollowUpTarget(null)}>Cancel</Button>
+            <Button color="red" leftSection={<IconPhone size={16} />} loading={savingFollowUp} onClick={saveOutsideJobFollowUp}>Add to Callbacks</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
