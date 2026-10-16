@@ -11,7 +11,6 @@ import {
   Modal,
   NumberInput,
   Paper,
-  Progress,
   SegmentedControl,
   SimpleGrid,
   ScrollArea,
@@ -141,7 +140,7 @@ const capacityCalendarStyles = `
 
 function getStatusColor(status) {
   if (status === "Completed") return "green";
-  if (["In Progress", "Needs Scheduling"].includes(status)) return "blue";
+  if (["In Progress", "Needs Scheduling", "Scheduled"].includes(status)) return "blue";
   if (["On Hold", "Awaiting Deposit"].includes(status)) return "orange";
   if (status === "Cancelled") return "red";
   return "gray";
@@ -229,7 +228,7 @@ function getCalendarEntryType(entry) {
   return getCalendarType(entry.project || {});
 }
 
-function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel, initialWorkspaceView = "board" }) {
+function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, accessLevel, initialWorkspaceView = "list" }) {
   const projectMoney = useProjectMoneyPrivacy(activeUser);
   const [projects, setProjects] = useState([]);
   const [completedProjects, setCompletedProjects] = useState([]);
@@ -375,6 +374,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             latestUpdate: null,
             latestApproval: null,
             latestQuote: null,
+            quoteCount: 0,
           },
         ])
       );
@@ -396,7 +396,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       const projectIdByQuote = Object.fromEntries(quoteRows.map((quote) => [quote.id, quote.project_id]));
       quoteRows.forEach((quote) => {
         const tracking = trackingMap[quote.project_id];
-        if (tracking && !tracking.latestQuote) tracking.latestQuote = quote;
+        if (tracking) {
+          tracking.quoteCount += 1;
+          if (!tracking.latestQuote) tracking.latestQuote = quote;
+        }
       });
       approvalRows.forEach((approval) => {
         const tracking = trackingMap[projectIdByQuote[approval.quote_id]];
@@ -1478,10 +1481,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
     <Stack gap="xl">
       <style>{capacityCalendarStyles}</style>
       <MWPageHeader
-        title="Outside Fabrication"
-        subtitle="Field fabrication, railings, gates, installs, repairs, and shop-intake projects."
-        buttonText="+ New Project"
-        onButtonClick={() => setPage("newProject")}
+        title="Outside Jobs"
+        subtitle="Track each job by its status and scheduled date. Quotes are separate and can be attached when needed."
+        buttonText="+ New Job"
+        onButtonClick={() => setPage("newOutsideJob")}
         setPage={setPage}
         showDashboard
       />
@@ -1538,9 +1541,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             setViewMode(value === "completed" ? "completed" : value === "archived" ? "archived" : "active");
           }}
           data={[
-            { label: "Job Tracker", value: "board" },
+            { label: "Job Tracker", value: "list" },
             { label: "Project Billing", value: "billing" },
-            { label: "Project List", value: "list" },
             { label: "Calendar", value: "calendar" },
             { label: `Completed (${completedProjects.length})`, value: "completed" },
             { label: `Archived (${archivedProjects.length})`, value: "archived" },
@@ -2401,13 +2403,13 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       )}
 
       {(workspaceView === "list" || workspaceView === "completed" || workspaceView === "archived") && <MWPanel
-        title={viewMode === "completed" ? "Completed Project Library" : viewMode === "archived" ? "Archived Project Library" : "Project Tracker"}
+        title={viewMode === "completed" ? "Completed Job Library" : viewMode === "archived" ? "Archived Job Library" : "Job Tracker"}
         subtitle={
           viewMode === "completed"
-            ? `${filteredProjects.length} of ${completedProjects.length} completed project packages shown`
+            ? `${filteredProjects.length} of ${completedProjects.length} completed jobs shown`
             : viewMode === "archived"
-              ? `${filteredProjects.length} of ${archivedProjects.length} archived projects shown`
-            : `${filteredProjects.length} of ${projects.length} active projects shown`
+              ? `${filteredProjects.length} of ${archivedProjects.length} archived jobs shown`
+            : `${filteredProjects.length} of ${projects.length} active jobs shown`
         }
         icon={IconTool}
       >
@@ -2434,7 +2436,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
         {!filteredProjects.length ? (
           <Alert color="gray" icon={<IconTool size={18} />}>
-            No {viewMode === "completed" ? "completed project packages" : viewMode === "archived" ? "archived projects" : "active projects"} match the current search.
+            No {viewMode === "completed" ? "completed jobs" : viewMode === "archived" ? "archived jobs" : "active jobs"} match the current search.
           </Alert>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }} spacing="lg">
@@ -2446,26 +2448,10 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                 customer,
                 person
               );
-              const requirements = [
-                project.site_visit_required && "Site Visit",
-                project.measurements_required && "Measurements",
-                project.quote_required && "Quote",
-                project.fabrication_required && "Fabrication",
-                project.test_fit_required && "Test Fit",
-                project.finish_required && "Finish",
-                project.install_required && "Install",
-              ].filter(Boolean);
               const tracking = trackingByProject[project.id] || {
-                tasks: 0,
-                applicable: 0,
-                complete: 0,
-                blocked: 0,
-                latestUpdate: null,
+                quoteCount: 0,
               };
-              const checklistPercent = tracking.applicable
-                ? Math.round((tracking.complete / tracking.applicable) * 100)
-                : 0;
-              const latestUpdate = tracking.latestUpdate;
+              const scheduledDate = project.install_start || project.install_date || project.planned_start_date;
 
               return (
                 <Paper
@@ -2555,115 +2541,24 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Group>
                         <Group justify="space-between" wrap="nowrap">
                           <Text size="sm" c="dimmed">
-                            Due
+                            Scheduled
                           </Text>
                           <Text size="sm" fw={750} ta="right">
-                            {formatDate(
-                              project.due_date ||
-                                project.target_completion_date
-                            )}
+                            {formatDate(scheduledDate, Boolean(project.install_start))}
+                          </Text>
+                        </Group>
+                        <Group justify="space-between" wrap="nowrap">
+                          <Text size="sm" c="dimmed">Quote</Text>
+                          <Text size="sm" fw={750} ta="right">
+                            {tracking.quoteCount ? `${tracking.quoteCount} attached` : "None attached"}
                           </Text>
                         </Group>
                       </Stack>
                     </Paper>
 
-                    <Paper
-                      p="sm"
-                      radius="md"
-                      style={{
-                        background: "rgba(120,0,12,.1)",
-                        border: "1px solid rgba(255,50,65,.18)",
-                      }}
-                    >
-                      <Text size="xs" fw={850} c="dimmed" tt="uppercase">
-                        Next Action
-                      </Text>
-                      <Text fw={800} c="white">
-                        {project.next_action || "Review project status"}
-                      </Text>
-                    </Paper>
-
-                    <Paper
-                      p="sm"
-                      radius="md"
-                      style={{
-                        background: "rgba(0,0,0,.2)",
-                        border:
-                          tracking.blocked > 0 ||
-                          latestUpdate?.leadership_attention_required
-                            ? "1px solid rgba(255,70,75,.55)"
-                            : "1px solid rgba(255,255,255,.06)",
-                      }}
-                    >
-                      <Group justify="space-between" mb={6}>
-                        <Group gap={6}>
-                          <IconClipboardCheck size={16} />
-                          <Text size="sm" fw={800}>
-                            Checklist
-                          </Text>
-                        </Group>
-                        <Text size="sm" fw={800}>
-                          {tracking.tasks
-                            ? `${tracking.complete}/${tracking.applicable}`
-                            : "Not started"}
-                        </Text>
-                      </Group>
-                      <Progress
-                        value={checklistPercent}
-                        color={tracking.blocked ? "red" : "green"}
-                        size="sm"
-                        radius="xl"
-                      />
-                      <Group gap="xs" mt="sm" wrap="wrap">
-                        {tracking.blocked > 0 && (
-                          <Badge color="red" variant="filled">
-                            {tracking.blocked} Blocked
-                          </Badge>
-                        )}
-                        {latestUpdate ? (
-                          <Badge
-                            color={
-                              latestUpdate.status === "Blocked"
-                                ? "red"
-                                : latestUpdate.status === "At Risk"
-                                  ? "orange"
-                                  : "green"
-                            }
-                            variant="light"
-                          >
-                            {latestUpdate.status} · Updated{" "}
-                            {formatDate(latestUpdate.update_date)}
-                          </Badge>
-                        ) : (
-                          <Badge color="gray" variant="light">
-                            No daily update
-                          </Badge>
-                        )}
-                        {latestUpdate?.leadership_attention_required && (
-                          <Badge color="red" variant="filled">
-                            Leadership Attention
-                          </Badge>
-                        )}
-                      </Group>
-                    </Paper>
-
-                    <Group gap="xs" wrap="wrap">
-                      {requirements.length ? (
-                        requirements.map((requirement) => (
-                          <Badge
-                            key={requirement}
-                            color="gray"
-                            variant="light"
-                          >
-                            {requirement}
-                          </Badge>
-                        ))
-                      ) : (
-                        <Badge color="gray" variant="light">
-                          No workflow flags
-                        </Badge>
-                      )}
-                    </Group>
+                    <Text size="sm" c="dimmed" lineClamp={2}>
+                      {project.notes || "No job notes yet."}
+                    </Text>
 
                     <Stack gap="xs">
                       <Button
@@ -2672,7 +2567,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         rightSection={<IconArrowRight size={17} />}
                         onClick={() => openProject(project)}
                       >
-                        {viewMode === "completed" ? "Open Project Package" : "Open Project"}
+                          {viewMode === "completed" ? "Open Job Package" : "Open Job"}
                       </Button>
                       {viewMode === "completed" ? (
                         <Button
