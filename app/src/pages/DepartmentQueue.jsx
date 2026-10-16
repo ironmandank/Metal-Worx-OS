@@ -376,7 +376,7 @@ function DepartmentQueue({
       if (!workOrder.production_job_id) throw new Error("This artwork card is not linked to a production job, so its plaque setting could not be saved.");
       const { error: plaqueError } = await supabase
         .from("production_jobs")
-        .update({ plaque_required: Boolean(draft.plaqueRequired), updated_at: new Date().toISOString() })
+        .update({ plaque_required: Boolean(draft.plaqueRequired) })
         .eq("id", workOrder.production_job_id);
       if (plaqueError) throw plaqueError;
     }
