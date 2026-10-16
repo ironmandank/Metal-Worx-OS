@@ -247,6 +247,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   });
   const [customers, setCustomers] = useState({});
   const [search, setSearch] = useState("");
+  const [selectedTrackerStage, setSelectedTrackerStage] = useState("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -607,6 +608,15 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           .filter(activeStatus)
           .map((project) => queueProject(project, "Active", "green")),
       },
+      {
+        key: "onHold",
+        label: "On Hold",
+        description: "Projects paused and waiting for a blocker or management decision.",
+        color: "orange",
+        items: filteredProjects
+          .filter((project) => project.status === "On Hold")
+          .map((project) => queueProject(project, "On Hold", "orange")),
+      },
     ];
     const rankValue = (item) => Number(item.project?.work_queue_rank || Number.MAX_SAFE_INTEGER);
     const dateValue = (item) => {
@@ -620,6 +630,11 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       ),
     }));
   }, [activeSiteVisits, customers, filteredProjects, linkedQuoteVisits, quotesById]);
+
+  const visibleCommandQueues = selectedTrackerStage === "all"
+    ? commandQueues
+    : commandQueues.filter((queue) => queue.key === selectedTrackerStage);
+  const trackedItemCount = commandQueues.reduce((total, queue) => total + queue.items.length, 0);
 
   const rankedOutsideProjects = useMemo(() => [...projects].sort((left, right) => {
     const leftRank = Number(left.work_queue_rank || Number.MAX_SAFE_INTEGER);
@@ -1523,7 +1538,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             setViewMode(value === "completed" ? "completed" : value === "archived" ? "archived" : "active");
           }}
           data={[
-            { label: "Workflow Queue", value: "board" },
+            { label: "Job Tracker", value: "board" },
             { label: "Project Billing", value: "billing" },
             { label: "Project List", value: "list" },
             { label: "Calendar", value: "calendar" },
@@ -1838,8 +1853,8 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
 
       {workspaceView === "board" && (
         <MWPanel
-          title="Outside Project Command Center"
-          subtitle="Take in new work, finish quotes, collect deposits, schedule approved projects, and follow active work in one place."
+          title="Outside Job Tracker"
+          subtitle="Follow each outside job from estimate to closeout. Select a stage to see its jobs; quote, approval, and deposit status stay with the project."
           icon={IconClipboardCheck}
           rightSection={<Group gap="xs"><Button size="xs" color="red" onClick={() => setPage("quoteCenter")}>New Customer Request</Button><Button size="xs" variant="light" color="blue" leftSection={<IconCalendarEvent size={15} />} onClick={() => setWorkspaceView("calendar")}>Open Calendar</Button></Group>}
         >
@@ -1854,17 +1869,58 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             <Button variant="light" color="gray" leftSection={refreshing ? <Loader size={16} /> : <IconRefresh size={17} />} disabled={refreshing} onClick={() => loadProjects(false)}>Refresh</Button>
           </Group>
 
-          <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }} spacing="sm" mb="lg">
+          <SimpleGrid cols={{ base: 2, sm: 3, xl: 4 }} spacing="sm" mb="lg">
+            <Card
+              component="button"
+              type="button"
+              withBorder
+              radius="md"
+              p="sm"
+              onClick={() => setSelectedTrackerStage("all")}
+              style={{
+                cursor: "pointer",
+                textAlign: "left",
+                borderColor: selectedTrackerStage === "all" ? "var(--mantine-color-gray-5)" : undefined,
+                background: selectedTrackerStage === "all" ? "rgba(255,255,255,.07)" : undefined,
+              }}
+            >
+              <Group justify="space-between" align="center" wrap="nowrap">
+                <div>
+                  <Text size="xs" c="dimmed" fw={800} tt="uppercase" lh={1.2}>All Jobs</Text>
+                  <Text size="xs" c="dimmed" mt={4}>Every active stage</Text>
+                </div>
+                <Badge color="gray" size="lg">{trackedItemCount}</Badge>
+              </Group>
+            </Card>
             {commandQueues.map((queue) => (
-              <Card key={queue.key} withBorder radius="md" p="sm">
-                <Text size="xs" c="dimmed" fw={800} tt="uppercase" lh={1.2}>{queue.label}</Text>
-                <Title order={3} c={queue.color}>{queue.items.length}</Title>
+              <Card
+                key={queue.key}
+                component="button"
+                type="button"
+                withBorder
+                radius="md"
+                p="sm"
+                onClick={() => setSelectedTrackerStage(queue.key)}
+                style={{
+                  cursor: "pointer",
+                  textAlign: "left",
+                  borderColor: selectedTrackerStage === queue.key ? `var(--mantine-color-${queue.color}-6)` : undefined,
+                  background: selectedTrackerStage === queue.key ? `var(--mantine-color-${queue.color}-light)` : undefined,
+                }}
+              >
+                <Group justify="space-between" align="center" wrap="nowrap">
+                  <div>
+                    <Text size="xs" c="dimmed" fw={800} tt="uppercase" lh={1.2}>{queue.label}</Text>
+                    <Text size="xs" c="dimmed" mt={4}>Select stage</Text>
+                  </div>
+                  <Badge color={queue.color} size="lg">{queue.items.length}</Badge>
+                </Group>
               </Card>
             ))}
           </SimpleGrid>
 
           <Stack gap="sm">
-            {commandQueues.map((queue) => (
+            {visibleCommandQueues.map((queue) => (
               <Card key={queue.key} withBorder radius="md" p="md">
                 <Group justify="space-between" mb="sm" align="flex-start">
                   <div>
@@ -1882,9 +1938,9 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                             quote.document_type !== "Invoice" &&
                             quote.is_current_revision !== false
                           )
-                        : null;
-                      const contractTotal = Number(item.project?.contract_total || linkedQuote?.total_amount || 0);
-                      const balanceDue = Number(item.project?.balance_due || contractTotal || 0);
+                        : item.kind === "quote"
+                          ? quotesById[item.visit?.quote_id]
+                          : null;
                       return (
                       <Paper key={item.id} withBorder radius="md" p="sm">
                         <Text fw={900} size="sm" lh={1.25}>{item.label}</Text>
@@ -1894,21 +1950,34 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Group>
                         <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                         <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
-                        {item.kind === "project" && linkedQuote && (
-                          <Paper withBorder radius="sm" p="xs" mt="xs" bg="rgba(255,255,255,.025)">
-                            <Group justify="space-between" gap="xs">
-                              <Text size="xs" fw={850}>{linkedQuote.quote_number}</Text>
-                              <Badge size="xs" color={linkedQuote.status === "Approved" ? "green" : "orange"}>{linkedQuote.status}</Badge>
-                            </Group>
-                            <Group justify="space-between" gap="xs" mt={4}>
-                              <Text size="xs" c="dimmed">Contract</Text>
-                              <Text size="xs" fw={900}>{money(contractTotal)}</Text>
-                            </Group>
-                            <Group justify="space-between" gap="xs">
-                              <Text size="xs" c="dimmed">Balance</Text>
-                              <Text size="xs" fw={900} c={balanceDue > 0 ? "yellow" : "green"}>{money(balanceDue)}</Text>
-                            </Group>
-                          </Paper>
+                        {(linkedQuote || item.project?.quote_required || item.project?.down_payment_required) && (
+                          <Group gap={6} mt="xs" wrap="wrap">
+                            {linkedQuote ? (
+                              <>
+                                <Badge size="xs" color="violet" variant="light">{linkedQuote.quote_number || "Quote"}</Badge>
+                                <Badge size="xs" color={linkedQuote.status === "Approved" ? "green" : linkedQuote.status === "Sent" ? "blue" : "orange"}>
+                                  Quote: {linkedQuote.status || "Draft"}
+                                </Badge>
+                              </>
+                            ) : item.project?.quote_required ? (
+                              <Badge size="xs" color="gray" variant="light">Quote needed</Badge>
+                            ) : null}
+                            {item.kind === "project" && item.project.customer_approval_required !== false && (
+                              <Badge size="xs" color={item.project.approval_status === "Approved" ? "green" : "orange"} variant="light">
+                                Approval: {item.project.approval_status || "Pending"}
+                              </Badge>
+                            )}
+                            {item.kind === "project" && item.project.down_payment_required && (
+                              <Badge size="xs" color={["Received", "Paid", "Not Required"].includes(item.project.down_payment_status) ? "green" : "orange"} variant="light">
+                                Deposit: {item.project.down_payment_status || "Pending"}
+                              </Badge>
+                            )}
+                          </Group>
+                        )}
+                        {item.kind === "project" && (
+                          <Text size="xs" c="dimmed" mt="xs">
+                            Next: {item.project.next_action || "Open the project to review its next step"}
+                          </Text>
                         )}
                         {item.kind === "project" && (
                           <Group gap={6} mt="xs">
