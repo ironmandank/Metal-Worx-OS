@@ -28,6 +28,7 @@ import {
   IconPalette,
   IconPhone,
   IconPrinter,
+  IconPlus,
   IconScan,
   IconSettings,
   IconShieldCheck,
@@ -192,15 +193,22 @@ const NAV_GROUPS = [
   {
     id: "outside",
     label: "Outside",
-    description: "Estimate → approve → prepare → complete field work",
+    description: "Outside fabrication jobs, quotes, and scheduling",
     icon: IconTool,
     items: [
       {
         page: "projects",
-        label: "Outside Command Center",
-        description: "All outside jobs organized by current stage",
-        step: "OVERVIEW",
+        label: "Outside Fabrication Projects",
+        description: "Create and track outside fabrication jobs",
+        step: "JOBS",
         icon: IconLayoutDashboard,
+      },
+      {
+        page: "newOutsideJob",
+        label: "Add Fabrication Job",
+        description: "Add a job directly; attach a quote later if needed",
+        step: "+",
+        icon: IconPlus,
       },
       {
         page: "projectBilling",
@@ -211,9 +219,9 @@ const NAV_GROUPS = [
       },
       {
         page: "quoteCenter",
-        label: "Estimates & Approvals",
-        description: "Site visits, quotes, customer approval, and signed records",
-        step: "01",
+        label: "Quote Center",
+        description: "Create and manage quotes separately from jobs",
+        step: "QUOTES",
         icon: IconFileSpreadsheet,
       },
       {
