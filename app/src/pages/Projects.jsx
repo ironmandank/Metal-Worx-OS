@@ -318,6 +318,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
   const [downloadingStatementProjectId, setDownloadingStatementProjectId] = useState(null);
   const [savingCardProjectId, setSavingCardProjectId] = useState(null);
   const [scheduleDateDrafts, setScheduleDateDrafts] = useState({});
+  const [scheduleTarget, setScheduleTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [followUpPeople, setFollowUpPeople] = useState([]);
   const [savingFollowUp, setSavingFollowUp] = useState(false);
@@ -1416,6 +1417,26 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
       notifications.show({ title: "Could Not Add Follow-Up", message: error.message, color: "red" });
     } finally {
       setSavingFollowUp(false);
+    }
+  }
+
+  async function addOutsideJobToCalendar() {
+    if (!scheduleTarget) return;
+    const scheduledDateKey = dateInputKey(scheduleDateDrafts[scheduleTarget.id]);
+    if (!scheduledDateKey) {
+      notifications.show({ title: "Choose a Date First", message: "Select a scheduled date, then add the job to the Company Calendar.", color: "orange" });
+      return;
+    }
+    const updates = { planned_start_date: scheduledDateKey };
+    if (["New", "Needs Scheduling", "Ready for Production"].includes(scheduleTarget.status)) updates.status = "Scheduled";
+    const saved = await updateJobCard(scheduleTarget, updates, `Added to Company Calendar for ${formatDate(scheduledDateKey)}.`);
+    if (saved) {
+      setScheduleDateDrafts((current) => {
+        const next = { ...current };
+        delete next[scheduleTarget.id];
+        return next;
+      });
+      setScheduleTarget(null);
     }
   }
 
@@ -2621,223 +2642,100 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
             {visibleJobTrackerProjects.map((project) => {
               const customer = customers[project.customer_id];
               const person = getProjectPerson(project, customer);
-              const company = getProjectCompany(
-                project,
-                customer,
-                person
-              );
-              const tracking = trackingByProject[project.id] || {
-                quoteCount: 0,
-              };
+              const company = getProjectCompany(project, customer, person);
+              const tracking = trackingByProject[project.id] || { quoteCount: 0 };
               const scheduledDate = project.install_start || project.install_date || project.planned_start_date;
+              const depositLabel = project.down_payment_status === "Paid" || project.down_payment_status === "Received"
+                ? "Deposit Paid"
+                : project.down_payment_required
+                  ? "Deposit Due"
+                  : "No Deposit";
 
               return (
                 <Paper
                   key={project.id}
-                  p="md"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openProject(project)}
+                  onKeyDown={(event) => {
+                    if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                      event.preventDefault();
+                      openProject(project);
+                    }
+                  }}
+                  p="sm"
                   radius="md"
                   style={{
-                    background:
-                      project.priority === "Rush"
-                        ? "linear-gradient(145deg, rgba(120,0,10,.2), rgba(255,255,255,.025))"
-                        : "rgba(255,255,255,.025)",
-                    border: `1px solid ${
-                      project.priority === "Rush"
-                        ? "rgba(255,55,65,.5)"
-                        : "rgba(255,255,255,.08)"
-                    }`,
+                    cursor: "pointer",
+                    background: project.priority === "Rush" ? "linear-gradient(145deg, rgba(120,0,10,.2), rgba(255,255,255,.025))" : "rgba(255,255,255,.025)",
+                    border: `1px solid ${project.priority === "Rush" ? "rgba(255,55,65,.5)" : "rgba(255,255,255,.08)"}`,
+                    transition: "border-color .15s ease, transform .15s ease",
                   }}
                 >
-                  <Stack gap="sm">
-                    <Group justify="space-between" align="flex-start">
-                      <Group gap="xs" wrap="wrap">
-                        <Badge
-                          color={getStatusColor(project.status)}
-                          variant="light"
-                        >
-                          {project.status || "New"}
-                        </Badge>
-                        <Badge color={getPriorityColor(project.priority)}>
-                          {project.priority || "Normal"}
-                        </Badge>
+                  <Stack gap="xs">
+                    <Group justify="space-between" align="center" wrap="nowrap">
+                      <Group gap={5} wrap="wrap">
+                        <Badge size="sm" color={getStatusColor(getOutsideJobStation(project))} variant="light">{getOutsideJobStation(project)}</Badge>
+                        <Badge size="sm" color={depositLabel === "Deposit Paid" ? "green" : depositLabel === "Deposit Due" ? "orange" : "gray"} variant="light">{depositLabel}</Badge>
                       </Group>
-
-                      <ThemeIcon color="red" variant="light" radius="md">
-                        <IconTool size={19} />
-                      </ThemeIcon>
+                      <Text size="xs" c="dimmed" fw={700}>{project.project_number || "No job #"}</Text>
                     </Group>
 
                     <Box>
-                      <Title
-                        order={4}
-                        c="white"
-                        style={{
-                          lineHeight: 1.25,
-                          overflowWrap: "anywhere",
-                        }}
-                      >
+                      <Title order={4} c="white" lineClamp={2} style={{ lineHeight: 1.2, overflowWrap: "anywhere" }}>
                         {getProjectIdentity(project, customer)}
                       </Title>
-                      {company && (
-                        <Text fw={700} c="gray.3" mt={5}>
-                          {company}
-                        </Text>
-                      )}
-                      <Text size="sm" c="dimmed" mt={3}>
-                        {project.project_number || "No project number"}
-                      </Text>
+                      {company && <Text size="xs" c="gray.3" mt={3} lineClamp={1}>{company}</Text>}
                     </Box>
 
-                    <Paper
-                      p="xs"
-                      radius="md"
-                      style={{
-                        background: "rgba(0,0,0,.2)",
-                        border: "1px solid rgba(255,255,255,.06)",
-                      }}
-                    >
-                      <Stack gap="xs">
-                        <Group justify="space-between" wrap="nowrap">
-                          <Text size="xs" c="dimmed">
-                            Owner
-                          </Text>
-                          <Text size="xs" fw={750} ta="right">
-                            {project.assigned_to ||
-                              project.intake_owner ||
-                              "Unassigned"}
-                          </Text>
-                        </Group>
-                        <Group justify="space-between" wrap="nowrap">
-                          <Text size="xs" c="dimmed">
-                            Location
-                          </Text>
-                          <Text size="xs" fw={750} ta="right">
-                            {project.work_location ||
-                              project.job_address ||
-                              "Not set"}
-                          </Text>
-                        </Group>
-                        <Group justify="space-between" wrap="nowrap">
-                          <Text size="xs" c="dimmed">
-                            Scheduled
-                          </Text>
-                          <Text size="xs" fw={750} ta="right">
-                            {formatDate(scheduledDate, Boolean(project.install_start))}
-                          </Text>
-                        </Group>
-                        <Group justify="space-between" wrap="nowrap">
-                          <Text size="xs" c="dimmed">Quote</Text>
-                          <Text size="xs" fw={750} ta="right">
-                            {tracking.quoteCount ? `${tracking.quoteCount} attached` : "None attached"}
-                          </Text>
-                        </Group>
-                      </Stack>
-                    </Paper>
+                    <Group justify="space-between" gap="xs" wrap="nowrap">
+                      <Text size="xs" c="dimmed" lineClamp={1}>{project.assigned_to || project.intake_owner || "Unassigned"}</Text>
+                      <Text size="xs" fw={700} ta="right" style={{ flexShrink: 0 }}>
+                        {scheduledDate ? formatDate(scheduledDate, Boolean(project.install_start)) : "Not scheduled"}
+                      </Text>
+                    </Group>
 
-                    {viewMode !== "archived" && (
-                      <Paper p="xs" radius="md" style={{ background: "rgba(0,0,0,.16)", border: "1px solid rgba(255,255,255,.06)" }}>
-                        <Stack gap="xs">
-                          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-                            <Select
-                              size="xs"
-                              label="Station"
-                              allowDeselect={false}
-                              data={["Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Finish / Powder", "Assembly", "Install", "On Hold", "Completed"]}
-                              value={getOutsideJobStation(project)}
-                              disabled={savingCardProjectId === project.id || completingProjectId === project.id}
-                              onChange={(value) => {
-                                if (!value || value === getOutsideJobStation(project)) return;
-                                if (value === "Completed") completeProject(project);
-                                else updateJobCard(project, { status: value }, "Moved to " + value + ".");
-                              }}
-                            />
-                            <Select
-                              size="xs"
-                              label="Deposit"
-                              allowDeselect={false}
-                              data={[
-                                { value: "Not Required", label: "Not Required" },
-                                { value: "Pending", label: "Pending" },
-                                { value: "Received", label: "Paid" },
-                              ]}
-                              value={project.down_payment_status === "Paid" ? "Received" : (project.down_payment_status || (project.down_payment_required ? "Pending" : "Not Required"))}
-                              disabled={savingCardProjectId === project.id}
-                              onChange={(value) => value && updateJobCard(project, {
-                                down_payment_status: value,
-                                down_payment_required: value !== "Not Required",
-                              }, value === "Received" ? "Down payment marked as paid." : `Down payment set to ${value.toLowerCase()}.`)}
-                            />
-                          </SimpleGrid>
-                          <DateInput
-                            size="xs"
-                            label="Scheduled Date"
-                            clearable
-                            value={Object.prototype.hasOwnProperty.call(scheduleDateDrafts, project.id) ? scheduleDateDrafts[project.id] : dateInputValue(project.planned_start_date)}
-                            disabled={savingCardProjectId === project.id}
-                            onChange={(value) => setScheduleDateDrafts((current) => ({ ...current, [project.id]: value }))}
-                          />
-                          <Button
-                            size="xs"
-                            variant="light"
-                            color="blue"
-                            leftSection={<IconCalendarEvent size={17} />}
-                            loading={savingCardProjectId === project.id}
-                            onClick={async () => {
-                              const draftDate = Object.prototype.hasOwnProperty.call(scheduleDateDrafts, project.id)
-                                ? scheduleDateDrafts[project.id]
-                                : dateInputValue(project.planned_start_date);
-                              const scheduledDateKey = dateInputKey(draftDate);
-                              if (!scheduledDateKey) {
-                                notifications.show({ title: "Choose a Date First", message: "Select the scheduled date above, then click Add to Calendar.", color: "orange" });
-                                return;
-                              }
-                              const updates = { planned_start_date: scheduledDateKey };
-                              if (["New", "Needs Scheduling", "Ready for Production"].includes(project.status)) updates.status = "Scheduled";
-                              const saved = await updateJobCard(project, updates, `Added to Company Calendar for ${formatDate(scheduledDateKey)}.`);
-                              if (saved) {
-                                setScheduleDateDrafts((current) => {
-                                  const next = { ...current };
-                                  delete next[project.id];
-                                  return next;
-                                });
-                              }
-                            }}
-                          >
+                    <Group justify="space-between" gap="xs" wrap="nowrap">
+                      <Badge size="xs" color={tracking.quoteCount ? "blue" : "gray"} variant="light">
+                        {tracking.quoteCount ? `${tracking.quoteCount} quote${tracking.quoteCount === 1 ? "" : "s"} attached` : "No quote"}
+                      </Badge>
+                      <Text size="xs" c="dimmed" lineClamp={1} ta="right" style={{ maxWidth: "62%" }}>
+                        {project.notes || "Click job to edit or add notes"}
+                      </Text>
+                    </Group>
+
+                    <Group gap="xs" grow onClick={(event) => event.stopPropagation()}>
+                      {viewMode === "active" && (
+                        <>
+                          <Button size="compact-xs" variant="light" color="blue" leftSection={<IconCalendarEvent size={14} />} onClick={() => {
+                            setScheduleTarget(project);
+                            setScheduleDateDrafts((current) => ({ ...current, [project.id]: dateInputValue(project.planned_start_date) }));
+                          }}>
                             Add to Calendar
                           </Button>
-                        </Stack>
-                      </Paper>
-                    )}
-
-                    <Text size="xs" c="dimmed" lineClamp={2}>
-                      {project.notes || "No job notes yet."}
-                    </Text>
-
-                    <SimpleGrid cols={2} spacing="xs">
-                      <Button size="xs" fullWidth color="red" rightSection={<IconArrowRight size={15} />} onClick={() => openProject(project)}>
-                        {viewMode === "completed" ? "Open Package" : "Open Job"}
-                      </Button>
-                      {viewMode === "completed" ? (
-                        <Button size="xs" fullWidth variant="light" color="blue" leftSection={<IconPackage size={15} />} onClick={() => { setSelectedProject({ ...project, initialTab: "package" }); setPage("projectDetails"); }}>
+                          <Button size="compact-xs" variant="light" color="orange" leftSection={<IconPhone size={14} />} onClick={() => {
+                            setFollowUpTarget(project);
+                            setFollowUpDraft({ type: "Follow-Up", dueDate: null, assignedTo: followUpPeople.includes(activeUserName) ? activeUserName : followUpPeople[0] || "", notes: "" });
+                          }}>
+                            Follow-Up
+                          </Button>
+                        </>
+                      )}
+                      {viewMode === "completed" && (
+                        <Button size="compact-xs" variant="light" color="blue" leftSection={<IconPackage size={14} />} onClick={() => {
+                          setSelectedProject({ ...project, initialTab: "package" });
+                          setPage("projectDetails");
+                        }}>
                           Files & Reuse
                         </Button>
-                      ) : (
-                        <Button size="xs" fullWidth variant="light" color="blue" leftSection={<IconClipboardCheck size={15} />} onClick={() => openProjectChecklist(project)}>
-                          Checklist
+                      )}
+                      {viewMode === "archived" && isAdministrator && (
+                        <Button size="compact-xs" color="green" leftSection={<IconRotateClockwise size={14} />} loading={restoringProjectId === project.id} onClick={() => restoreArchivedProject(project)}>
+                          Restore
                         </Button>
                       )}
-                      {viewMode !== "archived" && <Button size="xs" fullWidth variant="light" color="gray" onClick={() => editProject(project)}>Edit</Button>}
-                      {viewMode === "active" && <Button size="xs" fullWidth variant="light" color="orange" leftSection={<IconPhone size={15} />} onClick={() => { setFollowUpTarget(project); setFollowUpDraft({ type: "Follow-Up", dueDate: null, assignedTo: followUpPeople.includes(activeUserName) ? activeUserName : followUpPeople[0] || "", notes: "" }); }}>
-                        Follow-Up / Call Back
-                      </Button>}
-                      {viewMode === "archived" && isAdministrator && <Button size="xs" fullWidth color="green" leftSection={<IconRotateClockwise size={15} />} loading={restoringProjectId === project.id} onClick={() => restoreArchivedProject(project)}>Restore</Button>}
-                      {viewMode !== "archived" && (project.status === "Completed" ? (
-                        <Button size="xs" fullWidth variant="light" color="green" leftSection={<IconRotateClockwise size={15} />} onClick={() => reopenProject(project)}>Reopen</Button>
-                      ) : (
-                        <Button size="xs" fullWidth variant="light" color="green" leftSection={<IconCircleCheck size={15} />} onClick={() => completeProject(project)}>Complete</Button>
-                      ))}
-                      {isAdministrator && viewMode !== "archived" && <Button size="xs" fullWidth variant="subtle" color="red" leftSection={<IconTrash size={15} />} onClick={() => removeProject(project)}>Archive</Button>}
-                    </SimpleGrid>
+                    </Group>
+                    <Text size="xs" c="dimmed" ta="center">Click job to view and edit details</Text>
                   </Stack>
                 </Paper>
               );
@@ -2845,6 +2743,16 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
           </SimpleGrid>
         )}
       </MWPanel>}
+      <Modal opened={Boolean(scheduleTarget)} onClose={() => setScheduleTarget(null)} title="Add Job to Company Calendar" centered>
+        <Stack>
+          <Text size="sm" c="dimmed">{scheduleTarget ? getProjectIdentity(scheduleTarget, customers[scheduleTarget.customer_id]) : ""}</Text>
+          <DateInput label="Scheduled date" value={scheduleTarget ? scheduleDateDrafts[scheduleTarget.id] : null} onChange={(value) => scheduleTarget && setScheduleDateDrafts((current) => ({ ...current, [scheduleTarget.id]: value }))} />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setScheduleTarget(null)}>Cancel</Button>
+            <Button color="blue" leftSection={<IconCalendarEvent size={16} />} loading={Boolean(scheduleTarget && savingCardProjectId === scheduleTarget.id)} disabled={!scheduleTarget || !dateInputKey(scheduleDateDrafts[scheduleTarget.id])} onClick={addOutsideJobToCalendar}>Add to Calendar</Button>
+          </Group>
+        </Stack>
+      </Modal>
       <Modal opened={Boolean(followUpTarget)} onClose={() => setFollowUpTarget(null)} title="Add Job Follow-Up" centered>
         <Stack>
           <Text size="sm" c="dimmed">{followUpTarget ? getProjectIdentity(followUpTarget, customers[followUpTarget.customer_id]) : ""}</Text>
