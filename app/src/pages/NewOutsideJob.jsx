@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Button,
+  Checkbox,
   Group,
   Select,
   Stack,
@@ -42,6 +43,7 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
     project_type: "Other Project",
     status: "Needs Scheduling",
     priority: "Normal",
+    plaque_required: false,
     assigned_to: "",
     job_address: "",
     city: "",
@@ -90,6 +92,7 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
         project_category: "Outside Job",
         outside_job_stage: form.status,
         outside_job_status: "Ready",
+        plaque_required: Boolean(form.plaque_required),
         customer_id: form.customer_id ? Number(form.customer_id) : null,
         contact_name: [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || null,
         contact_phone: customer?.phone || null,
@@ -155,6 +158,11 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
               <Select label="Status" data={["Needs Scheduling", "Scheduled", "Fabrication", "Test Fit", "Finish / Powder", "Assembly", "Install", "On Hold"]} value={form.status} onChange={(value) => update("status", value || "Needs Scheduling")} allowDeselect={false} />
               <Select label="Priority" data={["Low", "Normal", "High", "Rush"]} value={form.priority} onChange={(value) => update("priority", value || "Normal")} allowDeselect={false} />
             </Group>
+            <Checkbox
+              label="This job needs a plaque"
+              checked={Boolean(form.plaque_required)}
+              onChange={(event) => update("plaque_required", event.currentTarget.checked)}
+            />
             <Group grow>
               <DateInput label="Scheduled Date" description="Shows this job on the company calendar." clearable value={form.planned_start_date} onChange={(value) => update("planned_start_date", value)} />
               <DateInput label="Due Date" clearable value={form.due_date} onChange={(value) => update("due_date", value)} />
