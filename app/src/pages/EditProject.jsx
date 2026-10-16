@@ -411,6 +411,8 @@ function EditProject({ selectedProject, setPage }) {
 
       down_payment_required: Boolean(form.down_payment_required),
 
+      plaque_required: Boolean(form.plaque_required),
+
       design_required: Boolean(form.design_required),
 
       design_status: form.design_required
@@ -913,6 +915,14 @@ function EditProject({ selectedProject, setPage }) {
                 updateField("design_required", event.currentTarget.checked)
               }
             />
+
+            {(form.project_category === "Outside Job" || form.work_location === "Outside Job") && (
+              <Checkbox
+                label="This job needs a plaque"
+                checked={Boolean(form.plaque_required)}
+                onChange={(event) => updateField("plaque_required", event.currentTarget.checked)}
+              />
+            )}
 
             <Checkbox
               label="Welding / Fabrication Required"
