@@ -553,6 +553,10 @@ function ProjectDetails({
   const [releasingProduction, setReleasingProduction] = useState(false);
   const [projectPayments, setProjectPayments] = useState([]);
   const [projectQuote, setProjectQuote] = useState(null);
+  const [projectQuotes, setProjectQuotes] = useState([]);
+  const [attachableQuotes, setAttachableQuotes] = useState([]);
+  const [quoteToAttach, setQuoteToAttach] = useState(null);
+  const [attachingQuote, setAttachingQuote] = useState(false);
   const [projectQuoteItems, setProjectQuoteItems] = useState([]);
   const [projectChangeOrders, setProjectChangeOrders] = useState([]);
   const [customerApproval, setCustomerApproval] = useState(null);
@@ -708,12 +712,14 @@ function ProjectDetails({
   async function loadCustomerApproval() {
     if (!selectedProject?.id) {
       setProjectQuote(null);
+      setProjectQuotes([]);
+      setAttachableQuotes([]);
       setProjectQuoteItems([]);
       setProjectChangeOrders([]);
       return setCustomerApproval(null);
     }
     try {
-      const [quotesResult, changesResult] = await Promise.all([
+      const [quotesResult, changesResult, attachableResult] = await Promise.all([
         supabase
           .from("project_quotes")
           .select("*")
@@ -725,11 +731,21 @@ function ProjectDetails({
           .select("*")
           .eq("project_id", selectedProject.id)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("project_quotes")
+          .select("id,quote_number,quote_title,project_name,customer_name,company_name,total_amount,status,created_at")
+          .is("project_id", null)
+          .eq("is_current_revision", true)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false }),
       ]);
       const { data: quotes, error: quoteError } = quotesResult;
       if (quoteError) throw quoteError;
       if (changesResult.error) throw changesResult.error;
+      if (attachableResult.error) throw attachableResult.error;
       const currentQuote = (quotes || [])[0] || null;
+      setProjectQuotes(quotes || []);
+      setAttachableQuotes(attachableResult.data || []);
       setProjectQuote(currentQuote);
       setProjectChangeOrders(changesResult.data || []);
       if (currentQuote?.id) {
@@ -758,6 +774,8 @@ function ProjectDetails({
     } catch (error) {
       console.error("Customer approval load error:", error);
       setProjectQuote(null);
+      setProjectQuotes([]);
+      setAttachableQuotes([]);
       setProjectQuoteItems([]);
       setProjectChangeOrders([]);
       setCustomerApproval(null);
@@ -770,6 +788,38 @@ function ProjectDetails({
       return;
     }
     setSelectedQuote?.(projectQuote);
+    setPage("quotePreview");
+  }
+
+  async function attachQuoteToProject() {
+    if (!quoteToAttach || !selectedProject?.id || attachingQuote) return;
+    setAttachingQuote(true);
+    try {
+      const quote = attachableQuotes.find((item) => String(item.id) === String(quoteToAttach));
+      const { error } = await supabase
+        .from("project_quotes")
+        .update({ project_id: selectedProject.id })
+        .eq("id", Number(quoteToAttach))
+        .is("project_id", null)
+        .select("id")
+        .single();
+      if (error) throw error;
+      setQuoteToAttach(null);
+      await loadCustomerApproval();
+      notifications.show({
+        title: "Quote Attached",
+        message: `${quote?.quote_number || "Quote"} is now attached to this job.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({ title: "Quote Could Not Be Attached", message: error.message, color: "red" });
+    } finally {
+      setAttachingQuote(false);
+    }
+  }
+
+  function openAttachedQuote(quote) {
+    setSelectedQuote?.(quote);
     setPage("quotePreview");
   }
 
@@ -2528,6 +2578,47 @@ function ProjectDetails({
                 changeOrders={projectChangeOrders}
                 onOpen={openConnectedQuote}
               />
+
+              <MWSection title="Quote Attachments">
+                <Stack gap="md">
+                  <Text size="sm" c="dimmed">
+                    Quotes are managed separately. Attach an existing quote here whenever it belongs with this job.
+                  </Text>
+                  {projectQuotes.length > 0 ? (
+                    <Stack gap="xs">
+                      {projectQuotes.map((quote) => (
+                        <Paper key={quote.id} p="sm" withBorder radius="md">
+                          <Group justify="space-between" wrap="wrap">
+                            <Box>
+                              <Text fw={800}>{quote.quote_number || `Quote ${quote.id}`} · {quote.quote_title || quote.project_name || "Quote"}</Text>
+                              <Text size="sm" c="dimmed">{quote.status || "Draft"} · {money(quote.total_amount)}</Text>
+                            </Box>
+                            <Button size="xs" variant="light" onClick={() => openAttachedQuote(quote)}>Open Quote</Button>
+                          </Group>
+                        </Paper>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Alert color="gray">No quote is attached to this job.</Alert>
+                  )}
+                  <Group align="flex-end" grow>
+                    <Select
+                      label="Attach an existing quote"
+                      placeholder={attachableQuotes.length ? "Choose a standalone quote" : "No standalone quotes available"}
+                      searchable
+                      clearable
+                      data={attachableQuotes.map((quote) => ({
+                        value: String(quote.id),
+                        label: `${quote.quote_number || `Quote ${quote.id}`} — ${quote.quote_title || quote.project_name || quote.customer_name || "Untitled"}`,
+                      }))}
+                      value={quoteToAttach ? String(quoteToAttach) : null}
+                      onChange={setQuoteToAttach}
+                    />
+                    <Button color="red" disabled={!quoteToAttach} loading={attachingQuote} onClick={attachQuoteToProject}>Attach Quote</Button>
+                  </Group>
+                  <Button variant="subtle" color="gray" w="fit-content" onClick={() => setPage("quoteCenter")}>Open Quote Center</Button>
+                </Stack>
+              </MWSection>
 
               <ProjectUnitsWorkspace project={project} activeUser={activeUser} compact onChanged={loadProject} />
 
