@@ -578,7 +578,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         description: "Approved, but the required deposit has not been received.",
         color: "orange",
         items: projectQueue
-          .filter((project) => ["Approved", "Bypassed"].includes(project.approval_status) && project.down_payment_required && !["Received", "Paid"].includes(project.down_payment_status))
+          .filter((project) => project.status !== "On Hold" && ["Approved", "Bypassed"].includes(project.approval_status) && project.down_payment_required && !["Received", "Paid"].includes(project.down_payment_status))
           .map((project) => queueProject(project, "Deposit", "orange")),
       },
       {
