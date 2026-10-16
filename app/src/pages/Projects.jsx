@@ -172,8 +172,8 @@ function getOutsideJobStation(project) {
     project?.[requiredField] && !COMPLETED_STAGE_VALUES.includes(project?.[statusField])
   );
   if (activeRequiredStage) return activeRequiredStage[2];
-  if (project?.planned_start_date) return "Scheduled";
   if (project?.status === "In Progress") return "Fabrication";
+  if (project?.planned_start_date) return "Scheduled";
   return "Needs Scheduling";
 }
 
