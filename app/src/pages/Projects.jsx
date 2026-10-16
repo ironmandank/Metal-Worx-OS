@@ -587,7 +587,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         description: "Approved and financially cleared; ready for a confirmed date.",
         color: "red",
         items: projectQueue
-          .filter((project) => financiallyCleared(project) && !hasSchedule(project))
+          .filter((project) => project.status !== "On Hold" && financiallyCleared(project) && !hasSchedule(project))
           .map((project) => queueProject(project, "Ready", "red")),
       },
       {
@@ -596,7 +596,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
         description: "Confirmed work with a planned start or field-work date.",
         color: "blue",
         items: projectQueue
-          .filter((project) => financiallyCleared(project) && hasSchedule(project))
+          .filter((project) => project.status !== "On Hold" && financiallyCleared(project) && hasSchedule(project))
           .map((project) => queueProject(project, "Scheduled", "blue")),
       },
       {
@@ -1950,7 +1950,7 @@ function Projects({ setPage, setSelectedProject, setSelectedQuote, activeUser, a
                         </Group>
                         <Text size="xs" c="dimmed" mt={5}>{item.location}</Text>
                         <Text size="xs" c="dimmed">Owner: {item.owner}</Text>
-                        {(linkedQuote || item.project?.quote_required || item.project?.down_payment_required) && (
+                        {(linkedQuote || item.project?.quote_required || item.project?.customer_approval_required !== false || item.project?.down_payment_required) && (
                           <Group gap={6} mt="xs" wrap="wrap">
                             {linkedQuote ? (
                               <>
