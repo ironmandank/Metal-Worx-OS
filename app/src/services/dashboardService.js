@@ -1204,6 +1204,8 @@ function buildOutsideProjectRow(
   return {
     id: project.id,
 
+    projectCategory: project.project_category || "",
+
     projectName:
       getProjectName(project),
 
@@ -1872,6 +1874,17 @@ export async function getDashboardData() {
         );
       });
 
+  // Fabrication jobs have their own station tracker and stay out of the
+  // Outside Projects section of the Morning Huddle.
+  const outsideHuddleProjects = outsideProjects.filter(
+    (project) => project.projectCategory !== "Outside Job"
+  );
+  const outsideFabricationProjectIds = new Set(
+    openProjects
+      .filter((project) => project.project_category === "Outside Job")
+      .map((project) => String(project.id))
+  );
+
   /* =====================================================
      OUTSIDE SCHEDULE
   ===================================================== */
@@ -2142,37 +2155,40 @@ export async function getDashboardData() {
 
   const projectHealth = {
     onTrack:
-      outsideProjects.filter(
+      outsideHuddleProjects.filter(
         (project) =>
           project.health === "On Track"
       ).length,
 
     attentionNeeded:
-      outsideProjects.filter(
+      outsideHuddleProjects.filter(
         (project) =>
           project.health === "Attention Needed"
       ).length,
 
     blocked:
-      outsideProjects.filter(
+      outsideHuddleProjects.filter(
         (project) =>
           project.health === "Blocked"
       ).length,
   };
 
+  const huddleOutsideSchedule = outsideSchedule.filter(
+    (item) => !outsideFabricationProjectIds.has(String(item.projectId))
+  );
   const todayFieldWork =
-    outsideSchedule.filter(
+    huddleOutsideSchedule.filter(
       (item) => item.isToday
     );
 
   const upcomingFieldWork =
-    outsideSchedule.filter(
+    huddleOutsideSchedule.filter(
       (item) => !item.isToday
     );
 
   const blockerItems = [];
 
-  overduePaymentProjects.forEach((project) => {
+  overduePaymentProjects.filter((project) => project.projectCategory !== "Outside Job").forEach((project) => {
     blockerItems.push({
       id: `payment-${project.id}`,
       sourceId: project.id,
@@ -2186,7 +2202,7 @@ export async function getDashboardData() {
   });
 
   openProjects
-    .filter(materialsWaiting)
+    .filter((project) => project.project_category !== "Outside Job" && materialsWaiting(project))
     .forEach((project) => {
       blockerItems.push({
         id: `material-${project.id}`,
@@ -2207,6 +2223,7 @@ export async function getDashboardData() {
   openProjects
     .filter(
       (project) =>
+        project.project_category !== "Outside Job" &&
         normalizeStatus(
           project.test_fit_status
         ) === "adjustments needed"
@@ -2314,6 +2331,8 @@ export async function getDashboardData() {
     },
 
     projectHealth,
+
+    outsideProjects: outsideHuddleProjects,
 
     shopWorkload: shopFlow,
 
