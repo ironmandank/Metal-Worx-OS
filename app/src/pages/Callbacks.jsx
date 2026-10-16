@@ -33,6 +33,10 @@ import {
   markNotificationsReadBySource,
 } from "../services/notificationService";
 
+function callbackProjectId(callback) {
+  return callback?.project_id || callback?.linked_project_id || null;
+}
+
 function Callbacks({
   setPage,
   openProject,
@@ -357,10 +361,11 @@ function Callbacks({
   }
 
   async function openLinkedProject(callback) {
-    if (!callback?.linked_project_id) return;
+    const projectId = callbackProjectId(callback);
+    if (!projectId) return;
 
     try {
-      const project = await getLinkedProject(callback.linked_project_id);
+      const project = await getLinkedProject(projectId);
 
       if (openProject) {
         openProject(project);
@@ -452,7 +457,7 @@ function Callbacks({
                 siteVisitCallback?.contact_name ||
                 "Customer information will be copied from the callback."}
             </Text>
-            {siteVisitCallback?.linked_project_id && (
+            {callbackProjectId(siteVisitCallback) && (
               <Badge mt="sm" color="green">
                 Already connected — this will update the existing project
               </Badge>
@@ -543,7 +548,7 @@ function Callbacks({
               loading={siteVisitSaving}
               onClick={saveSiteVisit}
             >
-              {siteVisitCallback?.linked_project_id
+              {callbackProjectId(siteVisitCallback)
                 ? "Update Site Visit"
                 : "Create Project & Site Visit"}
             </Button>
@@ -839,7 +844,7 @@ function Callbacks({
                               }
                             </Badge>
 
-                            {callback.linked_project_id && (
+                            {callbackProjectId(callback) && (
                               <Badge color="green">
                                 Project Connected
                               </Badge>
@@ -920,15 +925,15 @@ function Callbacks({
                             fullWidth
                             size="xs"
                             color="red"
-                            variant={callback.linked_project_id ? "light" : "filled"}
+                            variant={callbackProjectId(callback) ? "light" : "filled"}
                             onClick={() => openSiteVisit(callback)}
                           >
-                            {callback.linked_project_id
+                            {callbackProjectId(callback)
                               ? "Update Site Visit"
                               : "Schedule Site Visit"}
                           </Button>
 
-                          {callback.linked_project_id && (
+                          {callbackProjectId(callback) && (
                             <Button
                               fullWidth
                               size="xs"
