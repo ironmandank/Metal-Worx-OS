@@ -2,8 +2,8 @@ import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon } from "@mantine
 import { IconCalendarEvent, IconFileSpreadsheet, IconLayoutDashboard, IconPackage } from "@tabler/icons-react";
 
 const AREAS = [
-  { page: "projects", label: "Command Center", description: "All projects by stage", step: "Overview", icon: IconLayoutDashboard, color: "red" },
-  { page: "quoteCenter", label: "Estimates & Approvals", description: "Site visits, quotes, signatures", step: "1", icon: IconFileSpreadsheet, color: "violet" },
+  { page: "projects", label: "Outside Fabrication Projects", description: "Create and track jobs", step: "Jobs", icon: IconLayoutDashboard, color: "red" },
+  { page: "quoteCenter", label: "Quote Center", description: "Create and manage quotes separately", step: "Quotes", icon: IconFileSpreadsheet, color: "violet" },
   { page: "procurement", label: "Materials", description: "Price, order, and receive", step: "2", icon: IconPackage, color: "orange" },
   { page: "fieldSchedule", label: "Field Schedule", description: "Visits, test fits, installs", step: "3", icon: IconCalendarEvent, color: "blue" },
 ];
@@ -13,10 +13,10 @@ export default function OutsideWorkspaceNav({ current, setPage }) {
     <Card withBorder radius="lg" p="sm">
       <Group justify="space-between" mb="sm" px={4}>
         <div>
-          <Text fw={900}>Outside Operations</Text>
-          <Text size="xs" c="dimmed">Estimate → approve → prepare → complete field work</Text>
+          <Text fw={900}>Outside Fabrication</Text>
+          <Text size="xs" c="dimmed">Jobs, quotes, materials, and scheduling are managed separately.</Text>
         </div>
-        <Badge color="red" variant="light">One connected workflow</Badge>
+        <Badge color="red" variant="light">Separate workspaces</Badge>
       </Group>
       <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="xs">
         {AREAS.map((area) => {
