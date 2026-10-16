@@ -125,7 +125,7 @@ const OUTSIDE_HUDDLE_STAGES = [
 function buildExecutiveSummary(data, openSiteVisitCount = 0, hotArtworkCount = 0) {
   const h = data?.morningHuddle || {};
   const s = h.summary || {};
-  const projects = data?.outsideProjects || [];
+  const projects = h?.outsideProjects || data?.outsideProjects || [];
   const sentences = [`${hotArtworkCount} hot item${hotArtworkCount === 1 ? "" : "s"} selected or dated for this week, ${s.activeShopJobs || 0} active shop job${s.activeShopJobs === 1 ? "" : "s"}, ${projects.length} outside project${projects.length === 1 ? "" : "s"}, and ${openSiteVisitCount} open site visit${openSiteVisitCount === 1 ? "" : "s"}.`];
   if (s.blockers) sentences.push(`${s.blockers} active blocker${s.blockers === 1 ? " requires" : "s require"} leadership attention before new work is released.`);
   else sentences.push("No active operational blockers are currently recorded.");
@@ -176,7 +176,7 @@ export default function MorningHuddleTV({ setPage }) {
 
   const huddle = data?.morningHuddle || {};
   const summary = huddle.summary || {};
-  const projects = data?.outsideProjects || [];
+  const projects = huddle.outsideProjects || data?.outsideProjects || [];
   const priorityItems = data?.priorityFeed?.quickCommitments || [];
   const artworkOrders = data?.artworkOrders || [];
   const artworkPipeline = huddle.artworkPipeline || [];
