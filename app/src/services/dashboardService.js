@@ -1825,6 +1825,12 @@ export async function getDashboardData() {
   const allActions =
     actionCenterData.actions || [];
 
+  const outsideFabricationProjectIds = new Set(
+    openProjects
+      .filter((project) => project.project_category === "Outside Job")
+      .map((project) => String(project.id))
+  );
+
   const huddleActions = allActions.filter(
     (action) => !(action.sourceType === "project" && outsideFabricationProjectIds.has(String(action.sourceId)))
   );
@@ -1883,11 +1889,7 @@ export async function getDashboardData() {
   const outsideHuddleProjects = outsideProjects.filter(
     (project) => project.projectCategory !== "Outside Job"
   );
-  const outsideFabricationProjectIds = new Set(
-    openProjects
-      .filter((project) => project.project_category === "Outside Job")
-      .map((project) => String(project.id))
-  );
+
 
   /* =====================================================
      OUTSIDE SCHEDULE
