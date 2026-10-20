@@ -1228,7 +1228,7 @@ function buildOutsideProjectRow(
       project.outside_job_status || "",
 
     needsPlaque:
-      Boolean(project.needs_plaque),
+      Boolean(project.plaque_required),
 
     owner:
       getProjectOwner(project),
@@ -1803,7 +1803,7 @@ export async function getDashboardData() {
         customer: order ? getArtworkCustomerName(order) : "Customer",
         owner: order?.order_owner || representative.assigned_to || "Unassigned",
         status: representative.status || order?.status || "",
-        needsPlaque: order?.needs_plaque === true || normalizeStatus(representative.status) === "needs plaque",
+        needsPlaque: order?.plaque_required === true || order?.needs_plaque === true || normalizeStatus(representative.status) === "needs plaque",
         receivedDate: order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at || null,
         businessDaysInShop: businessDaysSince(order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at),
         stageEnteredDate: representative.started_at || representative.created_at || representative.updated_at || null,
