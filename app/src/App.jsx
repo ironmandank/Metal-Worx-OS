@@ -133,9 +133,11 @@ function App() {
 
   const [page, setPage] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.has("calendar") || params.get("page") === "companyCalendar"
-      ? "companyCalendar"
-      : "dashboard";
+    const requestedPage = params.get("page");
+    if (params.has("calendar") || requestedPage === "companyCalendar") {
+      return "companyCalendar";
+    }
+    return requestedPage === "morningHuddleTV" ? "morningHuddleTV" : "dashboard";
   });
 
   const [activeUser, setActiveUser] = useState("");
