@@ -47,9 +47,13 @@ const styles = `
   .tv-pipeline-stage-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .tv-pipeline-stage-head span { color:#cbd2d7; font-size:clamp(15px,1vw,20px); font-weight:900; line-height:1.15; text-transform:uppercase; }
   .tv-pipeline-stage-head strong { color:#fff; font-size:clamp(34px,2.4vw,48px); line-height:1; }
-  .tv-pipeline-jobs { display:grid; gap:8px; margin-top:11px; }
-  .tv-pipeline-job { padding-top:8px; border-top:1px solid #303a41; color:#fff; font-size:clamp(14px,.92vw,18px); font-weight:850; line-height:1.22; overflow-wrap:anywhere; }
-  .tv-pipeline-job small { display:block; margin-top:4px; color:#aeb8be; font-size:clamp(12px,.76vw,15px); font-weight:650; line-height:1.25; }
+  .tv-pipeline-jobs { display:grid; gap:7px; margin-top:11px; }
+  .tv-pipeline-job { min-width:0; padding:8px 9px; border:1px solid #303a41; border-radius:7px; color:#fff; background:#11171b; font-size:clamp(13px,.82vw,16px); font-weight:850; line-height:1.22; overflow-wrap:anywhere; }
+  .tv-pipeline-job small { display:block; margin-top:4px; color:#aeb8be; font-size:clamp(11px,.68vw,13px); font-weight:650; line-height:1.25; }
+  .tv-job-badges { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+  .tv-job-badge { display:inline-block; padding:2px 6px; border-radius:999px; color:#dce2e5; background:#303a41; font-size:10px; font-weight:900; line-height:1.3; text-transform:uppercase; }
+  .tv-job-badge.red { color:#ffd0d4; background:#7f1d1d; }
+  .tv-job-badge.green { color:#c8f8d2; background:#14532d; }
   .tv-pipeline-toggle { width:100%; padding:10px 4px 2px; border:0; border-top:1px solid #3a464d; color:#fff; background:transparent; font:inherit; font-size:clamp(13px,.82vw,16px); font-weight:900; cursor:pointer; }
   .tv-pipeline-none { margin-top:16px; color:#929da4; font-size:clamp(13px,.82vw,16px); }
   .tv-pipeline-stage.attention { border-color:#8d3138; background:#261317; }
@@ -111,15 +115,14 @@ function MoreCount({ total, shown }) {
   return remaining > 0 ? <div className="tv-more">+ {remaining} more — open Metal Worx OS for the full list</div> : null;
 }
 
-const OUTSIDE_HUDDLE_STAGES = [
-  "Site Visits",
-  "Needs Quote",
-  "Quote & Approval",
-  "Awaiting Deposit",
+const OUTSIDE_FAB_STATIONS = [
   "Needs Scheduling",
-  "Fabrication / Shop",
-  "Install / Field Work",
-  "Closeout",
+  "Scheduled",
+  "Fabrication",
+  "Test Fit",
+  "Finish / Powder",
+  "Assembly",
+  "Install",
   "On Hold",
 ];
 
@@ -178,6 +181,14 @@ export default function MorningHuddleTV({ setPage }) {
   const huddle = data?.morningHuddle || {};
   const summary = huddle.summary || {};
   const projects = huddle.outsideProjects || data?.outsideProjects || [];
+  const outsideFabricationJobs = (data?.outsideProjects || []).filter((project) => project.projectCategory === "Outside Job");
+  const outsideFabPipeline = OUTSIDE_FAB_STATIONS.map((name) => ({
+    name,
+    items: outsideFabricationJobs.filter((project) => {
+      const stage = project.outsideJobStage || project.status || "Needs Scheduling";
+      return stage === name;
+    }),
+  }));
   const priorityItems = data?.priorityFeed?.quickCommitments || [];
   const artworkOrders = data?.artworkOrders || [];
   const artworkPipeline = huddle.artworkPipeline || [];
@@ -247,7 +258,7 @@ export default function MorningHuddleTV({ setPage }) {
             onKeyDown={stage.items?.length > 3 ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggleStage(stage.name); } } : undefined}
           >
             <div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.count || 0}</strong></div>
-            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stage.name] ? stage.items.length : 3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}{stage.name === "Design" ? ` · ${job.businessDaysInStage || 0} days in Design` : ""}</small></div>)}{stage.items.length > 3 && <button className="tv-pipeline-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleStage(stage.name); }}>{expandedStages[stage.name] ? "Show less" : `+ ${stage.items.length - 3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
+            {stage.items?.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stage.name] ? stage.items.length : 3).map((job) => <div className="tv-pipeline-job" key={job.id}>{text(job.title,"Artwork job")}<div className="tv-job-badges"><span className="tv-job-badge">{text(job.status,stage.name)}</span>{job.needsPlaque && <span className="tv-job-badge red">Needs Plaque</span>}{job.dueDate && <span className="tv-job-badge green">Due {dateOnly(job.dueDate)}</span>}</div><small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}{stage.name === "Design" ? ` · ${job.businessDaysInStage || 0} days in Design` : ""}</small></div>)}{stage.items.length > 3 && <button className="tv-pipeline-toggle" type="button" onClick={(event) => { event.stopPropagation(); toggleStage(stage.name); }}>{expandedStages[stage.name] ? "Show less" : `+ ${stage.items.length - 3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}
           </div>
         ))}
       </div>
@@ -258,8 +269,8 @@ export default function MorningHuddleTV({ setPage }) {
         {priorities.length ? <><div className="tv-card-grid">{priorities.slice(0,6).map((x,i)=><div className="tv-item-card urgent" key={`${x.sourceType || x.type || "priority"}-${x.id || x.sourceId || i}`}><span className="tv-card-tag">{text(x.hotReasonCategory,"Priority")}</span><strong>{text(x.title,"Artwork priority")}</strong><small>{text(x.department,"Stage not assigned")} · {x.daysInShop || 0} days in shop<br/>{text(x.dueDisplay || x.dueDate,"No deadline set")}{x.reason ? ` · ${x.reason}` : ""}</small></div>)}</div><MoreCount total={priorities.length} shown={6}/></>:<div className="tv-empty">No hot items are selected or dated for this week.</div>}
       </div>
       <div className="tv-panel tv-outside">
-        <h2><IconUsers/> Outside Project Pipeline</h2>
-        {outsideProjectPipeline.length ? <div className="tv-pipeline-grid tv-outside-pipeline">{outsideProjectPipeline.map((stage)=>{const stageKey=`outside-${stage.name}`;const expandable=stage.items.length>3;return <div className={`tv-pipeline-stage ${expandable ? "expandable" : ""} ${["Site Visits","Needs Quote","Quote & Approval","On Hold"].includes(stage.name) ? "attention" : ""}`} key={stageKey} role={expandable ? "button" : undefined} tabIndex={expandable ? 0 : undefined} aria-expanded={expandable ? Boolean(expandedStages[stageKey]) : undefined} onClick={expandable ? ()=>toggleStage(stageKey) : undefined} onKeyDown={expandable ? (event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();toggleStage(stageKey);}} : undefined}><div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.items.length}</strong></div><div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stageKey] ? stage.items.length : 3).map((p)=><div className="tv-pipeline-job" key={p.id}>{text(p.projectName || p.projectNumber,"Project")}<small>{text(p.owner)} · {dateOnly(p.targetDate)}<br/>Next: {text(p.nextAction,"Review project")}</small></div>)}{expandable && <button className="tv-pipeline-toggle" type="button" onClick={(event)=>{event.stopPropagation();toggleStage(stageKey);}}>{expandedStages[stageKey] ? "Show less" : `+ ${stage.items.length-3} more — tap to expand`}</button>}</div></div>;})}</div>:<div className="tv-empty">No active outside projects.</div>}
+        <h2><IconTool/> Outside Fabrication Stations</h2>
+        {outsideFabricationJobs.length ? <div className="tv-pipeline-grid tv-outside-pipeline">{outsideFabPipeline.map((stage)=>{const stageKey=`outside-fab-${stage.name}`;const expandable=stage.items.length>3;return <div className={`tv-pipeline-stage ${expandable ? "expandable" : ""} ${stage.name==="On Hold" && stage.items.length ? "attention" : ""}`} key={stageKey} role={expandable ? "button" : undefined} tabIndex={expandable ? 0 : undefined} aria-expanded={expandable ? Boolean(expandedStages[stageKey]) : undefined} onClick={expandable ? ()=>toggleStage(stageKey) : undefined} onKeyDown={expandable ? (event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();toggleStage(stageKey);}} : undefined}><div className="tv-pipeline-stage-head"><span>{stage.name}</span><strong>{stage.items.length}</strong></div>{stage.items.length ? <div className="tv-pipeline-jobs">{stage.items.slice(0,expandedStages[stageKey] ? stage.items.length : 3).map((job)=><div className="tv-pipeline-job" key={job.id}>{text(job.projectName || job.projectNumber,"Fabrication job")}<div className="tv-job-badges"><span className={`tv-job-badge ${job.outsideJobStatus==="Blocked" ? "red" : ""}`}>{text(job.outsideJobStatus,"Ready")}</span>{job.needsPlaque && <span className="tv-job-badge red">Needs Plaque</span>}{job.targetDate && <span className="tv-job-badge green">Due {dateOnly(job.targetDate)}</span>}</div><small>{text(job.customer,"Customer")} · {text(job.owner,"Unassigned")}<br/>Next: {text(job.nextAction,"Review job")}</small></div>)}{expandable && <button className="tv-pipeline-toggle" type="button" onClick={(event)=>{event.stopPropagation();toggleStage(stageKey);}}>{expandedStages[stageKey] ? "Show less" : `+ ${stage.items.length-3} more — tap to expand`}</button>}</div> : <div className="tv-pipeline-none">No active jobs</div>}</div>;})}</div>:<div className="tv-empty">No active outside fabrication jobs.</div>}
       </div>
       <div className="tv-panel tv-outside">
         <h2><IconClipboardCheck/> Latest Project Updates</h2>
