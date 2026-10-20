@@ -202,10 +202,6 @@ export default function MorningHuddleTV({ setPage }) {
       if (Boolean(left.dueDate) !== Boolean(right.dueDate)) return left.dueDate ? -1 : 1;
       return Number(right.businessDaysInShop || 0) - Number(left.businessDaysInShop || 0);
     });
-  const outsideProjectPipeline = OUTSIDE_HUDDLE_STAGES.map((name) => ({
-    name,
-    items: projects.filter((project) => project.workflowStage === name),
-  })).filter((stage) => stage.items.length > 0);
   const promotedArtwork = unduplicatedOrders
     .filter((order) => !order.isSmallFabrication)
     .filter((order) => order.showOnHuddle || order.dueDate || Number(order.businessDaysInShop || 0) >= 12)
@@ -240,7 +236,7 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-kpi danger"><span>Hot Items This Week</span><strong>{priorities.length}</strong></div>
       <div className="tv-kpi good"><span>Active Shop Jobs</span><strong>{summary.activeShopJobs || 0}</strong></div>
       <div className="tv-kpi warn"><span>Small Fabrication</span><strong>{smallFabrication.length}</strong></div>
-      <div className="tv-kpi"><span>Outside Projects</span><strong>{projects.length}</strong></div>
+      <div className="tv-kpi"><span>Outside Fabrication Jobs</span><strong>{outsideFabricationJobs.length}</strong></div>
       <div className="tv-kpi warn"><span>Open Site Visits</span><strong>{siteVisits.length}</strong></div>
       <div className="tv-kpi danger"><span>Needs Attention</span><strong>{Number(summary.blockers || blockers.length) + Number(summary.overdueActions || 0)}</strong></div>
     </section>
