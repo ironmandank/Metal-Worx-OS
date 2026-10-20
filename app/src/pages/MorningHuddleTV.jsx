@@ -4,6 +4,7 @@ import {
   IconArrowsMaximize,
   IconCalendarEvent,
   IconClipboardCheck,
+  IconDeviceTv,
   IconRefresh,
   IconTool,
   IconUsers,
@@ -11,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 
 import { getDashboardData } from "../services/dashboardService";
+import HuddlePresenter from "./HuddlePresenter";
 import { supabase } from "../lib/supabase";
 import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
@@ -142,6 +144,7 @@ export default function MorningHuddleTV({ setPage }) {
   const [siteVisits, setSiteVisits] = useState([]);
   const [timeOff, setTimeOff] = useState([]);
   const [expandedStages, setExpandedStages] = useState({});
+  const [presenterMode, setPresenterMode] = useState("");
 
   async function load() {
     try {
@@ -219,7 +222,7 @@ export default function MorningHuddleTV({ setPage }) {
   return <div className="tv-board"><style>{styles}</style>
     <header className="tv-head">
       <div className="tv-brand"><img src={metalWorxLogo} alt="Metal Worx"/><div><h1>Metal Worx Morning Huddle</h1><p>Whole-shop priorities, deadlines, and decisions</p></div></div>
-      <div className="tv-actions"><div className="tv-clock"><strong>{now.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</strong><span>{now.toLocaleDateString([], {weekday:"long",month:"long",day:"numeric"})}</span></div><button className="tv-btn" onClick={load}><IconRefresh/> Refresh</button><button className="tv-btn" onClick={fullscreen}><IconArrowsMaximize/> Full Screen</button><button className="tv-btn red" onClick={() => setPage("dashboard")}><IconX/> Exit TV</button></div>
+      <div className="tv-actions"><div className="tv-clock"><strong>{now.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}</strong><span>{now.toLocaleDateString([], {weekday:"long",month:"long",day:"numeric"})}</span></div><button className="tv-btn" onClick={() => setPresenterMode("prep")}><IconClipboardCheck/> Prepare Huddle</button><button className="tv-btn red" onClick={() => setPresenterMode("present")}><IconDeviceTv/> Start Huddle</button><button className="tv-btn" onClick={load}><IconRefresh/> Refresh</button><button className="tv-btn" onClick={fullscreen}><IconArrowsMaximize/> Full Screen</button><button className="tv-btn red" onClick={() => setPage("dashboard")}><IconX/> Exit TV</button></div>
     </header>
     {error && <div className="tv-summary"><p>{error}</p></div>}
     <section className="tv-summary"><label>Executive Summary</label><p>{loading ? "Preparing today’s operating summary…" : executive}</p></section>
@@ -271,5 +274,6 @@ export default function MorningHuddleTV({ setPage }) {
       <div className="tv-panel"><h2><IconTool/> Materials & Purchasing</h2><div className="tv-card-grid"><div className="tv-item-card"><span className="tv-card-tag gray">Purchasing</span><strong>{data?.outsideSummary?.materialsNeedOrdered || 0} need ordering</strong><small>Projects requiring purchasing action</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Receiving</span><strong>{data?.outsideSummary?.materialsWaiting || 0} waiting on material</strong><small>Ordered but not fully received</small></div><div className="tv-item-card"><span className="tv-card-tag gray">Shop Load</span><strong>{summary.busiestDepartment || "No active station"}</strong><small>{summary.busiestDepartmentCount || 0} active at the busiest station</small></div></div></div>
     </section>
     <div className="tv-foot">Auto-refreshes every 30 seconds · Metal Worx Operations System</div>
+    {presenterMode && <HuddlePresenter initialMode={presenterMode} onClose={() => setPresenterMode("")} summary={summary} executive={executive} priorities={priorities} projects={projects} field={field} blockers={blockers} siteVisits={siteVisits} timeOff={timeOff}/>}
   </div>;
 }
