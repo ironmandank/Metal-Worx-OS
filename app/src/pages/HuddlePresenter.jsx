@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconAlertTriangle, IconCalendarEvent, IconChevronLeft, IconChevronRight, IconDeviceTv, IconEdit, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { supabase } from "../lib/supabase";
 
-const styles = ``
+const styles = `
 .hp-overlay,.hp-overlay *{box-sizing:border-box}.hp-overlay{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.9);color:#f6f7f8;font-family:Arial,sans-serif}
 .hp-window{display:flex;width:min(1500px,100%);height:min(930px,100%);min-height:580px;flex-direction:column;overflow:hidden;border:1px solid #39434a;border-radius:16px;background:#090d10;box-shadow:0 25px 100px #000}
 .hp-header,.hp-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 20px;background:#11181c}.hp-header{border-bottom:1px solid #354047}.hp-footer{border-top:1px solid #354047}
@@ -22,7 +22,7 @@ const styles = ``
 .hp-saved-list{display:grid;gap:8px;padding:0 18px 18px}.hp-saved{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:11px;border:1px solid #303a41;border-radius:8px;background:#171f23}.hp-saved strong{display:block;color:#fff;font-size:13px}.hp-saved small{display:block;margin-top:4px;color:#aeb8be;font-size:12px;line-height:1.4}.hp-saved-actions{display:flex;gap:5px}.hp-icon-btn{display:grid;width:34px;height:34px;place-items:center;border:1px solid #46515a;border-radius:7px;color:#fff;background:#202a30;cursor:pointer}.hp-icon-btn:hover{border-color:#d41725}
 @media(max-width:900px){.hp-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.hp-team-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hp-overview-grid{grid-template-columns:1fr}}
 @media(max-width:620px){.hp-overlay{padding:0}.hp-window{height:100%;min-height:0;border:0;border-radius:0}.hp-header,.hp-footer{padding:11px;flex-wrap:wrap}.hp-actions{width:100%;justify-content:flex-end}.hp-content{padding:13px}.hp-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hp-stat{min-height:90px;padding:11px}.hp-team-grid{grid-template-columns:1fr}.hp-person{min-height:126px}.hp-team-head{align-items:flex-start;flex-direction:column}.hp-live-grid{grid-template-columns:1fr 1fr}.hp-brand h1{font-size:17px}.hp-brand p{font-size:11px}}
-``;
+`;
 function dayKey(date=new Date()){const copy=new Date(date);return copy.getFullYear()+"-"+String(copy.getMonth()+1).padStart(2,"0")+"-"+String(copy.getDate()).padStart(2,"0")}
 function mondayKey(date=new Date()){const copy=new Date(date);copy.setDate(copy.getDate()-((copy.getDay()+6)%7));return dayKey(copy)}
 function initials(name){return String(name||"?").trim().split(/\\s+/).slice(0,2).map((part)=>part[0]).join("").toUpperCase()}
