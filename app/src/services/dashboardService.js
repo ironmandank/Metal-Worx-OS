@@ -1221,6 +1221,15 @@ function buildOutsideProjectRow(
     workflowStage:
       getOutsideHuddleStage(project),
 
+    outsideJobStage:
+      project.outside_job_stage || "",
+
+    outsideJobStatus:
+      project.outside_job_status || "",
+
+    needsPlaque:
+      Boolean(project.needs_plaque),
+
     owner:
       getProjectOwner(project),
 
