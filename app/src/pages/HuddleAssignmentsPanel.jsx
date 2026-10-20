@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconEdit, IconPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { supabase } from "../lib/supabase";
 
-const styles = ``
+const styles = `
 .ha,.ha *{box-sizing:border-box}.ha{margin:14px 0;padding:16px;border:1px solid #354047;border-radius:11px;background:#10161a;color:#f6f7f8;font-family:Arial,sans-serif}
 .ha-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ha-title h2{margin:0;color:#fff;font-size:clamp(19px,1.4vw,27px);text-transform:uppercase}.ha-title p{margin:5px 0 0;color:#a9b1b7;font-size:13px}
 .ha-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ha-filters{display:flex;gap:6px}.ha-filter{min-height:36px;padding:0 12px;border:1px solid #46515a;border-radius:7px;color:#e5e9eb;background:#161e23;font-weight:800;cursor:pointer}.ha-filter.active{border-color:#d41725;background:#8d000b;color:#fff}
@@ -16,7 +16,7 @@ const styles = ``
 .ha-icon{display:grid;width:34px;height:34px;place-items:center;border:1px solid #46515a;border-radius:7px;color:#fff;background:#202a30;cursor:pointer}.ha-form{display:grid;gap:10px;padding:16px}.ha-form label{display:grid;gap:5px;color:#dce2e5;font-size:11px;font-weight:900;text-transform:uppercase}.ha-form input,.ha-form select,.ha-form textarea{width:100%;min-height:40px;padding:9px 10px;border:1px solid #46515a;border-radius:7px;color:#fff;background:#0c1215;font:14px Arial,sans-serif}.ha-form textarea{min-height:85px;resize:vertical}.ha-form-actions{display:flex;justify-content:flex-end;gap:7px}.ha-list{display:grid;gap:7px;padding:0 16px 16px}.ha-task{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px;border:1px solid #303a41;border-radius:8px;background:#171f23}.ha-task strong{display:block;color:#fff;font-size:13px;line-height:1.35}.ha-task small{display:block;margin-top:5px;color:#aeb8be;font-size:11px}.ha-task-actions{display:flex;gap:5px}
 @media(max-width:950px){.ha-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:650px){.ha{padding:11px}.ha-head{align-items:flex-start;flex-direction:column}.ha-tools{width:100%;justify-content:space-between}.ha-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ha-person{min-height:94px;padding:9px}.ha-person strong{font-size:14px}}
-``;
+`;
 function dateKey(date=new Date()){return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0")}
 function mondayKey(date=new Date()){const copy=new Date(date);copy.setDate(copy.getDate()-((copy.getDay()+6)%7));return dateKey(copy)}
 function crewList(rows=[]){const map=new Map();rows.filter((r)=>r.profile_type==="Person"&&r.is_active&&!String(r.role_title||"").toLowerCase().includes("pilot")&&String(r.display_name||"").toLowerCase()!=="office").forEach((r)=>{const key=String(r.display_name||"").trim().toLowerCase();if(key&&(!map.has(key)||(map.get(key).display_name==="kory"&&r.display_name==="Kory")))map.set(key,r)});return [...map.values()].sort((a,b)=>a.display_name.localeCompare(b.display_name,undefined,{sensitivity:"base"}))}
