@@ -1802,6 +1802,8 @@ export async function getDashboardData() {
         title: itemName || order?.order_number || job?.production_job_number || representative.work_order_number || "Artwork job",
         customer: order ? getArtworkCustomerName(order) : "Customer",
         owner: order?.order_owner || representative.assigned_to || "Unassigned",
+        status: representative.status || order?.status || "",
+        needsPlaque: order?.needs_plaque === true || normalizeStatus(representative.status) === "needs plaque",
         receivedDate: order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at || null,
         businessDaysInShop: businessDaysSince(order?.date_received || order?.order_date || order?.date_ordered || order?.created_at || job?.created_at || representative.created_at),
         stageEnteredDate: representative.started_at || representative.created_at || representative.updated_at || null,
