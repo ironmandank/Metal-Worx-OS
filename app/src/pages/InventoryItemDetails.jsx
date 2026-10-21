@@ -101,6 +101,15 @@ function getItemId(item) {
   return item?.inventory_item_id || item?.id || null;
 }
 
+function getItemSellingPrice(item) {
+  const sellingPrice = numberValue(item?.selling_price);
+  const showPrice = numberValue(item?.show_price);
+
+  if (sellingPrice > 0) return sellingPrice;
+  if (showPrice > 0) return showPrice;
+  return null;
+}
+
 function getMovementType(movement) {
   return (
     movement.movement_type ||
@@ -223,6 +232,7 @@ function InventoryItemDetails({
         movementsResult,
         categoriesResult,
         binsResult,
+        showPriceResult,
       ] = await Promise.all([
         supabase
           .from("inventory_item_availability")
@@ -268,6 +278,12 @@ function InventoryItemDetails({
           .eq("is_active", true)
           .order("zone")
           .order("name"),
+
+        supabase
+          .from("inventory_items")
+          .select("id,show_price")
+          .eq("id", itemId)
+          .maybeSingle(),
       ]);
 
       const requiredResults = [
@@ -277,6 +293,7 @@ function InventoryItemDetails({
         imagesResult,
         categoriesResult,
         binsResult,
+        showPriceResult,
       ];
 
       const failedRequiredResult = requiredResults.find(
@@ -288,7 +305,13 @@ function InventoryItemDetails({
       }
 
       if (itemResult.data) {
-        setItem(itemResult.data);
+        setItem({
+          ...itemResult.data,
+          show_price:
+            showPriceResult.data?.show_price ??
+            itemResult.data.show_price ??
+            null,
+        });
       }
       setBinBalances(balancesResult.data || []);
       setLabels(labelsResult.data || []);
@@ -388,7 +411,10 @@ function InventoryItemDetails({
       category_id: item?.category_id || "",
       default_bin_id: item?.default_bin_id || "",
       standard_cost: numberValue(item?.standard_cost),
-      selling_price: numberValue(item?.selling_price),
+      selling_price:
+        numberValue(item?.selling_price) > 0
+          ? numberValue(item?.selling_price)
+          : numberValue(item?.show_price),
       reorder_point: numberValue(item?.reorder_point),
       reorder_quantity: numberValue(item?.reorder_quantity),
       notes: item?.notes || "",
@@ -408,7 +434,7 @@ function InventoryItemDetails({
 
     setSavingItem(true);
     try {
-      const { error } = await supabase
+      const { data: savedItem, error } = await supabase
         .from("inventory_items")
         .update({
           item_number: String(editForm.item_number).trim(),
@@ -424,12 +450,17 @@ function InventoryItemDetails({
           notes: String(editForm.notes || "").trim() || null,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", itemId);
+        .eq("id", itemId)
+        .select("id,selling_price")
+        .maybeSingle();
 
       if (error) throw error;
+      if (!savedItem) {
+        throw new Error("No item was updated. Refresh the item and try again.");
+      }
       notifications.show({
         title: "Inventory Item Updated",
-        message: "Item details and default bin were saved.",
+        message: "Item details and selling price were saved.",
         color: "green",
       });
       setEditOpened(false);
@@ -980,9 +1011,9 @@ function InventoryItemDetails({
             color: "violet",
           },
           {
-            label: "Recorded Value",
+            label: "Stock Value at Cost",
             value: formatCurrency(item.inventory_value),
-            description: "Current recorded stock",
+            description: "On-hand quantity × average cost",
             icon: IconTool,
             color: "orange",
           },
@@ -1386,6 +1417,15 @@ function InventoryItemDetails({
                 <DetailField icon={IconHash} label="Item Number" value={item.item_number} />
                 <DetailField icon={IconBarcode} label="SKU" value={item.sku} />
                 <DetailField icon={IconCategory} label="Category" value={item.category_name} />
+                <DetailField
+                  icon={IconTool}
+                  label="Selling Price"
+                  value={
+                    getItemSellingPrice(item) === null
+                      ? "Not set"
+                      : formatCurrency(getItemSellingPrice(item))
+                  }
+                />
                 <DetailField icon={IconMapPin} label="Default Storage" value={locationText} />
                 {item.dimensions && (
                   <DetailField icon={IconRulerMeasure} label="Dimensions" value={item.dimensions} />
