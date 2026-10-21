@@ -93,7 +93,6 @@ function InventoryReceiving({
         supabase
           .from("inventory_item_availability")
           .select("*")
-          .eq("is_active", true)
           .order("name", { ascending: true }),
         supabase
           .from("inventory_bins")
@@ -190,7 +189,7 @@ function InventoryReceiving({
     () =>
       items.map((inventoryItem) => ({
         value: getItemId(inventoryItem),
-        label: `${inventoryItem.item_number || inventoryItem.sku || "NO NUMBER"} · ${inventoryItem.name}`,
+        label: `${inventoryItem.is_active ? "" : "ARCHIVED · "}${inventoryItem.item_number || inventoryItem.sku || "NO NUMBER"} · ${inventoryItem.name}`,
       })),
     [items]
   );
@@ -537,7 +536,7 @@ function InventoryReceiving({
 
             <Select
               label="Inventory Item"
-              description="Search by item number, SKU, or item name"
+              description="Search all inventory records by item number, SKU, or item name. Archived items can be restocked and will return to active inventory."
               placeholder="Search inventory items"
               data={itemOptions}
               value={itemId}
