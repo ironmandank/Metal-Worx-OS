@@ -368,6 +368,12 @@ function InventoryQuantityAdjustment({
         showDashboard={false}
       />
 
+      {!item.is_active && (
+        <Alert color="yellow" icon={<IconAlertTriangle size={20} />} title="Archived inventory item">
+          Add stock or enter a positive count to restore this item to active inventory.
+        </Alert>
+      )}
+
       <MWKpiStrip
         items={[
           {
