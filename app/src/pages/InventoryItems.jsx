@@ -76,6 +76,15 @@ function formatCurrency(value) {
   );
 }
 
+function getItemSellingPrice(item) {
+  const sellingPrice = numberValue(item?.selling_price);
+  const showPrice = numberValue(item?.show_price);
+
+  if (sellingPrice > 0) return sellingPrice;
+  if (showPrice > 0) return showPrice;
+  return null;
+}
+
 function getStockStatusColor(status) {
   if (status === "Available") {
     return "green";
@@ -443,6 +452,7 @@ function InventoryItems({
         binsResult,
         labelsResult,
         stockResult,
+        showPricesResult,
       ] = await Promise.all([
         supabase
           .from(
@@ -504,6 +514,10 @@ function InventoryItems({
           .from("inventory_stock")
           .select("inventory_item_id,bin_id,quantity_on_hand")
           .gt("quantity_on_hand", 0),
+
+        supabase
+          .from("inventory_items")
+          .select("id,show_price"),
       ]);
 
       const failedResult = [
@@ -512,6 +526,7 @@ function InventoryItems({
         binsResult,
         labelsResult,
         stockResult,
+        showPricesResult,
       ].find(
         (result) => result.error
       );
@@ -520,7 +535,23 @@ function InventoryItems({
         throw failedResult.error;
       }
 
-      setItems(itemsResult.data || []);
+      const showPriceByItemId = new Map(
+        (showPricesResult.data || []).map(
+          (item) => [item.id, item.show_price]
+        )
+      );
+
+      setItems(
+        (itemsResult.data || []).map((item) => ({
+          ...item,
+          show_price:
+            item.show_price ??
+            showPriceByItemId.get(
+              item.inventory_item_id
+            ) ??
+            null,
+        }))
+      );
       setCategories(
         categoriesResult.data || []
       );
@@ -1580,6 +1611,15 @@ function InventoryItems({
 
                     <Table.Th
                       style={{
+                        width: 110,
+                        minWidth: 110,
+                      }}
+                    >
+                      Price
+                    </Table.Th>
+
+                    <Table.Th
+                      style={{
                         width: 95,
                         minWidth: 95,
                       }}
@@ -1793,6 +1833,16 @@ function InventoryItems({
                             >
                               {item.category_name ||
                                 "Uncategorized"}
+                            </Text>
+                          </Table.Td>
+
+                          <Table.Td>
+                            <Text fw={850} c={getItemSellingPrice(item) === null ? "gray.6" : "green.3"}>
+                              {getItemSellingPrice(item) === null
+                                ? "—"
+                                : formatCurrency(
+                                    getItemSellingPrice(item)
+                                  )}
                             </Text>
                           </Table.Td>
 
