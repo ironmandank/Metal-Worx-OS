@@ -35,7 +35,7 @@ import {
   IconTool,
   IconTrash,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../lib/supabase";
 
@@ -411,6 +411,7 @@ function InventoryItems({
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkBinId, setBulkBinId] = useState("");
   const [bulkWorking, setBulkWorking] = useState(false);
+  const catalogViewportRef = useRef(null);
 
   useEffect(() => {
     loadInventoryItems();
@@ -575,6 +576,16 @@ function InventoryItems({
     } finally {
       setLoading(false);
     }
+  }
+
+  function scrollInventoryCatalog(direction) {
+    const viewport = catalogViewportRef.current;
+    if (!viewport) return;
+
+    viewport.scrollBy({
+      left: direction * Math.max(360, viewport.clientWidth * 0.8),
+      behavior: "smooth",
+    });
   }
 
   function openItem(item) {
@@ -1510,9 +1521,19 @@ function InventoryItems({
                 </Button>
               </Group>
             </Group>
-            <Text size="xs" c="gray.5">
-              Scroll left or right inside the catalog to view every column. Item names, categories, and storage locations now show their full details.
-            </Text>
+            <Group justify="space-between" gap="sm" wrap="wrap">
+              <Text size="xs" c="gray.5">
+                Use these buttons or the scrollbar below to see every inventory column.
+              </Text>
+              <Group gap="xs" wrap="nowrap">
+                <Button size="xs" variant="light" color="gray" onClick={() => scrollInventoryCatalog(-1)}>
+                  ← Previous columns
+                </Button>
+                <Button size="xs" variant="light" color="blue" onClick={() => scrollInventoryCatalog(1)}>
+                  Next columns →
+                </Button>
+              </Group>
+            </Group>
           </Stack>
 
           {filteredItems.length === 0 ? (
@@ -1529,6 +1550,7 @@ function InventoryItems({
             />
           ) : (
             <ScrollArea
+              viewportRef={catalogViewportRef}
               type="always"
               offsetScrollbars
               scrollbarSize={12}
