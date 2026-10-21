@@ -310,6 +310,45 @@ function getFinish(item) {
     .trim() || "";
 }
 
+const INVENTORY_ITEMS_VIEW_STATE_KEY =
+  "mw_inventory_items_view_state";
+
+function readInventoryItemsViewState() {
+  const defaultState = {
+    search: "",
+    recordFilter: "active",
+    groupFilter: "all",
+    categoryFilter: "all",
+    statusFilter: "all",
+    storageFilter: "all",
+  };
+
+  if (typeof window === "undefined") {
+    return defaultState;
+  }
+
+  try {
+    const savedState = JSON.parse(
+      window.sessionStorage.getItem(
+        INVENTORY_ITEMS_VIEW_STATE_KEY
+      ) || "{}"
+    );
+
+    return Object.fromEntries(
+      Object.entries(defaultState).map(
+        ([key, fallback]) => [
+          key,
+          typeof savedState[key] === "string"
+            ? savedState[key]
+            : fallback,
+        ]
+      )
+    );
+  } catch {
+    return defaultState;
+  }
+}
+
 function InventoryItems({
   setPage,
   setSelectedInventoryItem,
@@ -332,29 +371,33 @@ function InventoryItems({
   const [labels, setLabels] =
     useState([]);
 
+  const [savedViewState] = useState(
+    readInventoryItemsViewState
+  );
+
   const [search, setSearch] =
-    useState("");
+    useState(savedViewState.search);
 
   const [recordFilter, setRecordFilter] =
-    useState("active");
+    useState(savedViewState.recordFilter);
 
   const [groupFilter, setGroupFilter] =
-    useState("all");
+    useState(savedViewState.groupFilter);
 
   const [
     categoryFilter,
     setCategoryFilter,
-  ] = useState("all");
+  ] = useState(savedViewState.categoryFilter);
 
   const [
     statusFilter,
     setStatusFilter,
-  ] = useState("all");
+  ] = useState(savedViewState.statusFilter);
 
   const [
     storageFilter,
     setStorageFilter,
-  ] = useState("all");
+  ] = useState(savedViewState.storageFilter);
 
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkBinId, setBulkBinId] = useState("");
@@ -363,6 +406,32 @@ function InventoryItems({
   useEffect(() => {
     loadInventoryItems();
   }, []);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        INVENTORY_ITEMS_VIEW_STATE_KEY,
+        JSON.stringify({
+          search,
+          recordFilter,
+          groupFilter,
+          categoryFilter,
+          statusFilter,
+          storageFilter,
+        })
+      );
+    } catch {
+      // Keep inventory usable if browser storage is unavailable.
+    }
+  }, [
+    search,
+    recordFilter,
+    groupFilter,
+    categoryFilter,
+    statusFilter,
+    storageFilter,
+  ]);
+
 
   async function loadInventoryItems() {
     setLoading(true);
