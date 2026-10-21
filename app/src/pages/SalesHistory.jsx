@@ -165,6 +165,35 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
   const recordedPriceCount = visibleOrders.filter((order) => Number(order.total_amount || 0) > 0).length;
   const visibleTotal = visibleOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
 
+  const artworkReportEnd = new Date();
+  const artworkReportStart = new Date(
+    artworkReportEnd.getTime() - 30 * 24 * 60 * 60 * 1000
+  );
+  const artworkReportOrders = orders
+    .filter((order) => {
+      if (
+        order.order_type !== "Custom Artwork" ||
+        order.status !== "Completed" ||
+        !order.fulfillment_completed ||
+        !order.fulfilled_at
+      ) return false;
+
+      const fulfilledAt = new Date(order.fulfilled_at);
+      return (
+        !Number.isNaN(fulfilledAt.getTime()) &&
+        fulfilledAt >= artworkReportStart &&
+        fulfilledAt <= artworkReportEnd
+      );
+    })
+    .sort((a, b) => new Date(b.fulfilled_at) - new Date(a.fulfilled_at));
+  const artworkReportTotal = artworkReportOrders.reduce(
+    (sum, order) => sum + Number(order.total_amount || 0),
+    0
+  );
+  const artworkReportMissingPriceCount = artworkReportOrders.filter(
+    (order) => Number(order.total_amount || 0) <= 0
+  ).length;
+
   function openOrder(order) {
     setSelectedCustomerOrder(order);
     setPage("customerOrderDetails");
@@ -267,6 +296,84 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
         <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>PRICES RECORDED</Text><Title order={2}>{recordedPriceCount}</Title></Paper>
         <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>VISIBLE SALES TOTAL</Text><Title order={2}>{moneyPrivacy.unlocked ? visibleTotal.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$••••••"}</Title></Paper>
       </SimpleGrid>
+
+      <Paper withBorder p="lg" radius="lg">
+        <Group justify="space-between" align="flex-start" mb="md">
+          <div>
+            <Title order={3}>30-Day Artwork Summary</Title>
+            <Text size="sm" c="dimmed" mt={4}>
+              Completed and picked-up or shipped artwork from {formatDate(artworkReportStart)} through {formatDate(artworkReportEnd)}.
+            </Text>
+          </div>
+          <Badge color="blue" variant="light" size="lg">
+            {artworkReportOrders.length} sold
+          </Badge>
+        </Group>
+
+        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" mb="md">
+          <Paper withBorder p="md" radius="md">
+            <Text size="xs" c="dimmed" fw={800}>ARTWORK ORDERS SOLD</Text>
+            <Title order={3}>{artworkReportOrders.length}</Title>
+          </Paper>
+          <Paper withBorder p="md" radius="md">
+            <Text size="xs" c="dimmed" fw={800}>PRICES TO VERIFY</Text>
+            <Title order={3} c={artworkReportMissingPriceCount ? "orange.4" : "green.4"}>
+              {artworkReportMissingPriceCount}
+            </Title>
+          </Paper>
+          <Paper withBorder p="md" radius="md">
+            <Text size="xs" c="dimmed" fw={800}>OUT-THE-DOOR TOTAL</Text>
+            <Title order={3}>
+              {moneyPrivacy.unlocked
+                ? artworkReportTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })
+                : "$••••••"}
+            </Title>
+          </Paper>
+        </SimpleGrid>
+
+        {artworkReportMissingPriceCount > 0 && (
+          <Alert color="orange" icon={<IconArchive size={18} />} mb="md">
+            {artworkReportMissingPriceCount} completed artwork order(s) have no recorded final sale price. Add the price in Sales History so the total is complete.
+          </Alert>
+        )}
+
+        {!loading && artworkReportOrders.length === 0 && (
+          <Alert color="gray" icon={<IconHistory size={18} />}>
+            No artwork was completed and sold during this 30-day period.
+          </Alert>
+        )}
+
+        {artworkReportOrders.length > 0 && (
+          <Stack gap="xs">
+            {artworkReportOrders.map((order) => {
+              const hasPrice = Number(order.total_amount || 0) > 0;
+              return (
+                <Paper key={order.id} withBorder p="sm" radius="md">
+                  <Group justify="space-between" align="center" wrap="wrap">
+                    <div>
+                      <Text size="xs" c="dimmed" fw={800}>
+                        {formatDate(order.fulfilled_at)} · {order.order_number || `ORDER ${order.id}`}
+                      </Text>
+                      <Text fw={800}>{customerName(order, customersById)}</Text>
+                      <Text size="sm" c="dimmed">{itemNames(order.id, itemsByOrderId)}</Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed" fw={800} ta="right">OUT-THE-DOOR PRICE</Text>
+                      <Text fw={900} c={hasPrice ? "green.4" : "orange.4"} ta="right">
+                        {!moneyPrivacy.unlocked
+                          ? "$••••••"
+                          : hasPrice
+                            ? Number(order.total_amount).toLocaleString("en-US", { style: "currency", currency: "USD" })
+                            : "Price not recorded"}
+                      </Text>
+                    </div>
+                  </Group>
+                </Paper>
+              );
+            })}
+          </Stack>
+        )}
+      </Paper>
 
       <MWSection title="Completed & Archived Sales" subtitle="Search by customer, item, order number, description, date, or exact price.">
         <Stack gap="md">
