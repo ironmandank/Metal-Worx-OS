@@ -292,9 +292,9 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
       {moneyPrivacy.controls}
 
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>HISTORY RECORDS</Text><Title order={2}>{visibleOrders.length}</Title></Paper>
-        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>PRICES RECORDED</Text><Title order={2}>{recordedPriceCount}</Title></Paper>
-        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>VISIBLE SALES TOTAL</Text><Title order={2}>{moneyPrivacy.unlocked ? visibleTotal.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$••••••"}</Title></Paper>
+        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>HISTORY RECORDS</Text><Title order={2} c="white" fw={900}>{visibleOrders.length}</Title></Paper>
+        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>PRICES RECORDED</Text><Title order={2} c="white" fw={900}>{recordedPriceCount}</Title></Paper>
+        <Paper withBorder p="lg" radius="lg"><Text size="sm" c="dimmed" fw={750}>VISIBLE SALES TOTAL</Text><Title order={2} c="white" fw={900}>{moneyPrivacy.unlocked ? visibleTotal.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$••••••"}</Title></Paper>
       </SimpleGrid>
 
       <Paper withBorder p="lg" radius="lg">
@@ -313,17 +313,17 @@ export default function SalesHistory({ setPage, setSelectedCustomerOrder, active
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" mb="md">
           <Paper withBorder p="md" radius="md">
             <Text size="xs" c="dimmed" fw={800}>ARTWORK ORDERS SOLD</Text>
-            <Title order={3}>{artworkReportOrders.length}</Title>
+            <Title order={3} c="white" fw={900}>{artworkReportOrders.length}</Title>
           </Paper>
           <Paper withBorder p="md" radius="md">
             <Text size="xs" c="dimmed" fw={800}>PRICES TO VERIFY</Text>
-            <Title order={3} c={artworkReportMissingPriceCount ? "orange.4" : "green.4"}>
+            <Title order={3} c={artworkReportMissingPriceCount ? "orange.3" : "green.3"} fw={900}>
               {artworkReportMissingPriceCount}
             </Title>
           </Paper>
           <Paper withBorder p="md" radius="md">
             <Text size="xs" c="dimmed" fw={800}>OUT-THE-DOOR TOTAL</Text>
-            <Title order={3}>
+            <Title order={3} c="white" fw={900}>
               {moneyPrivacy.unlocked
                 ? artworkReportTotal.toLocaleString("en-US", { style: "currency", currency: "USD" })
                 : "$••••••"}
