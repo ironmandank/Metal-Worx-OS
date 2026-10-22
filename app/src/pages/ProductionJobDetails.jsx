@@ -103,6 +103,14 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
   const [designDraft, setDesignDraft] = useState(parseDesignInstructions(""));
   const [errorMessage, setErrorMessage] = useState("");
 
+  function updateJobEditDraft(field, value) {
+    setJobEditDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateDesignDraft(field, value) {
+    setDesignDraft((current) => ({ ...current, [field]: value }));
+  }
+
   function openJobEditor() {
     setJobEditDraft({
       customerName,
@@ -606,30 +614,30 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             <TextInput
               label="Customer / Order Name"
               value={jobEditDraft.customerName}
-              onChange={(event) => setJobEditDraft((current) => ({ ...current, customerName: event.currentTarget.value }))}
+              onChange={(event) => updateJobEditDraft("customerName", event.currentTarget.value)}
               required
             />
             <TextInput
               label="Job Title"
               value={jobEditDraft.title}
-              onChange={(event) => setJobEditDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+              onChange={(event) => updateJobEditDraft("title", event.currentTarget.value)}
             />
             <TextInput
               label="Phone"
               value={jobEditDraft.phone}
-              onChange={(event) => setJobEditDraft((current) => ({ ...current, phone: event.currentTarget.value }))}
+              onChange={(event) => updateJobEditDraft("phone", event.currentTarget.value)}
             />
             <TextInput
               label="Email"
               type="email"
               value={jobEditDraft.email}
-              onChange={(event) => setJobEditDraft((current) => ({ ...current, email: event.currentTarget.value }))}
+              onChange={(event) => updateJobEditDraft("email", event.currentTarget.value)}
             />
             <TextInput
               label="Due Date"
               type="date"
               value={jobEditDraft.dueDate}
-              onChange={(event) => setJobEditDraft((current) => ({ ...current, dueDate: event.currentTarget.value }))}
+              onChange={(event) => updateJobEditDraft("dueDate", event.currentTarget.value)}
             />
           </SimpleGrid>
           <Textarea
@@ -637,7 +645,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             minRows={4}
             autosize
             value={jobEditDraft.notes}
-            onChange={(event) => setJobEditDraft((current) => ({ ...current, notes: event.currentTarget.value }))}
+            onChange={(event) => updateJobEditDraft("notes", event.currentTarget.value)}
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setJobEditModalOpen(false)}>Cancel</Button>
@@ -673,10 +681,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             placeholder="Example: Robert_AirForce_Logo.cdr"
             value={designDraft.fileName}
             onChange={(event) =>
-              setDesignDraft((current) => ({
-                ...current,
-                fileName: event.currentTarget.value,
-              }))
+              updateDesignDraft("fileName", event.currentTarget.value)
             }
           />
           <Textarea
@@ -687,10 +692,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             autosize
             value={designDraft.description}
             onChange={(event) =>
-              setDesignDraft((current) => ({
-                ...current,
-                description: event.currentTarget.value,
-              }))
+              updateDesignDraft("description", event.currentTarget.value)
             }
           />
           <Group justify="flex-end">
