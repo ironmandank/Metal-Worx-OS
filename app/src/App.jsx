@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useState } from "react";
 
 import AppLayout from "./components/layout/AppLayout";
 import SplashScreen from "./components/SplashScreen";
@@ -142,11 +142,11 @@ function App() {
 
   const [activeUser, setActiveUser] = useState("");
 
-  const previousPageBeforeProductionJobRef = useRef(page);
+  const [previousPageBeforeProductionJob, setPreviousPageBeforeProductionJob] = useState(page);
 
   useEffect(() => {
     if (page !== "productionJobDetails") {
-      previousPageBeforeProductionJobRef.current = page;
+      setPreviousPageBeforeProductionJob(page);
     }
   }, [page]);
 
@@ -798,7 +798,7 @@ function App() {
         <ProductionJobDetails
           selectedProductionJob={selectedProductionJob}
           setPage={setPage}
-          returnPage={previousPageBeforeProductionJobRef.current}
+          returnPage={previousPageBeforeProductionJob}
         />
       );
     }
