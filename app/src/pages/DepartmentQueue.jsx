@@ -1725,7 +1725,7 @@ function DepartmentQueue({
     const order = detail?.order;
     const designWork = (department === "Design" || unifiedArtwork) ? getDesignWorkDetails(order) : { workType: "", fileName: "" };
     const customerName = order?.artwork_customer_name || project?.contact_name || getCustomerName(customer);
-    const workName = project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
+    const workName = order?.title || project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
     const designRank = isDesignStation(workOrder) && workOrder.status === "Ready"
       ? getDesignPriority(workOrder, detail, hotTodayItems)
