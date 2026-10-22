@@ -75,7 +75,20 @@ function parseDesignInstructions(notes) {
   };
 }
 
-function ProductionJobDetails({ selectedProductionJob, setPage }) {
+function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "productionControl" }) {
+  const returnPageLabels = {
+    actionCenter: "Action Center",
+    customerOrders: "Customer Orders",
+    dashboard: "Dashboard",
+    departmentQueue: "Department Workflow",
+    designQueue: "Design Queue",
+    morningHuddleTV: "TV Huddle",
+    productionControl: "Production Control",
+    productionJobs: "Production Jobs",
+    projectDetails: "Project Details",
+    quoteCenter: "Quote Center",
+  };
+  const returnPageLabel = returnPageLabels[returnPage] || "Previous Workflow";
   const [job, setJob] = useState(selectedProductionJob || null);
   const [customer, setCustomer] = useState(null);
   const [order, setOrder] = useState(null);
@@ -542,13 +555,13 @@ function ProductionJobDetails({ selectedProductionJob, setPage }) {
             )}
 
             <Text c="dimmed">
-              Return to Production Control and open a production job.
+              Return to ${returnPageLabel} and open a production job.
             </Text>
 
             <Button
               color="red"
               leftSection={<IconArrowLeft size={18} />}
-              onClick={() => setPage("productionControl")}
+              onClick={() => setPage(returnPage || "productionControl")}
             >
               Back to Production
             </Button>
