@@ -1443,6 +1443,52 @@ function InventoryItemDetails({
                 <DetailField icon={IconCalendar} label="Updated" value={formatDateTime(item.updated_at)} />
               </SimpleGrid>
 
+              <Paper
+                p="md"
+                radius="md"
+                style={{
+                  background: "rgba(255,255,255,0.025)",
+                  border: "1px solid rgba(255,255,255,0.07)",
+                }}
+              >
+                <Group gap="sm" mb="sm" wrap="nowrap">
+                  <ThemeIcon size={32} radius="md" color="gray" variant="light">
+                    <IconBuildingWarehouse size={16} />
+                  </ThemeIcon>
+                  <Box>
+                    <Text size="xs" c="dimmed" fw={800} tt="uppercase">
+                      On-Hand by Bin
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      Quantity recorded at each storage position
+                    </Text>
+                  </Box>
+                </Group>
+                {binBalances.length === 0 ? (
+                  <Text size="sm" c="dimmed">No recorded bin balances.</Text>
+                ) : (
+                  <Group gap="xs">
+                    {binBalances.map((balance) => {
+                      const binLabel =
+                        [balance.bin_code, balance.bin_name]
+                          .filter(Boolean)
+                          .join(" · ") || "Unassigned bin";
+                      const quantity = numberValue(balance.quantity_on_hand);
+                      return (
+                        <Badge
+                          key={balance.stock_id || balance.bin_id}
+                          color={quantity > 0 ? "red" : "gray"}
+                          variant="light"
+                          size="lg"
+                        >
+                          {binLabel}: {formatNumber(quantity)}
+                        </Badge>
+                      );
+                    })}
+                  </Group>
+                )}
+              </Paper>
+
               {item.description && (
                 <>
                   <Divider />
