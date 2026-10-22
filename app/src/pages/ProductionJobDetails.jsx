@@ -555,7 +555,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
             )}
 
             <Text c="dimmed">
-              Return to ${returnPageLabel} and open a production job.
+              Return to {returnPageLabel} and open a production job.
             </Text>
 
             <Button
@@ -563,7 +563,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
               leftSection={<IconArrowLeft size={18} />}
               onClick={() => setPage(returnPage || "productionControl")}
             >
-              Back to Production
+              Back to {returnPageLabel}
             </Button>
           </Stack>
         </MWSection>
@@ -733,8 +733,8 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
         ]
           .filter(Boolean)
           .join(" • ")}
-        buttonText="Production Control"
-        onButtonClick={() => setPage("productionControl")}
+        buttonText={`Back to ${returnPageLabel}`}
+        onButtonClick={() => setPage(returnPage || "productionControl")}
       />
 
       <Paper withBorder radius="lg" p="md" mb="lg">
