@@ -11,7 +11,46 @@ import {
 } from "./lib/supabase";
 
 const pageModules = import.meta.glob(["./pages/*.jsx", "!./pages/AuthLogin.jsx"]);
-const page = (name) => lazy(pageModules[`./pages/${name}.jsx`]);
+const CHUNK_RECOVERY_KEY = "mwChunkRecovery";
+
+function reloadOnceAfterChunkFailure() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    if (sessionStorage.getItem(CHUNK_RECOVERY_KEY) === "1") return false;
+    sessionStorage.setItem(CHUNK_RECOVERY_KEY, "1");
+  } catch {
+    return false;
+  }
+
+  window.location.reload();
+  return true;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", (event) => {
+    if (reloadOnceAfterChunkFailure()) {
+      event.preventDefault();
+    }
+  });
+}
+
+const page = (name) =>
+  lazy(() =>
+    pageModules[`./pages/${name}.jsx`]()
+      .then((module) => {
+        try {
+          sessionStorage.removeItem(CHUNK_RECOVERY_KEY);
+        } catch {
+          // Continue if browser storage is unavailable.
+        }
+        return module;
+      })
+      .catch((error) => {
+        reloadOnceAfterChunkFailure();
+        throw error;
+      })
+  );
 const Dashboard = page("Dashboard");
 const MorningHuddleTV = page("MorningHuddleTV");
 const ActionCenter = page("ActionCenter");
@@ -111,7 +150,7 @@ class WorkspaceErrorBoundary extends Component {
         <p>Your information has not been cleared. You can retry this workspace or safely return to Mission Control.</p>
         <p style={{ color: "#a9b1b8", fontSize: 13 }}>{this.state.errorMessage}</p>
         <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 10 }}>
-          <button type="button" onClick={() => this.setState({ failed: false, errorMessage: "" })} style={{ padding: "10px 18px", border: 0, borderRadius: 8, background: "#d20a20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Try This Workspace Again</button>
+          <button type="button" onClick={() => { try { sessionStorage.removeItem(CHUNK_RECOVERY_KEY); } catch { /* Continue if browser storage is unavailable. */ } window.location.reload(); }} style={{ padding: "10px 18px", border: 0, borderRadius: 8, background: "#d20a20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Reload App</button>
           <button type="button" onClick={this.props.onReturn} style={{ padding: "10px 18px", border: "1px solid #48525a", borderRadius: 8, background: "#151b20", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Return to Mission Control</button>
         </div>
       </div>
