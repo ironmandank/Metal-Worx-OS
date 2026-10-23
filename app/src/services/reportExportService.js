@@ -93,8 +93,7 @@ export function exportReportsToPDF(data) {
       ["Active Production Jobs", summary.activeProductionJobs || 0],
       ["Open Callbacks", summary.openCallbacks || 0],
       ["Overdue Work", summary.overdueWork || 0],
-      ["Total Pipeline Value", money(summary.totalPipelineValue)],
-      ["Total Outstanding Balance", money(summary.totalOutstandingBalance)],
+      ["Open Work Value", money(summary.totalPipelineValue)],
     ],
     theme: "grid",
     headStyles: {
@@ -116,16 +115,14 @@ export function exportReportsToPDF(data) {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text("Financial Snapshot", 40, nextY);
+  doc.text("Open Work Value", 40, nextY);
 
   autoTable(doc, {
     startY: nextY + 12,
-    head: [["Financial Metric", "Amount"]],
+    head: [["Open Work Type", "Recorded Value"]],
     body: [
       ["Open Customer Order Value", money(summary.orderPipelineValue)],
       ["Open Outside Project Value", money(summary.projectPipelineValue)],
-      ["Customer Order Balance", money(summary.openOrderBalance)],
-      ["Outside Project Balance", money(summary.openProjectBalance)],
     ],
     theme: "grid",
     headStyles: {
@@ -244,19 +241,9 @@ export function exportReportsToPDF(data) {
   doc.setTextColor(30, 30, 30);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("Customer & Follow-Up Activity", 40, 125);
+  doc.text("Follow-Up & Attention", 40, 125);
 
-  autoTable(doc, {
-    startY: 140,
-    head: [["Top Customer", "Order Count"]],
-    body: safeItems(data.topCustomers).map((item) => [item.label, item.value]),
-    theme: "striped",
-    headStyles: {
-      fillColor: [139, 0, 0],
-    },
-  });
-
-  nextY = doc.lastAutoTable.finalY + 25;
+  nextY = 140;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
@@ -565,20 +552,11 @@ export async function exportReportsToPowerPoint(data) {
       subtext: "Past-due operational work",
     },
     {
-      label: "Pipeline Value",
+      label: "Open Work Value",
       value: money(summary.totalPipelineValue),
-      subtext: "Open order + project value",
+      subtext: "Recorded open order and project value",
     },
-    {
-      label: "Outstanding Balance",
-      value: money(summary.totalOutstandingBalance),
-      subtext: "Estimated unpaid balance",
-    },
-    {
-      label: "Report Health",
-      value: "LIVE",
-      subtext: "Current ERP data",
-    },
+
   ];
 
   cards.forEach((card, index) => {
@@ -623,19 +601,18 @@ export async function exportReportsToPowerPoint(data) {
 
   addPptHeader(
     slide,
-    "Customers & Attention",
-    "Customer activity and operational items requiring attention"
+    "Operational Attention",
+    "Open callbacks and overdue work requiring follow-up"
   );
 
-  addBarChart(slide, "Top Customers by Orders", data.topCustomers, 0.55, 2.05, 5.9, 4.75);
-  addBarChart(slide, "Attention Summary", data.attentionItems, 6.85, 2.05, 5.9, 4.75);
+  addBarChart(slide, "Attention Summary", data.attentionItems, 0.75, 2.05, 11.8, 4.75);
 
   slide = pptx.addSlide();
 
   addPptHeader(
     slide,
-    "Financial Snapshot",
-    "Open pipeline and outstanding balance overview"
+    "Open Work Value",
+    "Recorded value of open customer orders and outside projects"
   );
 
   addMetricCard(slide, {
@@ -663,9 +640,7 @@ export async function exportReportsToPowerPoint(data) {
     y: 4.35,
     w: 5.7,
     h: 1.7,
-    label: "Customer Order Balance",
-    value: money(summary.openOrderBalance),
-    subtext: "Estimated unpaid balance on customer orders",
+
   });
 
   addMetricCard(slide, {
@@ -673,9 +648,7 @@ export async function exportReportsToPowerPoint(data) {
     y: 4.35,
     w: 5.7,
     h: 1.7,
-    label: "Outside Project Balance",
-    value: money(summary.openProjectBalance),
-    subtext: "Estimated unpaid balance on outside projects",
+
   });
 
   await pptx.writeFile({
