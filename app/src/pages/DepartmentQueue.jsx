@@ -67,6 +67,10 @@ function referenceImageLabel(image, index) {
   return image?.caption || image?.image_type || `Reference image ${index + 1}`;
 }
 
+function isFinishedProductImage(image) {
+  return String(image?.image_type || "").trim().toLowerCase() === "finished product";
+}
+
 async function downloadReferenceImage(image, index) {
   const fileName = referenceImageLabel(image, index);
   try {
@@ -90,9 +94,9 @@ async function downloadReferenceImage(image, index) {
   }
 }
 
-function DesignImageGallery({ images, imageHeight = 100 }) {
+function DesignImageGallery({ images, imageHeight = 100, emptyMessage = "No artwork or reference images have been added." }) {
   if (!images?.length) {
-    return <Text size="sm" c="dimmed">No artwork or reference images have been added.</Text>;
+    return <Text size="sm" c="dimmed">{emptyMessage}</Text>;
   }
 
   return (
@@ -104,7 +108,10 @@ function DesignImageGallery({ images, imageHeight = 100 }) {
             <a href={image.image_url} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}>
               <Image src={image.image_url} alt={label} h={imageHeight} fit="contain" radius="sm" />
             </a>
-            <Text size="xs" fw={700} mt="xs" lineClamp={2}>{label}</Text>
+            <Group justify="space-between" gap={6} mt="xs" wrap="nowrap">
+              <Text size="xs" fw={700} lineClamp={2}>{label}</Text>
+              {isFinishedProductImage(image) && <Badge size="xs" color="green" variant="light">Finished</Badge>}
+            </Group>
             <Group grow gap={6} mt="xs">
               <Button
                 component="a"
@@ -130,6 +137,31 @@ function DesignImageGallery({ images, imageHeight = 100 }) {
           </Card>
         );
       })}
+    </SimpleGrid>
+  );
+}
+
+function SelectedPhotoPreviews({ files }) {
+  const [previews, setPreviews] = useState([]);
+
+  useEffect(() => {
+    const next = Array.from(files || []).map((file) => ({
+      name: file.name,
+      url: URL.createObjectURL(file),
+    }));
+    setPreviews(next);
+    return () => next.forEach((preview) => URL.revokeObjectURL(preview.url));
+  }, [files]);
+
+  if (!previews.length) return null;
+  return (
+    <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
+      {previews.map((preview) => (
+        <Card key={preview.url} withBorder radius="md" p={6}>
+          <Image src={preview.url} alt={preview.name} h={90} fit="contain" radius="sm" />
+          <Text size="xs" fw={700} mt={4} lineClamp={1}>{preview.name}</Text>
+        </Card>
+      ))}
     </SimpleGrid>
   );
 }
@@ -165,6 +197,8 @@ function DepartmentQueue({
   const [detailTarget, setDetailTarget] = useState(null);
   const [editDesignTarget, setEditDesignTarget] = useState(null);
   const [additionalDesignPhotos, setAdditionalDesignPhotos] = useState([]);
+  const [finishedProductPhotos, setFinishedProductPhotos] = useState([]);
+  const [uploadingFinishedWorkOrderId, setUploadingFinishedWorkOrderId] = useState(null);
   const [designDraft, setDesignDraft] = useState({
     customerName: "",
     workType: "New Design Required",
@@ -709,11 +743,12 @@ function DepartmentQueue({
       email: detail?.order?.artwork_customer_email || "",
     });
     setAdditionalDesignPhotos([]);
+    setFinishedProductPhotos([]);
     setEditDesignTarget(workOrder);
   }
 
-  async function uploadAdditionalDesignPhotos() {
-    if (!editDesignTarget || additionalDesignPhotos.length === 0 || savingAction) return;
+  async function uploadDesignPhotos(files, imageType) {
+    if (!editDesignTarget || files.length === 0 || savingAction) return;
     const detail = jobDetails[editDesignTarget.production_job_id];
     if (!detail?.order?.id) {
       notifications.show({
@@ -726,13 +761,14 @@ function DepartmentQueue({
 
     setSavingAction(true);
     try {
-      await uploadOrderImages(detail.order.id, additionalDesignPhotos, "Design Reference");
+      await uploadOrderImages(detail.order.id, files, imageType);
       notifications.show({
-        title: "Design Photos Added",
-        message: `${additionalDesignPhotos.length} photo${additionalDesignPhotos.length === 1 ? " was" : "s were"} added to this design job. Existing images were kept.`,
+        title: imageType === "Finished Product" ? "Finished Product Photos Added" : "Design Photos Added",
+        message: `${files.length} photo${files.length === 1 ? " was" : "s were"} added to this job. Existing images were kept.`,
         color: "green",
       });
-      setAdditionalDesignPhotos([]);
+      if (imageType === "Finished Product") setFinishedProductPhotos([]);
+      else setAdditionalDesignPhotos([]);
       await loadQueue();
     } catch (error) {
       notifications.show({
@@ -742,6 +778,39 @@ function DepartmentQueue({
       });
     } finally {
       setSavingAction(false);
+    }
+  }
+
+  async function uploadFinishedPhotosFromCard(workOrder, selectedFiles) {
+    const files = Array.from(selectedFiles || []);
+    if (!files.length || uploadingFinishedWorkOrderId) return;
+    const detail = jobDetails[workOrder.production_job_id];
+    if (!detail?.order?.id) {
+      notifications.show({
+        title: "Finished Photos Could Not Be Added",
+        message: "This artwork job is not linked to a customer order.",
+        color: "red",
+      });
+      return;
+    }
+
+    setUploadingFinishedWorkOrderId(workOrder.id);
+    try {
+      await uploadOrderImages(detail.order.id, files, "Finished Product");
+      await loadQueue();
+      notifications.show({
+        title: "Finished Product Photos Added",
+        message: `${files.length} finished photo${files.length === 1 ? " is" : "s are"} now saved with this artwork job.`,
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Finished Photos Could Not Be Added",
+        message: error?.message || "Please try the upload again.",
+        color: "red",
+      });
+    } finally {
+      setUploadingFinishedWorkOrderId(null);
     }
   }
 
@@ -1604,6 +1673,25 @@ function DepartmentQueue({
             </div>
           )}
 
+          <FileButton
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+            onChange={(files) => uploadFinishedPhotosFromCard(workOrder, files)}
+          >
+            {(props) => (
+              <Button
+                {...props}
+                fullWidth
+                color="green"
+                variant="light"
+                leftSection={<IconPhoto size={16} />}
+                loading={uploadingFinishedWorkOrderId === workOrder.id}
+              >
+                Upload Finished Product Photos
+              </Button>
+            )}
+          </FileButton>
+
           {workOrder.status === "Blocked" && (
             <Alert icon={<IconAlertTriangle size={18} />} color="red" title="Work is blocked">
               {workOrder.blocked_reason || "No blocker reason was recorded."}
@@ -2218,6 +2306,7 @@ function DepartmentQueue({
         onClose={() => {
           setEditDesignTarget(null);
           setAdditionalDesignPhotos([]);
+          setFinishedProductPhotos([]);
         }}
         title="Edit Design Job"
         centered
@@ -2353,13 +2442,25 @@ function DepartmentQueue({
           <Paper withBorder radius="md" p="md">
             <Stack gap="sm">
               <div>
-                <Text fw={800}>Current Design Images</Text>
+                <Text fw={800}>Starting Artwork & Reference Photos</Text>
                 <Text size="sm" c="dimmed" mb="sm">
-                  Every image attached to this job is shown below. Open or download any file before adding more.
+                  Customer artwork, sketches, and starting-condition photos. Open or download the original file on any device.
                 </Text>
                 <DesignImageGallery
-                  images={jobDetails[editDesignTarget?.production_job_id]?.images || []}
+                  images={(jobDetails[editDesignTarget?.production_job_id]?.images || []).filter((image) => !isFinishedProductImage(image))}
                   imageHeight={120}
+                  emptyMessage="No starting or reference photos have been added."
+                />
+              </div>
+              <div>
+                <Text fw={800}>Finished Product Photos</Text>
+                <Text size="sm" c="dimmed" mb="sm">
+                  Final photos stay with this job and can be opened or downloaded later from a phone, tablet, or computer.
+                </Text>
+                <DesignImageGallery
+                  images={(jobDetails[editDesignTarget?.production_job_id]?.images || []).filter(isFinishedProductImage)}
+                  imageHeight={120}
+                  emptyMessage="No finished-product photos have been added yet."
                 />
               </div>
             </Stack>
@@ -2384,17 +2485,49 @@ function DepartmentQueue({
                 )}
               </FileButton>
               {additionalDesignPhotos.length > 0 && (
-                <Text size="sm" fw={700}>
-                  {additionalDesignPhotos.length} photo{additionalDesignPhotos.length === 1 ? "" : "s"} selected
-                </Text>
+                <>
+                  <Text size="sm" fw={700}>{additionalDesignPhotos.length} photo{additionalDesignPhotos.length === 1 ? "" : "s"} selected</Text>
+                  <SelectedPhotoPreviews files={additionalDesignPhotos} />
+                </>
               )}
               <Button
                 color="blue"
                 disabled={additionalDesignPhotos.length === 0}
                 loading={savingAction}
-                onClick={uploadAdditionalDesignPhotos}
+                onClick={() => uploadDesignPhotos(additionalDesignPhotos, "Design Reference")}
               >
                 Add Photos to This Design Job
+              </Button>
+            </Stack>
+          </Paper>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <div>
+                <Text fw={800}>Add Finished Product Photos</Text>
+                <Text size="sm" c="dimmed">
+                  Upload the completed piece before pickup or shipping. These photos remain separate from the starting artwork.
+                </Text>
+              </div>
+              <FileButton
+                multiple
+                accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                onChange={(files) => setFinishedProductPhotos(files || [])}
+              >
+                {(props) => <Button {...props} variant="light" color="green" leftSection={<IconPhoto size={16} />}>Choose Finished Photos</Button>}
+              </FileButton>
+              {finishedProductPhotos.length > 0 && (
+                <>
+                  <Text size="sm" fw={700}>{finishedProductPhotos.length} finished photo{finishedProductPhotos.length === 1 ? "" : "s"} selected</Text>
+                  <SelectedPhotoPreviews files={finishedProductPhotos} />
+                </>
+              )}
+              <Button
+                color="green"
+                disabled={finishedProductPhotos.length === 0}
+                loading={savingAction}
+                onClick={() => uploadDesignPhotos(finishedProductPhotos, "Finished Product")}
+              >
+                Upload Finished Photos
               </Button>
             </Stack>
           </Paper>
@@ -2402,6 +2535,7 @@ function DepartmentQueue({
             <Button variant="default" onClick={() => {
               setEditDesignTarget(null);
               setAdditionalDesignPhotos([]);
+              setFinishedProductPhotos([]);
             }}>Cancel</Button>
             <Button color="red" loading={savingAction} onClick={saveDesignJob}>Save Design Job</Button>
           </Group>
