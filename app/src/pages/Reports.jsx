@@ -611,12 +611,12 @@ async function exportArtworkTurnaroundReport(report) {
 
     return (
       <Card withBorder radius="lg" p="lg">
-        <Stack gap="xs">
-          <Text size="xs" c="dimmed" fw={900} tt="uppercase">
+        <Stack gap="xs" align="center">
+          <Text size="xs" c="dimmed" fw={900} tt="uppercase" ta="center" w="100%">
             {label}
           </Text>
-          <Group justify="space-between" align="flex-end">
-            <Title order={2}>{formattedValue}</Title>
+          <Group justify="center" align="center" gap="xs" w="100%">
+            <Title order={2} ta="center">{formattedValue}</Title>
             {showTrend && (
               <Badge
                 color={difference > 0 ? "green" : difference < 0 ? "orange" : "gray"}
@@ -629,7 +629,7 @@ async function exportArtworkTurnaroundReport(report) {
             )}
           </Group>
           {(note || previousNumber != null) && (
-            <Text size="sm" c="dimmed">
+            <Text size="sm" c="dimmed" ta="center">
               {note || `Previous full week: ${previousNumber.toLocaleString()}`}
             </Text>
           )}
@@ -647,13 +647,11 @@ async function exportArtworkTurnaroundReport(report) {
 
     return (
       <Card withBorder radius="lg" p="md">
-        <Stack gap="xs">
-          <Group justify="space-between">
-            <Text fw={800}>{label}</Text>
-            <Text fw={900}>
-              {actualNumber}{suffix} / {targetNumber}{suffix}
-            </Text>
-          </Group>
+        <Stack gap="xs" align="center">
+          <Text fw={800} ta="center">{label}</Text>
+          <Text fw={900} ta="center">
+            {actualNumber}{suffix} / {targetNumber}{suffix}
+          </Text>
           <Progress
             value={percent}
             color={targetNumber > 0 && actualNumber >= targetNumber ? "green" : "red"}
@@ -878,8 +876,8 @@ async function exportArtworkTurnaroundReport(report) {
                     <Title order={2}>{isSelectedCurrentWeek ? "Week-to-Date Operations" : "Weekly Operations Scorecard"}</Title>
                     <Text c="dimmed">
                       {isSelectedCurrentWeek
-                        ? `Week in progress through ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Week-over-week changes appear after the week closes.`
-                        : "Completed output, due-date reliability, lead time, and recorded station steps."}
+                        ? `Week in progress through ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Weekly timestamps use Eastern Time; week-over-week changes appear after the week closes.`
+                        : "Monday–Sunday totals in Eastern Time, compared with the previous full week."}
                     </Text>
                   </div>
                 </Group>
@@ -898,7 +896,10 @@ async function exportArtworkTurnaroundReport(report) {
               <Card withBorder radius="lg" p="xl"><Text c="dimmed">Loading weekly performance…</Text></Card>
             ) : (
               <>
-                <MWSection title="Completed Outcomes" subtitle="Jobs and orders completed during the selected week.">
+                <MWSection
+                  title="Completed Outcomes"
+                  subtitle="Calculation: counts use completion or closed dates within the selected Monday–Sunday week. Closed Order Value sums the recorded totals of orders closed in that window."
+                >
                   <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">
                     <ComparisonCard label="Production Jobs" value={current.production_jobs_completed} previous={previous.production_jobs_completed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date total" : undefined} />
                     <ComparisonCard label="Customer Orders Closed" value={current.customer_orders_closed} previous={previous.customer_orders_closed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date total" : undefined} />
@@ -914,7 +915,10 @@ async function exportArtworkTurnaroundReport(report) {
                   </SimpleGrid>
                 </MWSection>
 
-                <MWSection title="Delivery Performance" subtitle="On-time rate includes completed jobs with a due date; lead time shows the completed-job sample.">
+                <MWSection
+                  title="Delivery Performance"
+                  subtitle="Calculation: on-time rate = jobs completed by the due date ÷ completed jobs with a due date. Turnaround averages completion minus job creation; production steps count work orders completed in the week."
+                >
                   <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} spacing="md">
                     <ComparisonCard label="On-Time Completion" value={current.on_time_percent} format="percent" note={onTimeNote} showComparison={false} />
                     <ComparisonCard label="Average Job Turnaround" value={current.average_job_days} format="days" note={averageJobTimeNote} showComparison={false} />
@@ -924,18 +928,27 @@ async function exportArtworkTurnaroundReport(report) {
 
                 <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="lg">
                   {hasWeeklyPlan && (
-                    <MWSection title="Weekly Goals" subtitle="Only targets entered for this week are shown.">
-                      <Stack gap="sm">
-                        {weeklyGoalItems.length > 0
-                          ? weeklyGoalItems.map((goal) => (
-                            <GoalCard key={goal.label} label={goal.label} actual={goal.actual} target={goal.target} suffix={goal.suffix || ""} />
-                          ))
-                          : <Text c="dimmed">A weekly focus is recorded, but no numeric targets are set.</Text>}
-                      </Stack>
-                    </MWSection>
+                    <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "center" }}>
+                      <div style={{ width: "min(100%, 760px)" }}>
+                        <MWSection title="Weekly Goals" subtitle="Calculation: each actual is compared with the target entered for the week; progress is actual ÷ target, capped at 100%.">
+                          <Stack gap="sm">
+                            {weeklyGoalItems.length > 0
+                              ? weeklyGoalItems.map((goal) => (
+                                <GoalCard key={goal.label} label={goal.label} actual={goal.actual} target={goal.target} suffix={goal.suffix || ""} />
+                              ))
+                              : <Text c="dimmed">A weekly focus is recorded, but no numeric targets are set.</Text>}
+                          </Stack>
+                        </MWSection>
+                      </div>
+                    </div>
                   )}
 
-                  <MWSection title="Production Steps by Station" subtitle="Completed work-order handoffs this week; step counts show movement, not labor hours.">
+                  <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "center" }}>
+                    <div style={{ width: "min(100%, 760px)" }}>
+                      <MWSection
+                        title="Production Steps by Station"
+                        subtitle="Calculation: count completed work orders by their recorded department during the selected week. Each record is one step, not labor hours."
+                      >
                     <Stack gap="md">
                       {departmentPerformance.length === 0 ? (
                         <Text c="dimmed">No production steps were completed during this week.</Text>
@@ -954,11 +967,13 @@ async function exportArtworkTurnaroundReport(report) {
                         })
                       )}
                     </Stack>
-                  </MWSection>
+                      </MWSection>
+                    </div>
+                  </div>
                 </SimpleGrid>
 
                 {weeklyActivity.length > 0 && (
-                  <MWSection title="Other Recorded Activity" subtitle="Only activity recorded during the selected week is listed.">
+                  <MWSection title="Other Recorded Activity" subtitle="Calculation: each count uses that event’s recorded date within the selected week; zero-count items are hidden.">
                     <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
                       {weeklyActivity.map((item) => (
                         <Card key={item.label} withBorder radius="lg" p="md">
