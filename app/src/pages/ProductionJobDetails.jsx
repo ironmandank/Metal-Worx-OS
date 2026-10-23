@@ -29,6 +29,7 @@ import {
   IconCheck,
   IconClipboardCheck,
   IconClock,
+  IconDownload,
   IconExternalLink,
   IconHistory,
   IconMail,
@@ -101,6 +102,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [uploadingFinishedPhotos, setUploadingFinishedPhotos] = useState(false);
   const [designModalOpen, setDesignModalOpen] = useState(false);
   const [jobEditModalOpen, setJobEditModalOpen] = useState(false);
   const [savingJobInformation, setSavingJobInformation] = useState(false);
@@ -233,7 +235,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
     }
   }
 
-  async function addReferenceFiles(files) {
+  async function addOrderFiles(files, imageType = "Production Reference") {
     const selectedFiles = Array.from(files || []);
     if (!selectedFiles.length) return;
 
@@ -246,13 +248,15 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
       return;
     }
 
-    setUploadingFiles(true);
+    const isFinished = imageType === "Finished Product";
+    if (isFinished) setUploadingFinishedPhotos(true);
+    else setUploadingFiles(true);
     try {
-      await uploadOrderImages(job.customer_order_id, selectedFiles, "Production Reference");
+      await uploadOrderImages(job.customer_order_id, selectedFiles, imageType);
       await loadJobFolder();
       notifications.show({
-        title: "Files Added",
-        message: `${selectedFiles.length} artwork or reference file${selectedFiles.length === 1 ? " was" : "s were"} added to this job.`,
+        title: isFinished ? "Finished Product Photos Added" : "Files Added",
+        message: `${selectedFiles.length} ${isFinished ? "finished-product photo" : "artwork or reference file"}${selectedFiles.length === 1 ? " was" : "s were"} added to this job.`,
         color: "green",
       });
     } catch (error) {
@@ -263,7 +267,31 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
         color: "red",
       });
     } finally {
-      setUploadingFiles(false);
+      if (isFinished) setUploadingFinishedPhotos(false);
+      else setUploadingFiles(false);
+    }
+  }
+
+  async function downloadOrderImage(image) {
+    const fileName = image.caption || image.image_type || "metal-worx-artwork.jpg";
+    try {
+      const response = await fetch(image.image_url);
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
+      const blobUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      window.open(image.image_url, "_blank", "noopener,noreferrer");
+      notifications.show({
+        title: "Opened Image",
+        message: "The image opened in a new tab so it can be saved to this device.",
+        color: "blue",
+      });
     }
   }
 
@@ -1104,21 +1132,34 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg" mt="lg">
         <MWSection
           title="Artwork & Reference Files"
-          subtitle={`${referenceImages.length} connected file${referenceImages.length === 1 ? "" : "s"}`}
+          subtitle={`${referenceImages.length} connected file${referenceImages.length === 1 ? "" : "s"}, including finished-product photos`}
         >
           <Group justify="space-between" align="center" mb="md" wrap="wrap">
             <Text size="sm" c="dimmed">Add customer artwork, design proofs, or production reference images.</Text>
-            <FileButton
-              onChange={addReferenceFiles}
-              accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,application/pdf"
-              multiple
-            >
-              {(props) => (
-                <Button {...props} color="red" leftSection={<IconUpload size={17} />} loading={uploadingFiles}>
-                  Add Images / Files
-                </Button>
-              )}
-            </FileButton>
+            <Group gap="xs">
+              <FileButton
+                onChange={(files) => addOrderFiles(files, "Production Reference")}
+                accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,application/pdf"
+                multiple
+              >
+                {(props) => (
+                  <Button {...props} color="red" leftSection={<IconUpload size={17} />} loading={uploadingFiles}>
+                    Add Images / Files
+                  </Button>
+                )}
+              </FileButton>
+              <FileButton
+                onChange={(files) => addOrderFiles(files, "Finished Product")}
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                multiple
+              >
+                {(props) => (
+                  <Button {...props} color="green" leftSection={<IconUpload size={17} />} loading={uploadingFinishedPhotos}>
+                    Add Finished Photos
+                  </Button>
+                )}
+              </FileButton>
+            </Group>
           </Group>
           {referenceImages.length === 0 ? (
             <Card withBorder radius="lg" p="xl">
@@ -1135,11 +1176,14 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
                   <Group justify="space-between" mt="sm" wrap="nowrap">
                     <div>
                       <Text fw={800} lineClamp={1}>{image.caption || image.image_type || "Reference file"}</Text>
-                      <Text size="xs" c="dimmed">{image.show_on_work_order ? "Included on work order" : "Internal reference"}</Text>
+                      <Text size="xs" c={image.image_type === "Finished Product" ? "green" : "dimmed"}>
+                        {image.image_type === "Finished Product" ? "Finished product" : image.show_on_work_order ? "Included on work order" : "Internal reference"}
+                      </Text>
                     </div>
-                    <Button component="a" href={image.image_url} target="_blank" rel="noreferrer" variant="subtle" color="gray" px="xs" aria-label="Open file">
-                      <IconExternalLink size={18} />
-                    </Button>
+                    <Group gap={4} wrap="nowrap">
+                      <Button component="a" href={image.image_url} target="_blank" rel="noreferrer" variant="subtle" color="gray" px="xs" aria-label="Open file"><IconExternalLink size={18} /></Button>
+                      <Button variant="subtle" color="gray" px="xs" aria-label="Download file" onClick={() => downloadOrderImage(image)}><IconDownload size={18} /></Button>
+                    </Group>
                   </Group>
                 </Card>
               ))}
