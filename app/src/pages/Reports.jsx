@@ -46,6 +46,10 @@ import {
   saveWeeklyOperationsGoals,
 } from "../services/reportService";
 import { exportReportsToPDF } from "../services/reportExportService";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { supabase } from "../lib/supabase";
+import metalWorxLogo from "../assets/metal-worx-official-transparent.png";
 
 function getMonday(value = new Date()) {
   const date = new Date(value);
@@ -74,7 +78,355 @@ function numberValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function Reports({ setPage }) {
+const artworkReadyStatuses = new Set([
+  "waiting for customer pickup",
+  "ready for pickup",
+  "ready to ship",
+  "completed — shipped",
+  "completed — picked up",
+]);
+
+function artworkDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function artworkPercentile(values, percentile) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const position = (sorted.length - 1) * percentile;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function artworkStats(values) {
+  if (!values.length) return { n: 0, average: null, median: null, p75: null, min: null, max: null };
+  return {
+    n: values.length,
+    average: values.reduce((sum, value) => sum + value, 0) / values.length,
+    median: artworkPercentile(values, 0.5),
+    p75: artworkPercentile(values, 0.75),
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+function sameDepartment(left, right) {
+  return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+}
+
+async function getArtworkTurnaroundReport(days = 30) {
+  const endExclusive = new Date();
+  endExclusive.setHours(0, 0, 0, 0);
+  endExclusive.setDate(endExclusive.getDate() + 1);
+  const start = new Date(endExclusive);
+  start.setDate(start.getDate() - days);
+  const end = new Date(endExclusive);
+  end.setDate(end.getDate() - 1);
+
+  const { data: orders = [], error: ordersError } = await supabase
+    .from("customer_orders")
+    .select("id, created_at, starting_department, order_type")
+    .eq("order_type", "Custom Artwork")
+    .gte("created_at", start.toISOString())
+    .lt("created_at", endExclusive.toISOString());
+  if (ordersError) throw ordersError;
+
+  const orderIds = orders.map((order) => order.id).filter(Boolean);
+  if (!orderIds.length) {
+    return {
+      days,
+      periodStart: artworkDateKey(start),
+      periodEnd: artworkDateKey(end),
+      orderCount: 0,
+      readyCount: 0,
+      coveragePercent: 0,
+      turnaround: artworkStats([]),
+      stages: [],
+    };
+  }
+
+  const { data: jobs = [], error: jobsError } = await supabase
+    .from("production_jobs")
+    .select("id, customer_order_id, current_department")
+    .in("customer_order_id", orderIds);
+  if (jobsError) throw jobsError;
+
+  const jobIds = jobs.map((job) => job.id).filter(Boolean);
+  const { data: activities = [], error: activityError } = jobIds.length
+    ? await supabase
+        .from("work_order_activity")
+        .select("id, production_job_id, created_at, from_department, to_department, to_status")
+        .in("production_job_id", jobIds)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (activityError) throw activityError;
+
+  const orderById = new Map(orders.map((order) => [String(order.id), order]));
+  const firstReadyByOrder = new Map();
+  const firstReadyByJob = new Map();
+  const activitiesByJob = new Map();
+  for (const activity of activities) {
+    const key = String(activity.production_job_id);
+    const job = jobs.find((candidate) => String(candidate.id) === key);
+    const order = job && orderById.get(String(job.customer_order_id));
+    const occurredAt = new Date(activity.created_at);
+    if (order && occurredAt < endExclusive) {
+      const status = String(activity.to_status || "").trim().toLowerCase();
+      const isReady = artworkReadyStatuses.has(status) ||
+        (status.includes("completed") && status.includes("shipped"));
+      if (isReady && occurredAt >= new Date(order.created_at)) {
+        const orderKey = String(order.id);
+        const jobKey = String(activity.production_job_id);
+        const priorOrderReady = firstReadyByOrder.get(orderKey);
+        const priorJobReady = firstReadyByJob.get(jobKey);
+        if (!priorOrderReady || occurredAt < priorOrderReady) firstReadyByOrder.set(orderKey, occurredAt);
+        if (!priorJobReady || occurredAt < priorJobReady) firstReadyByJob.set(jobKey, occurredAt);
+      }
+    }
+    if (!activitiesByJob.has(key)) activitiesByJob.set(key, []);
+    activitiesByJob.get(key).push(activity);
+  }
+
+  const turnaroundDays = [];
+  for (const [orderId, readyAt] of firstReadyByOrder) {
+    const order = orderById.get(orderId);
+    const elapsed = (readyAt - new Date(order.created_at)) / 86400000;
+    if (elapsed >= 0) turnaroundDays.push(elapsed);
+  }
+
+  const intervalsByStage = new Map();
+  const addInterval = (stage, startAt, endAt) => {
+    const label = String(stage || "").trim().replace(/\s*\/\s*/g, " / ");
+    const duration = (new Date(endAt) - new Date(startAt)) / 86400000;
+    if (!label || !Number.isFinite(duration) || duration <= 0) return;
+    if (!intervalsByStage.has(label)) intervalsByStage.set(label, []);
+    intervalsByStage.get(label).push(duration);
+  };
+
+  for (const job of jobs) {
+    const order = orderById.get(String(job.customer_order_id));
+    const events = (activitiesByJob.get(String(job.id)) || []).slice().sort(
+      (a, b) => new Date(a.created_at) - new Date(b.created_at)
+    );
+    const moves = events.filter((event) => !sameDepartment(event.from_department, event.to_department));
+    const readyAt = firstReadyByJob.get(String(job.id));
+    if (!moves.length) {
+      if (readyAt && sameDepartment(order.starting_department, job.current_department)) {
+        addInterval(order.starting_department, order.created_at, readyAt);
+      }
+      continue;
+    }
+    const first = moves[0];
+    if (sameDepartment(first.from_department, order.starting_department)) {
+      addInterval(first.from_department, order.created_at, first.created_at);
+    }
+    for (let index = 1; index < moves.length; index += 1) {
+      const previous = moves[index - 1];
+      const current = moves[index];
+      if (sameDepartment(previous.to_department, current.from_department)) {
+        addInterval(current.from_department, previous.created_at, current.created_at);
+      }
+    }
+    const last = moves[moves.length - 1];
+    if (readyAt && sameDepartment(last.to_department, job.current_department)) {
+      addInterval(last.to_department, last.created_at, readyAt);
+    }
+  }
+
+  const stages = [...intervalsByStage.entries()]
+    .map(([name, values]) => ({ name, ...artworkStats(values) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    days,
+    periodStart: artworkDateKey(start),
+    periodEnd: artworkDateKey(end),
+    orderCount: orders.length,
+    readyCount: turnaroundDays.length,
+    coveragePercent: orders.length ? (turnaroundDays.length / orders.length) * 100 : 0,
+    turnaround: artworkStats(turnaroundDays),
+    stages,
+  };
+}
+
+function formatArtworkDays(value) {
+  return value == null ? "—" : `${value.toFixed(2)} days`;
+}
+
+function artworkDateLabel(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+async function imageUrlToDataUrl(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("The Metal Worx logo could not be loaded.");
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("The Metal Worx logo could not be loaded."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function exportArtworkTurnaroundReport(report) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter" });
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
+  const logoData = await imageUrlToDataUrl(metalWorxLogo);
+  const startLabel = artworkDateLabel(report.periodStart);
+  const endLabel = artworkDateLabel(report.periodEnd);
+  const generated = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+  const drawHeader = (subtitle) => {
+    doc.setFillColor(26, 26, 26);
+    doc.rect(0, 0, width, 82, "F");
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(32, 12, 135, 58, 5, 5, "F");
+    doc.addImage(logoData, "PNG", 39, 18, 121, 45);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text("ARTWORK TURNAROUND REPORT", 188, 36);
+    doc.setTextColor(192, 192, 192);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(subtitle, 189, 55);
+    doc.setTextColor(181, 18, 27);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("METAL WORX INC.", width - 32, 36, { align: "right" });
+  };
+  const drawFooter = (pageNumber) => {
+    doc.setDrawColor(215, 218, 221);
+    doc.line(32, height - 28, width - 32, height - 28);
+    doc.setTextColor(90, 90, 90);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text(`Generated ${generated} | Artwork orders created ${startLabel} - ${endLabel}`, 32, height - 15);
+    doc.text(`Page ${pageNumber} of 2`, width - 32, height - 15, { align: "right" });
+  };
+
+  drawHeader(`Latest ${report.days}-day period: ${startLabel} - ${endLabel}`);
+  const cards = [
+    ["ORDERS IN PERIOD", String(report.orderCount), "Custom Artwork orders"],
+    ["READY / SHIP", String(report.readyCount), `${report.coveragePercent.toFixed(0)}% of orders in period`],
+    ["AVERAGE TO READY", formatArtworkDays(report.turnaround.average), `${report.turnaround.n} completed orders`],
+    ["MEDIAN TO READY", formatArtworkDays(report.turnaround.median), "half completed by this time"],
+  ];
+  const margin = 32;
+  const gap = 10;
+  const cardY = 99;
+  const cardW = (width - 2 * margin - 3 * gap) / 4;
+  cards.forEach(([label, value, note], index) => {
+    const x = margin + index * (cardW + gap);
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(215, 218, 221);
+    doc.roundedRect(x, cardY, cardW, 70, 6, 6, "FD");
+    doc.setFillColor(181, 18, 27);
+    doc.roundedRect(x, cardY, 5, 70, 2, 2, "F");
+    doc.setTextColor(85, 85, 85);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.text(label, x + 14, cardY + 18);
+    doc.setTextColor(26, 26, 26);
+    doc.setFontSize(17);
+    doc.text(value, x + 14, cardY + 42);
+    doc.setTextColor(85, 85, 85);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.text(note, x + 14, cardY + 59, { maxWidth: cardW - 26 });
+  });
+
+  doc.setTextColor(26, 26, 26);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Elapsed time by artwork section", 32, 199);
+  doc.setTextColor(85, 85, 85);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Average and median calendar days between connected station changes", 32, 214);
+  autoTable(doc, {
+    startY: 225,
+    margin: { left: 32, right: 32 },
+    head: [["Section", "Average days", "Median days", "75th percentile", "Completed intervals"]],
+    body: report.stages.map((stage) => [
+      stage.name,
+      formatArtworkDays(stage.average),
+      formatArtworkDays(stage.median),
+      formatArtworkDays(stage.p75),
+      stage.n,
+    ]),
+    theme: "grid",
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 6, textColor: [35, 35, 35] },
+    headStyles: { fillColor: [26, 26, 26], textColor: [255, 255, 255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 245, 246] },
+  });
+  const tableBottom = doc.lastAutoTable?.finalY || 340;
+  const timingY = Math.min(tableBottom + 24, 492);
+  doc.setTextColor(26, 26, 26);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("Order-to-ready summary", 32, timingY);
+  doc.setTextColor(85, 85, 85);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  const summary = `Average ${formatArtworkDays(report.turnaround.average)}   |   Median ${formatArtworkDays(report.turnaround.median)}   |   75th percentile ${formatArtworkDays(report.turnaround.p75)}   |   Range ${formatArtworkDays(report.turnaround.min)} - ${formatArtworkDays(report.turnaround.max)}`;
+  doc.text(summary, 32, timingY + 15, { maxWidth: width - 64 });
+  doc.setTextColor(85, 85, 85);
+  doc.setFontSize(7.5);
+  doc.text("Turnaround begins at order creation and ends at the first recorded pickup-ready or ship-ready status. Calendar days include weekends.", 32, timingY + 32, { maxWidth: width - 64 });
+  doc.text("Section intervals use recorded station moves. Time includes queue and hands-on work; the current open station interval is not included until the next move.", 32, timingY + 46, { maxWidth: width - 64 });
+  drawFooter(1);
+
+  doc.addPage("letter", "landscape");
+  drawHeader("Practical 30-day improvement pilot");
+  doc.setTextColor(26, 26, 26);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Ways to shorten turnaround", 32, 119);
+  const stageToReview = [...report.stages]
+    .filter((stage) => stage.n >= 3 && stage.median != null)
+    .sort((left, right) => right.median - left.median)[0];
+  const trendNote = report.turnaround.average != null && report.turnaround.median != null
+    ? report.turnaround.average > report.turnaround.median
+      ? "Average turnaround exceeds the median, suggesting some longer jobs are pulling the average up."
+      : "Average and median are close, so this period's turnaround is relatively consistent."
+    : "More completed orders are needed before comparing the average and median.";
+  const stageNote = stageToReview
+    ? `${stageToReview.name} has the highest median section time among sections with at least 3 completed intervals (${stageToReview.median.toFixed(2)} days, n=${stageToReview.n}).`
+    : "No section has at least 3 completed intervals yet; collect more station moves before ranking sections.";
+  const recommendations = [
+    ["Review the longest jobs first", trendNote, "At the morning review, flag older open jobs, identify the reason they are waiting, and assign the next action."],
+    ["Investigate a repeatable station delay", stageNote, "For the next 2 weeks, record whether delays come from queueing, materials, customer approval, rework, or active work."],
+    ["Record every station move and ready date", `${report.readyCount} of ${report.orderCount} orders have a recorded ready / ship milestone (${report.coveragePercent.toFixed(0)}% coverage).`, "Capture each section entry and exit plus the first pickup-ready or ship-ready time. Use the same status definitions consistently."],
+    ["Review again after 30 days", "A repeat report will show whether turnaround and section times changed as more milestones are recorded.", "Compare overall and section medians with this report before setting targets or changing staffing and scheduling."],
+  ];
+  autoTable(doc, {
+    startY: 135,
+    margin: { left: 32, right: 32 },
+    head: [["Action", "What the data says", "Practical next step"]],
+    body: recommendations,
+    theme: "grid",
+    styles: { font: "helvetica", fontSize: 8, cellPadding: 7, textColor: [35, 35, 35], valign: "top" },
+    headStyles: { fillColor: [26, 26, 26], textColor: [255, 255, 255], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [244, 245, 246] },
+    columnStyles: { 0: { cellWidth: 145 }, 1: { cellWidth: 250 }, 2: { cellWidth: "auto" } },
+  });
+  doc.setTextColor(85, 85, 85);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Use these results as an initial operating snapshot. Stage timing is elapsed time between recorded moves, not hands-on labor time.", 32, (doc.lastAutoTable?.finalY || 390) + 24, { maxWidth: width - 64 });
+  drawFooter(2);
+  const filenameDate = report.periodEnd || artworkDateKey(new Date());
+  doc.save(`MetalWorx_Artwork_Turnaround_${report.days}Day_${filenameDate}.pdf`);
+}
+
+ function Reports({ setPage }) {
   const [view, setView] = useState("weekly");
   const [data, setData] = useState(null);
   const [weekly, setWeekly] = useState(null);
@@ -83,6 +435,7 @@ function Reports({ setPage }) {
   const [loadError, setLoadError] = useState("");
   const [weeklyError, setWeeklyError] = useState("");
   const [exportingPDF, setExportingPDF] = useState(false);
+  const [artworkReportLoading, setArtworkReportLoading] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
   const [savingGoals, setSavingGoals] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState(dateKey(getMonday()));
@@ -146,6 +499,29 @@ function Reports({ setPage }) {
       window.alert(error.message || "PDF export failed.");
     } finally {
       setExportingPDF(false);
+    }
+  }
+
+  async function handleArtworkReport() {
+    if (artworkReportLoading) return;
+    setArtworkReportLoading(true);
+    try {
+      const report = await getArtworkTurnaroundReport(30);
+      await exportArtworkTurnaroundReport(report);
+      notifications.show({
+        title: "Artwork report created",
+        message: `Your ${report.days}-day artwork turnaround PDF has been downloaded.`,
+        color: "green",
+      });
+    } catch (error) {
+      console.error("Artwork turnaround report error:", error);
+      notifications.show({
+        title: "Report could not be created",
+        message: error.message || "Check the data connection and try again.",
+        color: "red",
+      });
+    } finally {
+      setArtworkReportLoading(false);
     }
   }
 
@@ -401,6 +777,23 @@ function Reports({ setPage }) {
       </Modal>
 
       <Stack gap="lg">
+        <Card withBorder radius="lg" p="md">
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Group gap="sm" align="center">
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: "#fff1f1", color: "#b5121b", display: "grid", placeItems: "center" }}>
+                <IconCalendarStats size={22} />
+              </div>
+              <Stack gap={2}>
+                <Text fw={800}>Artwork Turnaround Report</Text>
+                <Text size="sm" c="dimmed">Create a branded PDF for the latest 30 days of artwork orders and station timing.</Text>
+              </Stack>
+            </Group>
+            <Button color="red" leftSection={<IconFileTypePdf size={17} />} onClick={handleArtworkReport} loading={artworkReportLoading}>
+              Create 30-Day Report
+            </Button>
+          </Group>
+        </Card>
+
         <Card withBorder radius="lg" p="md">
           <Group justify="space-between" align="center">
             <SegmentedControl
