@@ -24,7 +24,6 @@ import {
   IconBuildingFactory2,
   IconCalendarStats,
   IconCash,
-  IconChartBar,
   IconClipboardList,
   IconDeviceFloppy,
   IconFileTypePdf,
@@ -588,24 +587,27 @@ async function exportArtworkTurnaroundReport(report) {
     }
   }
 
-  function ComparisonCard({ label, value, previous, format = "number", note }) {
-    const currentNumber = numberValue(value);
-    const previousNumber = numberValue(previous);
-    const difference = currentNumber - previousNumber;
+  function ComparisonCard({ label, value, previous, format = "number", note, showComparison = true }) {
+    const currentNumber = value == null ? null : numberValue(value);
+    const previousNumber = previous == null ? null : numberValue(previous);
+    const difference = (currentNumber || 0) - (previousNumber || 0);
     const formattedValue =
-      format === "money"
-        ? money(currentNumber)
-        : format === "percent"
-          ? `${currentNumber.toFixed(1)}%`
-          : format === "days"
-            ? `${currentNumber.toFixed(1)} days`
-            : currentNumber.toLocaleString();
+      currentNumber == null
+        ? "—"
+        : format === "money"
+          ? money(currentNumber)
+          : format === "percent"
+            ? `${currentNumber.toFixed(1)}%`
+            : format === "days"
+              ? `${currentNumber.toFixed(1)} days`
+              : currentNumber.toLocaleString();
 
     const TrendIcon = difference > 0
       ? IconTrendingUp
       : difference < 0
         ? IconTrendingDown
         : IconMinus;
+    const showTrend = showComparison && currentNumber != null && previousNumber != null;
 
     return (
       <Card withBorder radius="lg" p="lg">
@@ -615,18 +617,22 @@ async function exportArtworkTurnaroundReport(report) {
           </Text>
           <Group justify="space-between" align="flex-end">
             <Title order={2}>{formattedValue}</Title>
-            <Badge
-              color={difference > 0 ? "green" : difference < 0 ? "orange" : "gray"}
-              variant="light"
-              leftSection={<TrendIcon size={13} />}
-            >
-              {difference > 0 ? "+" : ""}
-              {format === "money" ? money(difference) : difference.toFixed(format === "percent" ? 1 : 0)}
-            </Badge>
+            {showTrend && (
+              <Badge
+                color={difference > 0 ? "green" : difference < 0 ? "orange" : "gray"}
+                variant="light"
+                leftSection={<TrendIcon size={13} />}
+              >
+                {difference > 0 ? "+" : ""}
+                {format === "money" ? money(difference) : difference.toFixed(format === "percent" ? 1 : 0)}
+              </Badge>
+            )}
           </Group>
-          <Text size="sm" c="dimmed">
-            {note || `Previous week: ${previousNumber.toLocaleString()}`}
-          </Text>
+          {(note || previousNumber != null) && (
+            <Text size="sm" c="dimmed">
+              {note || `Previous full week: ${previousNumber.toLocaleString()}`}
+            </Text>
+          )}
         </Stack>
       </Card>
     );
@@ -692,6 +698,55 @@ async function exportArtworkTurnaroundReport(report) {
   const previous = weekly?.previous || {};
   const goals = weekly?.goals || {};
   const summary = data?.summary || {};
+  const isSelectedCurrentWeek = selectedWeek === dateKey(getMonday());
+  const onTimeDueJobs =
+    numberValue(current.jobs_completed_on_time) +
+    numberValue(current.jobs_completed_late);
+  const onTimeNote = onTimeDueJobs
+    ? `${numberValue(current.jobs_completed_on_time)} of ${onTimeDueJobs} completed jobs with a due date were on time.`
+    : "No completed jobs had a due date recorded.";
+  const averageJobTimeNote = current.production_jobs_completed
+    ? `From job creation to completion • ${numberValue(current.production_jobs_completed)} completed jobs`
+    : "No production jobs were completed in this period.";
+  const departmentPerformance = Array.isArray(weekly?.department_performance)
+    ? weekly.department_performance
+    : [];
+  const maxDepartmentSteps = Math.max(
+    ...departmentPerformance.map((department) => numberValue(department.steps_completed)),
+    1
+  );
+  const hasWeeklyPlan = Boolean(
+    goals.weekly_focus ||
+    goals.management_notes ||
+    numberValue(goals.production_jobs_target) > 0 ||
+    numberValue(goals.production_steps_target) > 0 ||
+    numberValue(goals.customer_orders_target) > 0 ||
+    numberValue(goals.outside_projects_target) > 0 ||
+    numberValue(goals.site_visits_target) > 0 ||
+    (numberValue(goals.on_time_percent_target) > 0 &&
+      numberValue(goals.on_time_percent_target) !== 90)
+  );
+  const weeklyGoalItems = [
+    { label: "Production Jobs", actual: current.production_jobs_completed, target: goals.production_jobs_target },
+    { label: "Production Steps", actual: current.production_steps_completed, target: goals.production_steps_target },
+    { label: "Customer Orders Closed", actual: current.customer_orders_closed, target: goals.customer_orders_target },
+    { label: "Outside Projects", actual: current.outside_projects_completed, target: goals.outside_projects_target },
+    { label: "Site Visits", actual: current.site_visits_completed, target: goals.site_visits_target },
+    { label: "On-Time Performance", actual: current.on_time_percent, target: goals.on_time_percent_target, suffix: "%" },
+  ].filter((goal) =>
+    numberValue(goal.target) > 0 &&
+    !(goal.label === "On-Time Performance" && numberValue(goal.target) === 90)
+  );
+  const weeklyActivity = [
+    { label: "New customer orders", value: current.new_customer_orders },
+    { label: "New outside projects", value: current.new_outside_projects },
+    { label: "Callbacks completed", value: current.callbacks_completed },
+    { label: "Callbacks converted to projects", value: current.callbacks_converted_to_projects },
+    { label: "Site visits completed", value: current.site_visits_completed },
+    { label: "Material requests filled", value: current.material_requests_fulfilled },
+    { label: "Blocked material requests", value: current.blocked_material_requests_created },
+  ].map((item) => ({ ...item, value: numberValue(item.value) }))
+    .filter((item) => item.value > 0);
 
   const summaryCards = [
     { label: "Open Orders", value: summary.openOrders || 0, subtext: "Customer orders still active", icon: <IconClipboardList size={24} />, onClick: () => setPage("customerOrders") },
@@ -699,9 +754,7 @@ async function exportArtworkTurnaroundReport(report) {
     { label: "Production Jobs", value: summary.activeProductionJobs || 0, subtext: "Active shop production jobs", icon: <IconBuildingFactory2 size={24} />, onClick: () => setPage("productionControl") },
     { label: "Open Callbacks", value: summary.openCallbacks || 0, subtext: "Customer follow-ups still open", icon: <IconUser size={24} />, onClick: () => setPage("callbacks") },
     { label: "Overdue Work", value: summary.overdueWork || 0, subtext: "Orders, projects, or callbacks past due", icon: <IconAlertTriangle size={24} />, onClick: () => setPage("actionCenter") },
-    { label: "Pipeline Value", value: money(summary.totalPipelineValue), subtext: "Open order + project value", icon: <IconCash size={24} />, onClick: () => setPage("dashboard") },
-    { label: "Outstanding Balance", value: money(summary.totalOutstandingBalance), subtext: "Estimated unpaid open balances", icon: <IconCash size={24} />, onClick: () => setPage("dashboard") },
-    { label: "Report Health", value: "Live", subtext: "Read-only from Supabase", icon: <IconChartBar size={24} />, onClick: loadReports },
+    { label: "Open Work Value", value: money(summary.totalPipelineValue), subtext: "Recorded value of open orders and projects", icon: <IconCash size={24} />, onClick: () => setPage("dashboard") },
   ];
 
   return (
@@ -746,7 +799,7 @@ async function exportArtworkTurnaroundReport(report) {
 
       <MWPageHeader
         title="Reports & Analytics"
-        subtitle="Historical weekly performance and a separate live operating snapshot."
+        subtitle="Weekly results, current workload, and artwork turnaround."
         setPage={setPage}
         showDashboard
       />
@@ -800,8 +853,8 @@ async function exportArtworkTurnaroundReport(report) {
               value={view}
               onChange={setView}
               data={[
-                { label: "Weekly Scorecard", value: "weekly" },
-                { label: "Live Operations", value: "live" },
+                { label: "Weekly Performance", value: "weekly" },
+                { label: "Current Workload", value: "live" },
               ]}
             />
             <Group gap="sm">
@@ -822,14 +875,19 @@ async function exportArtworkTurnaroundReport(report) {
                     <IconCalendarStats size={28} />
                   </div>
                   <div>
-                    <Title order={2}>Weekly Operations Scorecard</Title>
-                    <Text c="dimmed">Completed outcomes, throughput, delivery performance, and goals.</Text>
+                    <Title order={2}>{isSelectedCurrentWeek ? "Week-to-Date Operations" : "Weekly Operations Scorecard"}</Title>
+                    <Text c="dimmed">
+                      {isSelectedCurrentWeek
+                        ? `Week in progress through ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Week-over-week changes appear after the week closes.`
+                        : "Completed output, due-date reliability, lead time, and recorded station steps."}
+                    </Text>
                   </div>
                 </Group>
                 <Group gap="xs">
                   <Button variant="default" onClick={() => setSelectedWeek(shiftDays(selectedWeek, -7))}><IconArrowLeft size={18} /></Button>
                   <Badge size="xl" color="red" variant="light">{weekLabel()}</Badge>
                   <Button variant="default" disabled={selectedWeek >= dateKey(getMonday())} onClick={() => setSelectedWeek(shiftDays(selectedWeek, 7))}><IconArrowRight size={18} /></Button>
+                  <Button variant="light" color="red" leftSection={<IconTargetArrow size={17} />} onClick={openGoals}>Weekly Goals & Focus</Button>
                 </Group>
               </Group>
             </Card>
@@ -840,84 +898,97 @@ async function exportArtworkTurnaroundReport(report) {
               <Card withBorder radius="lg" p="xl"><Text c="dimmed">Loading weekly performance…</Text></Card>
             ) : (
               <>
-                <MWSection title="Completed Outcomes" subtitle="What Metal Worx finished during the selected week—not what is currently open.">
+                <MWSection title="Completed Outcomes" subtitle="Jobs and orders completed during the selected week.">
                   <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">
-                    <ComparisonCard label="Production Jobs" value={current.production_jobs_completed} previous={previous.production_jobs_completed} />
-                    <ComparisonCard label="Customer Orders Closed" value={current.customer_orders_closed} previous={previous.customer_orders_closed} />
-                    <ComparisonCard label="Outside Projects" value={current.outside_projects_completed} previous={previous.outside_projects_completed} />
-                    <ComparisonCard label="Closed Order Value" value={current.closed_order_value} previous={previous.closed_order_value} format="money" />
+                    <ComparisonCard label="Production Jobs" value={current.production_jobs_completed} previous={previous.production_jobs_completed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date total" : undefined} />
+                    <ComparisonCard label="Customer Orders Closed" value={current.customer_orders_closed} previous={previous.customer_orders_closed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date total" : undefined} />
+                    <ComparisonCard label="Outside Projects Completed" value={current.outside_projects_completed} previous={previous.outside_projects_completed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date total" : undefined} />
+                    <ComparisonCard
+                      label="Closed Order Value"
+                      value={numberValue(current.customer_orders_closed) > 0 ? current.closed_order_value : null}
+                      previous={previous.closed_order_value}
+                      format="money"
+                      showComparison={!isSelectedCurrentWeek && numberValue(current.customer_orders_closed) > 0}
+                      note={numberValue(current.customer_orders_closed) > 0 ? undefined : "No customer orders closed in this period."}
+                    />
                   </SimpleGrid>
                 </MWSection>
 
-                <MWSection title="Delivery Performance" subtitle="Speed, reliability, and shop throughput compared with the prior week.">
-                  <SimpleGrid cols={{ base: 1, sm: 2, xl: 4 }} spacing="md">
-                    <ComparisonCard label="On-Time Completion" value={current.on_time_percent} previous={previous.on_time_percent} format="percent" />
-                    <ComparisonCard label="Average Job Time" value={current.average_job_days} previous={previous.average_job_days} format="days" note="From production-job creation to completion" />
-                    <ComparisonCard label="Production Steps" value={current.production_steps_completed} previous={previous.production_steps_completed} />
-                    <ComparisonCard label="Quick Jobs Completed" value={current.quick_jobs_completed} previous={previous.quick_jobs_completed} />
+                <MWSection title="Delivery Performance" subtitle="On-time rate includes completed jobs with a due date; lead time shows the completed-job sample.">
+                  <SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} spacing="md">
+                    <ComparisonCard label="On-Time Completion" value={current.on_time_percent} format="percent" note={onTimeNote} showComparison={false} />
+                    <ComparisonCard label="Average Job Turnaround" value={current.average_job_days} format="days" note={averageJobTimeNote} showComparison={false} />
+                    <ComparisonCard label="Production Steps" value={current.production_steps_completed} previous={previous.production_steps_completed} showComparison={!isSelectedCurrentWeek} note={isSelectedCurrentWeek ? "Week-to-date station steps" : undefined} />
                   </SimpleGrid>
                 </MWSection>
 
                 <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="lg">
-                  <MWSection title="Weekly Goals" subtitle="Targets set by management for this specific week.">
-                    <Stack gap="sm">
-                      <GoalCard label="Production Jobs" actual={current.production_jobs_completed} target={goals.production_jobs_target} />
-                      <GoalCard label="Production Steps" actual={current.production_steps_completed} target={goals.production_steps_target} />
-                      <GoalCard label="Customer Orders Closed" actual={current.customer_orders_closed} target={goals.customer_orders_target} />
-                      <GoalCard label="Outside Projects" actual={current.outside_projects_completed} target={goals.outside_projects_target} />
-                      <GoalCard label="Site Visits" actual={current.site_visits_completed} target={goals.site_visits_target} />
-                      <GoalCard label="On-Time Performance" actual={current.on_time_percent} target={goals.on_time_percent_target} suffix="%" />
-                      <Button color="red" variant="light" leftSection={<IconTargetArrow size={18} />} onClick={openGoals}>Set Goals & Weekly Focus</Button>
-                    </Stack>
-                  </MWSection>
+                  {hasWeeklyPlan && (
+                    <MWSection title="Weekly Goals" subtitle="Only targets entered for this week are shown.">
+                      <Stack gap="sm">
+                        {weeklyGoalItems.length > 0
+                          ? weeklyGoalItems.map((goal) => (
+                            <GoalCard key={goal.label} label={goal.label} actual={goal.actual} target={goal.target} suffix={goal.suffix || ""} />
+                          ))
+                          : <Text c="dimmed">A weekly focus is recorded, but no numeric targets are set.</Text>}
+                      </Stack>
+                    </MWSection>
+                  )}
 
-                  <MWSection title="Department Throughput" subtitle="Completed production steps by department during this week.">
-                    <Stack gap="sm">
-                      {(weekly?.department_performance || []).length === 0 ? (
+                  <MWSection title="Production Steps by Station" subtitle="Completed work-order handoffs this week; step counts show movement, not labor hours.">
+                    <Stack gap="md">
+                      {departmentPerformance.length === 0 ? (
                         <Text c="dimmed">No production steps were completed during this week.</Text>
                       ) : (
-                        (weekly?.department_performance || []).map((department) => (
-                          <Card key={department.department} withBorder radius="lg" p="md">
-                            <Group justify="space-between">
-                              <div>
-                                <Text fw={900}>{department.department}</Text>
-                                <Text size="sm" c="dimmed">{numberValue(department.estimated_hours_completed).toFixed(1)} estimated hours completed</Text>
-                              </div>
-                              <Badge size="lg" color="red">{department.steps_completed} steps</Badge>
-                            </Group>
-                          </Card>
-                        ))
+                        departmentPerformance.map((department) => {
+                          const steps = numberValue(department.steps_completed);
+                          return (
+                            <div key={department.department}>
+                              <Group justify="space-between" mb={5}>
+                                <Text fw={800}>{department.department}</Text>
+                                <Badge size="md" color="red">{steps} steps</Badge>
+                              </Group>
+                              <Progress value={(steps / maxDepartmentSteps) * 100} color="red" size="sm" radius="xl" />
+                            </div>
+                          );
+                        })
                       )}
                     </Stack>
                   </MWSection>
                 </SimpleGrid>
 
-                <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="lg">
-                  <MWSection title="Flow & Constraint Signals" subtitle="Weekly indicators that explain throughput without repeating today’s active-work board.">
-                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>NEW CUSTOMER ORDERS</Text><Title order={3}>{numberValue(current.new_customer_orders)}</Title></Card>
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>NEW OUTSIDE PROJECTS</Text><Title order={3}>{numberValue(current.new_outside_projects)}</Title></Card>
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>CALLBACKS → PROJECTS</Text><Title order={3}>{numberValue(current.callbacks_converted_to_projects)}</Title></Card>
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>SITE VISITS COMPLETED</Text><Title order={3}>{numberValue(current.site_visits_completed)}</Title></Card>
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>MATERIAL REQUESTS FILLED</Text><Title order={3}>{numberValue(current.material_requests_fulfilled)}</Title></Card>
-                      <Card withBorder radius="lg" p="md"><Text size="xs" c="dimmed" fw={900}>BLOCKED REQUESTS CREATED</Text><Title order={3} c={numberValue(current.blocked_material_requests_created) > 0 ? "orange" : undefined}>{numberValue(current.blocked_material_requests_created)}</Title></Card>
+                {weeklyActivity.length > 0 && (
+                  <MWSection title="Other Recorded Activity" subtitle="Only activity recorded during the selected week is listed.">
+                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+                      {weeklyActivity.map((item) => (
+                        <Card key={item.label} withBorder radius="lg" p="md">
+                          <Text size="xs" c="dimmed" fw={900} tt="uppercase">{item.label}</Text>
+                          <Title order={3} mt={6}>{item.value.toLocaleString()}</Title>
+                        </Card>
+                      ))}
                     </SimpleGrid>
                   </MWSection>
+                )}
 
-                  <MWSection title="Management Review" subtitle="A concise record of the week’s focus, lessons, and decisions.">
+                {(goals.weekly_focus || goals.management_notes) && (
+                  <MWSection title="Management Review" subtitle="Recorded weekly focus and decisions.">
                     <Stack gap="md">
-                      <Card withBorder radius="lg" p="lg">
-                        <Text size="xs" c="dimmed" fw={900} tt="uppercase">Weekly Focus</Text>
-                        <Text mt="xs" fw={700}>{goals.weekly_focus || "No weekly focus has been recorded."}</Text>
-                      </Card>
-                      <Card withBorder radius="lg" p="lg">
-                        <Text size="xs" c="dimmed" fw={900} tt="uppercase">Management Notes</Text>
-                        <Text mt="xs" style={{ whiteSpace: "pre-wrap" }}>{goals.management_notes || "No management notes have been recorded."}</Text>
-                      </Card>
-                      <Button variant="default" onClick={openGoals}>Edit Review</Button>
+                      {goals.weekly_focus && (
+                        <Card withBorder radius="lg" p="lg">
+                          <Text size="xs" c="dimmed" fw={900} tt="uppercase">Weekly Focus</Text>
+                          <Text mt="xs" fw={700}>{goals.weekly_focus}</Text>
+                        </Card>
+                      )}
+                      {goals.management_notes && (
+                        <Card withBorder radius="lg" p="lg">
+                          <Text size="xs" c="dimmed" fw={900} tt="uppercase">Management Notes</Text>
+                          <Text mt="xs" style={{ whiteSpace: "pre-wrap" }}>{goals.management_notes}</Text>
+                        </Card>
+                      )}
+                      <Button variant="default" onClick={openGoals}>Edit Weekly Plan</Button>
                     </Stack>
                   </MWSection>
-                </SimpleGrid>
+                )}
               </>
             )}
           </Stack>
@@ -946,20 +1017,17 @@ async function exportArtworkTurnaroundReport(report) {
                   <MWSection title="Order Owner Workload"><BarList items={data?.orderOwnerBreakdown} emptyText="No customer order owners found." /></MWSection>
                   <MWSection title="Project Owner Workload"><BarList items={data?.projectOwnerBreakdown} emptyText="No project owner workload found." /></MWSection>
                   <MWSection title="Callback Owner Workload"><BarList items={data?.callbackOwnerBreakdown} emptyText="No callback workload found." /></MWSection>
-                  <MWSection title="Top Customers by Orders"><BarList items={data?.topCustomers} emptyText="No customer order history found." /></MWSection>
                 </SimpleGrid>
 
                 <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
                   <MWSection title="Attention Summary">
                     <Stack>{(data?.attentionItems || []).map((item) => <Card key={item.label} withBorder radius="lg" p="md"><Group justify="space-between"><div><Text fw={800}>{item.label}</Text><Text size="sm" c="dimmed">Needs operational attention</Text></div><Badge color={item.value > 0 ? "red" : "green"} size="lg">{item.value}</Badge></Group></Card>)}</Stack>
                   </MWSection>
-                  <MWSection title="Financial Snapshot">
+                  <MWSection title="Open Work Value" subtitle="Recorded value of open work; this is not collected cash.">
                     <Stack>
                       {[
                         ["Open Customer Order Value", summary.orderPipelineValue],
                         ["Open Outside Project Value", summary.projectPipelineValue],
-                        ["Customer Order Balance", summary.openOrderBalance],
-                        ["Outside Project Balance", summary.openProjectBalance],
                       ].map(([label, value]) => <Card key={label} withBorder radius="lg" p="md"><Group justify="space-between"><Text c="dimmed">{label}</Text><Text fw={900}>{money(value)}</Text></Group></Card>)}
                     </Stack>
                   </MWSection>
