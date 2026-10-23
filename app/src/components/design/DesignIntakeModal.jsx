@@ -35,6 +35,7 @@ const DEFAULT_FORM = {
   dateOrdered: new Date(),
   dateRequested: null,
   projectName: "",
+  quantity: 1,
   description: "",
   specialInstructions: "",
   designSource: "New Design Required",
@@ -214,6 +215,11 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
       });
       return;
     }
+    const quantity = Math.floor(Number(form.quantity));
+    if (!Number.isFinite(quantity) || quantity < 1) {
+      notifications.show({ title: "Invalid Quantity", message: "Quantity must be at least 1.", color: "red" });
+      return;
+    }
     if (!isSmallFabrication && !clean(form.phone) && !clean(form.email)) {
       notifications.show({
         title: "Contact Information Required",
@@ -275,7 +281,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         product_template_id: null,
         item_name: clean(form.projectName),
         description: clean(form.description),
-        quantity: 1,
+        quantity,
         unit_price: Number(form.salePrice || 0),
         notes: clean(form.specialInstructions) || null,
       });
@@ -362,7 +368,17 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           <DateInput label="Date Requested" value={form.dateRequested} onChange={(value) => update("dateRequested", value)} clearable />
         </SimpleGrid>
 
-        <TextInput label="Project / Item Name" required value={form.projectName} onChange={(event) => update("projectName", event.currentTarget.value)} />
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <TextInput label="Project / Item Name" required value={form.projectName} onChange={(event) => update("projectName", event.currentTarget.value)} />
+          <NumberInput
+            label="Quantity"
+            description="Number of items in this job"
+            min={1}
+            allowDecimal={false}
+            value={form.quantity}
+            onChange={(value) => update("quantity", value)}
+          />
+        </SimpleGrid>
         {canUnlockProjectMoney(activeUser) && (
           <NumberInput
             label="Sale Price (Optional)"
