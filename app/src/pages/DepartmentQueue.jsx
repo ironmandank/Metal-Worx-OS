@@ -1375,6 +1375,7 @@ function DepartmentQueue({
     const customerName = order?.artwork_customer_name || project?.contact_name || getCustomerName(customer);
     const companyName = getCustomerCompany(customer);
     const productNames = getProductNames(items, products);
+    const totalQuantity = items.reduce((total, item) => total + Math.max(1, Math.floor(Number(item.quantity) || 1)), 0);
     const orderNumber =
       order?.order_number ||
       order?.customer_order_number ||
@@ -1407,6 +1408,11 @@ function DepartmentQueue({
               {unifiedArtwork && (
                 <Badge color={job?.plaque_required ? "orange" : "gray"} variant="light">
                   {job?.plaque_required ? "Needs Plaque" : "No Plaque"}
+                </Badge>
+              )}
+              {unifiedArtwork && (
+                <Badge color="blue" variant="light">
+                  Qty {totalQuantity}
                 </Badge>
               )}
               {isDesignStation(workOrder) && (
