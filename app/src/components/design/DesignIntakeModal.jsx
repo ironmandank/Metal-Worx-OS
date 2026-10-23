@@ -251,7 +251,7 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             `Date ordered: ${dateValue(form.dateOrdered) || "Not entered"}`,
             clean(form.specialInstructions) ? `Special instructions: ${clean(form.specialInstructions)}` : "",
           ].filter(Boolean).join("\n"),
-          total_amount: Number(form.salePrice || 0),
+          total_amount: Number(form.salePrice || 0) * quantity,
           deposit_received: false,
           deposit_amount: 0,
           order_type: isSmallFabrication ? "Small Fabrication" : "Custom Artwork",
@@ -381,8 +381,8 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         </SimpleGrid>
         {canUnlockProjectMoney(activeUser) && (
           <NumberInput
-            label="Sale Price (Optional)"
-            description="Enter it now if known, or leave it blank and add or edit the final price later."
+            label="Unit Sale Price (Optional)"
+            description="Per item. The order total is calculated using this price and the quantity."
             prefix="$"
             decimalScale={2}
             fixedDecimalScale
