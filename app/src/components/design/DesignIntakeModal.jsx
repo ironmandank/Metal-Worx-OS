@@ -336,7 +336,14 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Add Artwork or Small Fabrication" size="xl" centered>
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Add Artwork or Small Fabrication"
+      size="xl"
+      centered
+      styles={{ content: { maxWidth: "calc(100vw - 32px)" } }}
+    >
       <Stack>
         <Alert icon={<IconInfoCircle />} color="blue">
           Add artwork orders or quick shop work such as a small weld, wheel repair, bracket repair, or similar fabrication job.
