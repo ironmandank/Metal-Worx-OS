@@ -1331,6 +1331,11 @@ function OrderBuilder({
           <Stack>
             <DateInput
               label="Due Date"
+              description={
+                designNeeded || orderType === "Custom Artwork"
+                  ? "If blank, the due date is set 12 business days after the artwork reaches Laser. Enter a date to override."
+                  : undefined
+              }
               placeholder="Select due date"
               value={dueDate}
               onChange={setDueDate}
