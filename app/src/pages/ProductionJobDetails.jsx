@@ -165,6 +165,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
             artwork_customer_email: jobEditDraft.email.trim() || null,
             title: jobEditDraft.title.trim() || null,
             notes: jobEditDraft.notes.trim() || null,
+            due_date: jobEditDraft.dueDate || null,
           }).eq("id", order.id)
         );
       }
@@ -676,6 +677,7 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
             />
             <TextInput
               label="Due Date"
+              description="Default: 12 business days after the job reaches Laser. Change the date here when needed."
               type="date"
               value={jobEditDraft.dueDate}
               onChange={(event) => updateJobEditDraft("dueDate", event.currentTarget.value)}
