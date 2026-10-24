@@ -372,7 +372,13 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
 
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <DateInput label="Date Ordered" value={form.dateOrdered} onChange={(value) => update("dateOrdered", value)} />
-          <DateInput label="Date Requested" value={form.dateRequested} onChange={(value) => update("dateRequested", value)} clearable />
+          <DateInput
+            label="Date Requested"
+            description="Enter a different deadline to override the default. If blank, the due date is set 12 business days after it reaches Laser."
+            value={form.dateRequested}
+            onChange={(value) => update("dateRequested", value)}
+            clearable
+          />
         </SimpleGrid>
 
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
