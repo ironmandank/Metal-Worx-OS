@@ -985,6 +985,8 @@ function InventoryItemDetails({
         backPage="inventoryItems"
         backLabel="Inventory Items"
         showDashboard={false}
+        buttonText="Edit Item"
+        onButtonClick={openEditItem}
       />
 
       <MWKpiStrip
