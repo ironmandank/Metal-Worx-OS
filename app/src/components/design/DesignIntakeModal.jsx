@@ -26,6 +26,7 @@ import { releaseCustomerOrder } from "../../lib/productionWorkflow";
 import { notifyTeam } from "../../services/teamNotificationService";
 import { uploadOrderImages } from "../../services/orderImageService";
 import { canUnlockProjectMoney } from "../../lib/projectMoneyPrivacy";
+import { confirmPlaqueUncheck } from "../../lib/plaqueGate";
 
 const DEFAULT_FORM = {
   jobType: "Artwork",
@@ -507,7 +508,11 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
 
         <SimpleGrid cols={{ base: 1, sm: 2 }}>
           <Checkbox label="Rush / priority order" checked={form.rush} onChange={(event) => update("rush", event.currentTarget.checked)} />
-          <Checkbox label="This job needs a plaque" checked={form.plaqueRequired} onChange={(event) => update("plaqueRequired", event.currentTarget.checked)} />
+          <Checkbox label="This job needs a plaque" checked={form.plaqueRequired} onChange={(event) => {
+            const nextValue = event.currentTarget.checked;
+            if (!confirmPlaqueUncheck(form.plaqueRequired, nextValue)) return;
+            update("plaqueRequired", nextValue);
+          }} />
         </SimpleGrid>
 
         <Group justify="flex-end">
