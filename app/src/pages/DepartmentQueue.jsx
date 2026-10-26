@@ -39,6 +39,7 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { confirmPlaqueUncheck } from "../lib/plaqueGate";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
 import { notifications } from "@mantine/notifications";
@@ -1542,7 +1543,11 @@ function DepartmentQueue({
                   label="This job needs a plaque"
                   checked={artworkDraft(workOrder).plaqueRequired}
                   disabled={!isAdministrator || savingAction}
-                  onChange={(event) => updateArtworkDraft(workOrder, "plaqueRequired", event.currentTarget.checked)}
+                  onChange={(event) => {
+                    const nextValue = event.currentTarget.checked;
+                    if (!confirmPlaqueUncheck(artworkDraft(workOrder).plaqueRequired, nextValue)) return;
+                    updateArtworkDraft(workOrder, "plaqueRequired", nextValue);
+                  }}
                 />
                 {moneyPrivacy.unlocked ? (
                   <NumberInput
@@ -1925,7 +1930,11 @@ function DepartmentQueue({
                   label="This job needs a plaque"
                   checked={artworkDraft(workOrder).plaqueRequired}
                   disabled={!isAdministrator || savingAction}
-                  onChange={(event) => updateArtworkDraft(workOrder, "plaqueRequired", event.currentTarget.checked)}
+                  onChange={(event) => {
+                    const nextValue = event.currentTarget.checked;
+                    if (!confirmPlaqueUncheck(artworkDraft(workOrder).plaqueRequired, nextValue)) return;
+                    updateArtworkDraft(workOrder, "plaqueRequired", nextValue);
+                  }}
                 />
                 {moneyPrivacy.unlocked ? (
                   <NumberInput
