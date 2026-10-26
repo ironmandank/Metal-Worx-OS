@@ -72,6 +72,12 @@ function isFinishedProductImage(image) {
   return String(image?.image_type || "").trim().toLowerCase() === "finished product";
 }
 
+function isDesignSourceFile(image) {
+  const type = String(image?.image_type || "").trim().toLowerCase();
+  const name = String(image?.caption || "").trim().toLowerCase();
+  return type === "design file" || /\.(cdr|dxf|pdf|ai|eps|dwg|plt|svg)$/i.test(name);
+}
+
 async function downloadReferenceImage(image, index) {
   const fileName = referenceImageLabel(image, index);
   try {
@@ -88,8 +94,8 @@ async function downloadReferenceImage(image, index) {
   } catch (error) {
     window.open(image.image_url, "_blank", "noopener,noreferrer");
     notifications.show({
-      title: "Opened Image",
-      message: "The browser opened the image in a new tab so you can save it from there.",
+      title: "Opened File",
+      message: "The browser opened the file in a new tab so you can save it from there.",
       color: "blue",
     });
   }
@@ -107,11 +113,21 @@ function DesignImageGallery({ images, imageHeight = 100, emptyMessage = "No artw
         return (
           <Card key={image.id || `${image.image_url}-${index}`} withBorder radius="md" p="xs">
             <a href={image.image_url} target="_blank" rel="noreferrer" aria-label={`Open ${label}`}>
-              <Image src={image.image_url} alt={label} h={imageHeight} fit="contain" radius="sm" />
+              {isDesignSourceFile(image) ? (
+                <Paper h={imageHeight} withBorder radius="sm">
+                  <Stack align="center" justify="center" h="100%" gap={4}>
+                    <IconNotes size={26} />
+                    <Text size="xs" fw={700}>Design source file</Text>
+                  </Stack>
+                </Paper>
+              ) : (
+                <Image src={image.image_url} alt={label} h={imageHeight} fit="contain" radius="sm" />
+              )}
             </a>
             <Group justify="space-between" gap={6} mt="xs" wrap="nowrap">
               <Text size="xs" fw={700} lineClamp={2}>{label}</Text>
               {isFinishedProductImage(image) && <Badge size="xs" color="green" variant="light">Finished</Badge>}
+              {isDesignSourceFile(image) && <Badge size="xs" color="violet" variant="light">Design File</Badge>}
             </Group>
             <Group grow gap={6} mt="xs">
               <Button
@@ -198,6 +214,7 @@ function DepartmentQueue({
   const [detailTarget, setDetailTarget] = useState(null);
   const [editDesignTarget, setEditDesignTarget] = useState(null);
   const [additionalDesignPhotos, setAdditionalDesignPhotos] = useState([]);
+  const [additionalDesignFiles, setAdditionalDesignFiles] = useState([]);
   const [finishedProductPhotos, setFinishedProductPhotos] = useState([]);
   const [uploadingFinishedWorkOrderId, setUploadingFinishedWorkOrderId] = useState(null);
   const [designDraft, setDesignDraft] = useState({
@@ -744,6 +761,7 @@ function DepartmentQueue({
       email: detail?.order?.artwork_customer_email || "",
     });
     setAdditionalDesignPhotos([]);
+    setAdditionalDesignFiles([]);
     setFinishedProductPhotos([]);
     setEditDesignTarget(workOrder);
   }
@@ -753,7 +771,7 @@ function DepartmentQueue({
     const detail = jobDetails[editDesignTarget.production_job_id];
     if (!detail?.order?.id) {
       notifications.show({
-        title: "Photos Could Not Be Added",
+        title: "File Could Not Be Added",
         message: "This design job is not linked to a customer order.",
         color: "red",
       });
@@ -763,17 +781,22 @@ function DepartmentQueue({
     setSavingAction(true);
     try {
       await uploadOrderImages(detail.order.id, files, imageType);
+      const isFile = imageType === "Design File";
+      const isFinished = imageType === "Finished Product";
       notifications.show({
-        title: imageType === "Finished Product" ? "Finished Product Photos Added" : "Design Photos Added",
-        message: `${files.length} photo${files.length === 1 ? " was" : "s were"} added to this job. Existing images were kept.`,
+        title: isFile ? "Design File Attached" : isFinished ? "Finished Product Photos Added" : "Design Photos Added",
+        message: isFile
+          ? `${files.length} design file${files.length === 1 ? " was" : "s were"} linked to this job.`
+          : `${files.length} photo${files.length === 1 ? " was" : "s were"} added to this job. Existing images were kept.`,
         color: "green",
       });
-      if (imageType === "Finished Product") setFinishedProductPhotos([]);
+      if (isFinished) setFinishedProductPhotos([]);
+      else if (isFile) setAdditionalDesignFiles([]);
       else setAdditionalDesignPhotos([]);
       await loadQueue();
     } catch (error) {
       notifications.show({
-        title: "Photos Could Not Be Added",
+        title: "File Could Not Be Added",
         message: error?.message || "Please try the upload again.",
         color: "red",
       });
@@ -1704,7 +1727,7 @@ function DepartmentQueue({
           )}
 
           <SimpleGrid cols={2} spacing="xs">
-            {isDesignStation(workOrder) && (
+            {(isDesignStation(workOrder) || unifiedArtwork) && (
               <Button
                 fullWidth
                 size="xs"
@@ -1713,7 +1736,7 @@ function DepartmentQueue({
                 leftSection={<IconEdit size={15} />}
                 onClick={() => openDesignEditor(workOrder)}
               >
-                Edit Design Job
+                Edit File / Design Info
               </Button>
             )}
             <Button fullWidth size="xs" variant="subtle" color="gray" leftSection={<IconHistory size={15} />} onClick={() => openHistory(workOrder)}>
@@ -2315,6 +2338,7 @@ function DepartmentQueue({
         onClose={() => {
           setEditDesignTarget(null);
           setAdditionalDesignPhotos([]);
+          setAdditionalDesignFiles([]);
           setFinishedProductPhotos([]);
         }}
         title="Edit Design Job"
@@ -2477,6 +2501,38 @@ function DepartmentQueue({
           <Paper withBorder radius="md" p="md">
             <Stack gap="sm">
               <div>
+                <Text fw={800}>Attach the Design Source File</Text>
+                <Text size="sm" c="dimmed">
+                  Link the actual CorelDRAW, DXF, SVG, PDF, or other source file to this job so the team can open or download it later.
+                </Text>
+              </div>
+              <FileButton
+                multiple
+                accept=".cdr,.dxf,.svg,.pdf,.ai,.eps,.dwg,.plt"
+                onChange={(files) => setAdditionalDesignFiles(files || [])}
+              >
+                {(props) => <Button {...props} variant="light" color="violet" leftSection={<IconNotes size={16} />}>Choose Design File</Button>}
+              </FileButton>
+              {additionalDesignFiles.length > 0 && (
+                <Stack gap={4}>
+                  {additionalDesignFiles.map((file, index) => (
+                    <Text key={`${file.name}-${index}`} size="sm" fw={700}>{file.name}</Text>
+                  ))}
+                </Stack>
+              )}
+              <Button
+                color="violet"
+                disabled={additionalDesignFiles.length === 0}
+                loading={savingAction}
+                onClick={() => uploadDesignPhotos(additionalDesignFiles, "Design File")}
+              >
+                Attach File to This Job
+              </Button>
+            </Stack>
+          </Paper>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm">
+              <div>
                 <Text fw={800}>Add More Design Photos</Text>
                 <Text size="sm" c="dimmed">
                   Add reference photos, sketches, or artwork to this design job. Existing images stay in place.
@@ -2544,6 +2600,7 @@ function DepartmentQueue({
             <Button variant="default" onClick={() => {
               setEditDesignTarget(null);
               setAdditionalDesignPhotos([]);
+              setAdditionalDesignFiles([]);
               setFinishedProductPhotos([]);
             }}>Cancel</Button>
             <Button color="red" loading={savingAction} onClick={saveDesignJob}>Save Design Job</Button>
