@@ -44,6 +44,7 @@ const DEFAULT_FORM = {
   paymentMethod: "Card",
   assignedDesigner: "Kory",
   rush: false,
+  plaqueRequired: false,
   salePrice: "",
 };
 
@@ -303,7 +304,17 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         if (paymentError) throw paymentError;
       }
 
-      await releaseCustomerOrder(order.id, startingDepartment, activeUser || "Design Intake");
+      const productionJob = await releaseCustomerOrder(order.id, startingDepartment, activeUser || "Design Intake");
+      if (form.plaqueRequired) {
+        if (!productionJob?.id) {
+          throw new Error("The job was created, but its plaque setting could not be saved. Open the job and set Needs Plaque there.");
+        }
+        const { error: plaqueError } = await supabase
+          .from("production_jobs")
+          .update({ plaque_required: true })
+          .eq("id", productionJob.id);
+        if (plaqueError) throw plaqueError;
+      }
       await notifyTeam({
         names: needsDesign && ["Kory", "Lori"].includes(clean(form.assignedDesigner)) ? [clean(form.assignedDesigner)] : [],
         departments: [startingDepartment],
@@ -494,7 +505,10 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
           <Text size="sm" c="dimmed">No design fee will be charged for this artwork source.</Text>
         ) : null}
 
-        <Checkbox label="Rush / priority order" checked={form.rush} onChange={(event) => update("rush", event.currentTarget.checked)} />
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <Checkbox label="Rush / priority order" checked={form.rush} onChange={(event) => update("rush", event.currentTarget.checked)} />
+          <Checkbox label="This job needs a plaque" checked={form.plaqueRequired} onChange={(event) => update("plaqueRequired", event.currentTarget.checked)} />
+        </SimpleGrid>
 
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancel</Button>
