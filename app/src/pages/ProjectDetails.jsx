@@ -57,6 +57,7 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { confirmPlaqueUncheck } from "../lib/plaqueGate";
 import { releaseProject } from "../lib/productionWorkflow";
 import { getOutsidePhase, getSuggestedNextAction } from "../lib/outsideProjectWorkflow";
 import {
@@ -3355,7 +3356,11 @@ function ProjectDetails({
                         label="This job needs a plaque"
                         checked={Boolean(project.plaque_required)}
                         disabled={saving}
-                        onChange={(event) => updateProject({ plaque_required: event.currentTarget.checked })}
+                        onChange={(event) => {
+                          const nextValue = event.currentTarget.checked;
+                          if (!confirmPlaqueUncheck(project.plaque_required, nextValue)) return;
+                          updateProject({ plaque_required: nextValue });
+                        }}
                       />
                     )}
                     {project.design_required && (
