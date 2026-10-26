@@ -76,6 +76,12 @@ function parseDesignInstructions(notes) {
   };
 }
 
+function isDesignSourceFile(file) {
+  const type = String(file?.image_type || "").trim().toLowerCase();
+  const name = String(file?.caption || "").trim().toLowerCase();
+  return type === "design file" || /\.(cdr|dxf|pdf|ai|eps|dwg|plt|svg)$/i.test(name);
+}
+
 function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "productionControl" }) {
   const returnPageLabels = {
     actionCenter: "Action Center",
@@ -1137,11 +1143,11 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
           subtitle={`${referenceImages.length} connected file${referenceImages.length === 1 ? "" : "s"}, including finished-product photos`}
         >
           <Group justify="space-between" align="center" mb="md" wrap="wrap">
-            <Text size="sm" c="dimmed">Add customer artwork, design proofs, or production reference images.</Text>
+            <Text size="sm" c="dimmed">Add customer artwork, source files, design proofs, or production reference images.</Text>
             <Group gap="xs">
               <FileButton
                 onChange={(files) => addOrderFiles(files, "Production Reference")}
-                accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,application/pdf"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,application/pdf,.cdr,.dxf,.ai,.eps,.dwg,.plt"
                 multiple
               >
                 {(props) => (
@@ -1174,7 +1180,16 @@ function ProductionJobDetails({ selectedProductionJob, setPage, returnPage = "pr
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
               {referenceImages.map((image) => (
                 <Card key={image.id} withBorder radius="lg" p="xs">
-                  <Image src={image.image_url} alt={image.caption || image.image_type || "Order artwork"} h={190} fit="contain" radius="md" />
+                  {isDesignSourceFile(image) ? (
+                    <Paper h={190} withBorder radius="md">
+                      <Stack align="center" justify="center" h="100%" gap="xs">
+                        <IconClipboardCheck size={36} color="var(--mantine-color-violet-4)" />
+                        <Text size="sm" fw={800}>Design source file</Text>
+                      </Stack>
+                    </Paper>
+                  ) : (
+                    <Image src={image.image_url} alt={image.caption || image.image_type || "Order artwork"} h={190} fit="contain" radius="md" />
+                  )}
                   <Group justify="space-between" mt="sm" wrap="nowrap">
                     <div>
                       <Text fw={800} lineClamp={1}>{image.caption || image.image_type || "Reference file"}</Text>
