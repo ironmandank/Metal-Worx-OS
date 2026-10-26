@@ -21,6 +21,7 @@ import { DateTimePicker } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 
 import { supabase } from "../lib/supabase";
+import { confirmPlaqueUncheck } from "../lib/plaqueGate";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
 import { getActiveProfiles } from "../services/notificationService";
@@ -920,7 +921,11 @@ function EditProject({ selectedProject, setPage }) {
               <Checkbox
                 label="This job needs a plaque"
                 checked={Boolean(form.plaque_required)}
-                onChange={(event) => updateField("plaque_required", event.currentTarget.checked)}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.checked;
+                  if (!confirmPlaqueUncheck(form.plaque_required, nextValue)) return;
+                  updateField("plaque_required", nextValue);
+                }}
               />
             )}
 
