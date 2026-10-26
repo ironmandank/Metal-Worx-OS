@@ -13,6 +13,7 @@ import {
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 import { supabase } from "../lib/supabase";
+import { confirmPlaqueUncheck } from "../lib/plaqueGate";
 import { generateNumber } from "../lib/generateNumber";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -161,7 +162,11 @@ export default function NewOutsideJob({ setPage, setSelectedProject }) {
             <Checkbox
               label="This job needs a plaque"
               checked={Boolean(form.plaque_required)}
-              onChange={(event) => update("plaque_required", event.currentTarget.checked)}
+              onChange={(event) => {
+                const nextValue = event.currentTarget.checked;
+                if (!confirmPlaqueUncheck(form.plaque_required, nextValue)) return;
+                update("plaque_required", nextValue);
+              }}
             />
             <Group grow>
               <DateInput label="Scheduled Date" description="Shows this job on the company calendar." clearable value={form.planned_start_date} onChange={(value) => update("planned_start_date", value)} />
