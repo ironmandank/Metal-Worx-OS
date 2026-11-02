@@ -12,12 +12,19 @@ import QRCode from "qrcode";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import { getInventoryPositionTypeLabel } from "../lib/inventoryStorage";
 import metalWorxLogo from "../assets/metal-worx-logo.png";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
 
 const LOGO_PATH = metalWorxLogo;
+
+function getStorageLabel(item) {
+  const position = [item.default_bin_code, item.default_bin_name].filter(Boolean).join(" · ");
+  const type = getInventoryPositionTypeLabel(item.default_bin_position_type);
+  return [position, type].filter(Boolean).join(" · ") || "Storage position not assigned";
+}
 
 function getItemId(item) {
   return item?.inventory_item_id || item?.id || null;
@@ -74,7 +81,7 @@ function LabelPreview({ item, label, mode }) {
         {codes ? <img src={codes.qr} alt="QR" style={{ width: 60, height: 60 }} /> : <Loader size="sm" />}
         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Text size="9px" c="#555" fw={800}>{item.category_name || "METAL WORX INVENTORY"}</Text>
-          <Text size="9px" c="#555">{item.default_bin_code || item.default_bin_name || "Storage position not assigned"}</Text>
+          <Text size="9px" c="#555">{getStorageLabel(item)}</Text>
           {codes && <img src={codes.barcode} alt="Barcode" style={{ width: "100%", height: 35, objectFit: "fill" }} />}
           <Text size="9px" fw={900} ta="center" style={{ letterSpacing: 1 }}>{label.barcode_value}</Text>
         </Stack>
@@ -95,13 +102,19 @@ function InventoryLabelPrinting({ setPage, selectedInventoryItem, activeUser }) 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemsResult, labelsResult] = await Promise.all([
+      const [itemsResult, labelsResult, binsResult] = await Promise.all([
         supabase.from("inventory_item_availability").select("*").eq("is_active", true).order("name"),
         supabase.from("inventory_labels").select("*").eq("is_active", true).not("inventory_item_id", "is", null),
+        supabase.from("inventory_bins").select("id,position_type"),
       ]);
       if (itemsResult.error) throw itemsResult.error;
       if (labelsResult.error) throw labelsResult.error;
-      setItems(itemsResult.data || []);
+      if (binsResult.error) throw binsResult.error;
+      const positionTypeById = new Map((binsResult.data || []).map((bin) => [bin.id, bin.position_type]));
+      setItems((itemsResult.data || []).map((item) => ({
+        ...item,
+        default_bin_position_type: positionTypeById.get(item.default_bin_id) || "unclassified",
+      })));
       setLabels(labelsResult.data || []);
       const startingId = getItemId(selectedInventoryItem);
       if (startingId) setSelectedIds([startingId]);
@@ -167,7 +180,7 @@ function InventoryLabelPrinting({ setPage, selectedInventoryItem, activeUser }) 
           <h2>${safeText(item.name)}</h2>
           <div class="content">
             <img class="qr" src="${codes.qr}"/>
-            <div class="right"><small>${safeText(item.category_name || "METAL WORX INVENTORY")}</small><small>${safeText(item.default_bin_code || item.default_bin_name || "Storage position not assigned")}</small><img class="barcode" src="${codes.barcode}"/><b>${safeText(label.barcode_value)}</b></div>
+            <div class="right"><small>${safeText(item.category_name || "METAL WORX INVENTORY")}</small><small>${safeText(getStorageLabel(item))}</small><img class="barcode" src="${codes.barcode}"/><b>${safeText(label.barcode_value)}</b></div>
           </div>
         </section>`).join("");
 
