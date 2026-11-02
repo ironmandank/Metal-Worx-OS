@@ -21,7 +21,7 @@ import MWPanel from "../components/ui/MWPanel";
 const LOGO_PATH = metalWorxLogo;
 
 function getStorageLabel(item) {
-  const position = [item.default_bin_code, item.default_bin_name].filter(Boolean).join(" · ");
+  const position = item.default_bin_code || item.default_bin_name;
   const type = getInventoryPositionTypeLabel(item.default_bin_position_type);
   return [position, type].filter(Boolean).join(" · ") || "Storage position not assigned";
 }
