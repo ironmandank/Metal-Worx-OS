@@ -39,7 +39,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../lib/supabase";
-import { formatInventoryBinOption, getInventoryPositionTypeLabel, INVENTORY_POSITION_TYPES } from "../lib/inventoryStorage";
+import { getInventoryPositionTypeLabel, INVENTORY_POSITION_TYPES } from "../lib/inventoryStorage";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
