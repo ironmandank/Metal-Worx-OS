@@ -51,6 +51,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import { formatInventoryBinOption } from "../lib/inventoryStorage";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
@@ -274,7 +275,7 @@ function InventoryItemDetails({
 
         supabase
           .from("inventory_bins")
-          .select("id,name,code,zone")
+          .select("id,name,code,zone,position_type")
           .eq("is_active", true)
           .order("zone")
           .order("name"),
@@ -1568,7 +1569,7 @@ function InventoryItemDetails({
           <Textarea label="Description" minRows={2} value={editForm.description || ""} onChange={(event) => updateEditForm("description", event.currentTarget.value)} />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Select label="Category" clearable searchable data={categories.map((category) => ({ value: category.id, label: category.name }))} value={editForm.category_id || null} onChange={(value) => setEditForm((current) => ({ ...current, category_id: value || "" }))} />
-            <Select label="Default Bin / Storage" clearable searchable data={bins.map((bin) => ({ value: bin.id, label: [bin.code, bin.name, bin.zone].filter(Boolean).join(" · ") }))} value={editForm.default_bin_id || null} onChange={(value) => setEditForm((current) => ({ ...current, default_bin_id: value || "" }))} />
+            <Select label="Default Bin / Storage" clearable searchable data={bins.map((bin) => ({ value: bin.id, label: formatInventoryBinOption(bin) }))} value={editForm.default_bin_id || null} onChange={(value) => setEditForm((current) => ({ ...current, default_bin_id: value || "" }))} />
           </SimpleGrid>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <NumberInput label="Standard Cost" min={0} decimalScale={2} value={editForm.standard_cost || 0} onChange={(value) => setEditForm((current) => ({ ...current, standard_cost: value }))} />
