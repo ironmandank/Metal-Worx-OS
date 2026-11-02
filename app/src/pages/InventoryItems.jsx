@@ -38,6 +38,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import { formatInventoryBinOption } from "../lib/inventoryStorage";
 
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
@@ -489,6 +490,7 @@ function InventoryItems({
             name,
             code,
             zone,
+            position_type,
             is_active
           `)
           .eq("is_active", true)
@@ -1485,9 +1487,7 @@ function InventoryItems({
                   onChange={(value) => setBulkBinId(value || "")}
                   data={bins.map((bin) => ({
                     value: bin.id,
-                    label: [bin.code, bin.name, bin.zone]
-                      .filter(Boolean)
-                      .join(" · "),
+                    label: formatInventoryBinOption(bin),
                   }))}
                   disabled={!selectedIds.length || bulkWorking}
                 />

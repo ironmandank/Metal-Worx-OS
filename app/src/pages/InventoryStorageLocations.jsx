@@ -39,6 +39,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "../lib/supabase";
+import { getInventoryPositionTypeLabel, INVENTORY_POSITION_TYPES } from "../lib/inventoryStorage";
 import MWKpiStrip from "../components/ui/MWKpiStrip";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWPanel from "../components/ui/MWPanel";
@@ -62,6 +63,7 @@ const EMPTY_POSITION = {
   shelf: "",
   position: "",
   description: "",
+  position_type: "unclassified",
   is_receiving_bin: false,
   is_quarantine_bin: false,
   is_scrap_bin: false,
@@ -92,6 +94,8 @@ function InventoryStorageLocations({
   const [balances, setBalances] = useState([]);
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [positionTypeFilter, setPositionTypeFilter] = useState("all");
   const [scanValue, setScanValue] = useState("");
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [positionModalOpen, setPositionModalOpen] = useState(false);
@@ -163,6 +167,9 @@ function InventoryStorageLocations({
     const term = search.trim().toLowerCase();
     return binSummaries.filter((bin) => {
       if (locationFilter !== "all" && bin.location_id !== locationFilter) return false;
+      if (statusFilter === "active" && !bin.is_active) return false;
+      if (statusFilter === "inactive" && bin.is_active) return false;
+      if (positionTypeFilter !== "all" && bin.position_type !== positionTypeFilter) return false;
       if (!term) return true;
       return [
         bin.name,
@@ -173,9 +180,10 @@ function InventoryStorageLocations({
         bin.shelf,
         bin.position,
         bin.inventory_locations?.name,
+        getInventoryPositionTypeLabel(bin.position_type),
       ].some((value) => String(value || "").toLowerCase().includes(term));
     });
-  }, [binSummaries, locationFilter, search]);
+  }, [binSummaries, locationFilter, positionTypeFilter, search, statusFilter]);
 
   const activeLocations = locations.filter((location) => location.is_active);
   const activeBins = binSummaries.filter((bin) => bin.is_active);
@@ -230,6 +238,7 @@ function InventoryStorageLocations({
       shelf: bin.shelf || "",
       position: bin.position || "",
       description: bin.description || "",
+      position_type: bin.position_type || "unclassified",
       is_receiving_bin: Boolean(bin.is_receiving_bin),
       is_quarantine_bin: Boolean(bin.is_quarantine_bin),
       is_scrap_bin: Boolean(bin.is_scrap_bin),
@@ -285,6 +294,7 @@ function InventoryStorageLocations({
         shelf: positionForm.shelf.trim() || null,
         position: positionForm.position.trim() || null,
         description: positionForm.description.trim() || null,
+        position_type: positionForm.position_type || "unclassified",
         barcode_value: `MW-BIN-${code}`,
         qr_code_value: `MW-BIN-${code}`,
       };
@@ -386,7 +396,7 @@ function InventoryStorageLocations({
       />
 
       <MWPanel title="Find Storage" subtitle="Search or scan a physical position label" icon={IconSearch}>
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, xl: 5 }} spacing="md">
           <TextInput
             placeholder="Search position, code, rack, shelf…"
             value={search}
@@ -398,6 +408,18 @@ function InventoryStorageLocations({
             value={locationFilter}
             onChange={(value) => setLocationFilter(value || "all")}
             leftSection={<IconBuildingWarehouse size={18} />}
+          />
+          <Select
+            data={[{ value: "active", label: "Active Positions" }, { value: "all", label: "All Positions" }, { value: "inactive", label: "Inactive Positions" }]}
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value || "active")}
+            leftSection={<IconCheck size={18} />}
+          />
+          <Select
+            data={[{ value: "all", label: "All Position Types" }, ...INVENTORY_POSITION_TYPES]}
+            value={positionTypeFilter}
+            onChange={(value) => setPositionTypeFilter(value || "all")}
+            leftSection={<IconBox size={18} />}
           />
           <TextInput
             ref={scanInputRef}
@@ -434,6 +456,7 @@ function InventoryStorageLocations({
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Position</Table.Th>
+                  <Table.Th>Position Type</Table.Th>
                   <Table.Th>Storage Area</Table.Th>
                   <Table.Th>Physical Detail</Table.Th>
                   <Table.Th ta="center">Items</Table.Th>
@@ -451,6 +474,7 @@ function InventoryStorageLocations({
                         <Text size="xs" c="red.4" fw={800}>{bin.code}</Text>
                       </Stack>
                     </Table.Td>
+                    <Table.Td><Badge color={bin.position_type === "small_crate" || bin.position_type === "large_crate" ? "orange" : "gray"} variant="light">{getInventoryPositionTypeLabel(bin.position_type)}</Badge></Table.Td>
                     <Table.Td>
                       <Text fw={700}>{bin.inventory_locations?.name || "—"}</Text>
                     </Table.Td>
@@ -514,6 +538,7 @@ function InventoryStorageLocations({
       <Modal opened={positionModalOpen} onClose={() => setPositionModalOpen(false)} title={editingPositionId ? "Edit Storage Position" : "Create Storage Position"} centered size="lg">
         <Stack>
           <Select label="Storage Area" data={locationOptions} value={positionForm.location_id} onChange={(value) => setPositionForm((current) => ({ ...current, location_id: value || "" }))} searchable required />
+          <Select label="Position Type" description="Identify small and large crates so item selectors and printed labels show the right storage." data={INVENTORY_POSITION_TYPES} value={positionForm.position_type} onChange={(value) => updatePositionForm("position_type", value || "unclassified")} required />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <TextInput label="Position Name" placeholder="Example: Tree Display Rack" required value={positionForm.name} onChange={(event) => updatePositionForm("name", event.currentTarget.value)} />
             <TextInput label="Position Code" placeholder="Example: SHW-TREES" required value={positionForm.code} onChange={(event) => updatePositionForm("code", cleanCode(event.currentTarget.value))} />
