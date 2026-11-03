@@ -35,7 +35,7 @@ import {
   sendChatMessage,
 } from "../services/chatService";
 
-function InternalChat({ setPage, activeUser = "Dan" }) {
+function InternalChat({ setPage, activeUser = "Dan", onlineEmployees = [] }) {
   const [profiles, setProfiles] = useState([]);
   const [channelId, setChannelId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -224,6 +224,8 @@ function InternalChat({ setPage, activeUser = "Dan" }) {
     }
   }
 
+  const onlineNames = new Set(onlineEmployees);
+
   const people = profiles
     .filter((profile) => profile.profile_type === "Person")
     .map((profile) => profile.display_name)
@@ -290,6 +292,7 @@ function InternalChat({ setPage, activeUser = "Dan" }) {
 
               {people.map((person) => {
                 const selected = directToName === person;
+                const isOnline = onlineNames.has(person);
 
                 return (
                   <button
@@ -308,8 +311,11 @@ function InternalChat({ setPage, activeUser = "Dan" }) {
                     <div className="mw-teams-person-copy">
                       <strong>{person}</strong>
 
-                      <span>
-                        {person === activeUser ? "You" : "Direct Message"}
+                      <span className={`mw-teams-presence-label${isOnline ? " is-online" : ""}`}>
+                        <span className={`mw-teams-presence-dot${isOnline ? " is-online" : ""}`} aria-hidden="true" />
+                        {person === activeUser
+                          ? isOnline ? "You · Online" : "You"
+                          : isOnline ? "Online · Direct Message" : "Direct Message"}
                       </span>
                     </div>
                   </button>
