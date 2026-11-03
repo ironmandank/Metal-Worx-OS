@@ -180,6 +180,7 @@ function App() {
   });
 
   const [activeUser, setActiveUser] = useState("");
+  const [onlineEmployees, setOnlineEmployees] = useState([]);
 
   const [previousPageBeforeProductionJob, setPreviousPageBeforeProductionJob] = useState(page);
 
@@ -324,6 +325,74 @@ function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+    let presenceChannel;
+
+    if (!activeUser) {
+      setOnlineEmployees([]);
+      return undefined;
+    }
+
+    async function connectPresence() {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
+        const userId = data?.session?.user?.id;
+        if (!userId || !isCurrent) return;
+
+        presenceChannel = supabase.channel("mw:employee-presence", {
+          config: {
+            private: true,
+            presence: { key: userId },
+          },
+        });
+
+        function syncOnlineEmployees() {
+          if (!isCurrent || !presenceChannel) return;
+
+          const names = Object.values(presenceChannel.presenceState())
+            .flat()
+            .map((member) => String(member?.employeeName || "").trim())
+            .filter(Boolean);
+
+          setOnlineEmployees([...new Set(names)]);
+        }
+
+        presenceChannel.on("presence", { event: "sync" }, syncOnlineEmployees);
+        presenceChannel.subscribe(async (status, subscriptionError) => {
+          if (!isCurrent) return;
+
+          if (status === "SUBSCRIBED") {
+            const trackStatus = await presenceChannel.track({
+              employeeName: activeUser,
+            });
+
+            if (trackStatus !== "ok") {
+              console.warn("Employee presence could not be published:", trackStatus);
+            }
+
+            syncOnlineEmployees();
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("Employee presence channel error:", subscriptionError);
+          }
+        });
+      } catch (error) {
+        console.error("Employee presence setup failed:", error);
+      }
+    }
+
+    void connectPresence();
+
+    return () => {
+      isCurrent = false;
+      if (presenceChannel) {
+        void supabase.removeChannel(presenceChannel);
+      }
+    };
+  }, [activeUser]);
 
   useEffect(() => {
     if (!authSession) return undefined;
@@ -555,7 +624,7 @@ function App() {
     }
 
     if (page === "internalChat") {
-      return <InternalChat setPage={setPage} activeUser={activeUser} />;
+      return <InternalChat setPage={setPage} activeUser={activeUser} onlineEmployees={onlineEmployees} />;
     }
 
     if (page === "reports") {
