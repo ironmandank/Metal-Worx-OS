@@ -2544,6 +2544,33 @@ textarea.form-input {
   font-size: 11px;
 }
 
+.mw-teams-person-copy .mw-teams-presence-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.mw-teams-person-copy .mw-teams-presence-label.is-online {
+  color: #69df94;
+}
+
+.mw-teams-person-copy .mw-teams-presence-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  margin: 0;
+  border: 1px solid #77838c;
+  border-radius: 50%;
+  background: #323b43;
+}
+
+.mw-teams-person-copy .mw-teams-presence-dot.is-online {
+  border-color: #69df94;
+  background: #69df94;
+  box-shadow: 0 0 7px rgba(105, 223, 148, 0.55);
+}
+
 
 .mw-teams-sender-box {
   padding: 14px;
