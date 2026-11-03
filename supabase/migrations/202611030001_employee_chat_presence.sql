@@ -1,5 +1,3 @@
-drop policy if exists "Active employees can view Metal Worx presence" on realtime.messages;
-drop policy if exists "Active employees can publish Metal Worx presence" on realtime.messages;
 
 create policy "Active employees can view Metal Worx presence"
 on realtime.messages
