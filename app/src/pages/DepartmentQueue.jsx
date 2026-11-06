@@ -1962,7 +1962,7 @@ function DepartmentQueue({
                 Edit File / Design Info
               </Button>
             )}
-            {unifiedArtwork && order?.id && (
+            {unifiedArtwork && (
               <Button
                 fullWidth
                 size="xs"
