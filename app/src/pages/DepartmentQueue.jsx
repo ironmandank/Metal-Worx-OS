@@ -34,7 +34,9 @@ import {
   IconHistory,
   IconNotes,
   IconPhoto,
+  IconPrinter,
   IconRoute,
+  IconTrash,
   IconUserCheck,
 } from "@tabler/icons-react";
 
@@ -59,11 +61,26 @@ import { notifyTeam } from "../services/teamNotificationService";
 import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
 import { getDesignComplexity } from "../lib/designPriority";
 
+function escapePrintHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatPrintDate(value) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString();
+}
+
 const PRIORITY_QUEUE_STATIONS = new Set(["Design", "Laser", "Paint/Powder"]);
 
 function queueDateTimestamp(value) {
   if (!value) return null;
-  const normalized = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value))
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
     ? `${value}T00:00:00`
     : value;
   const timestamp = new Date(normalized).getTime();
@@ -284,6 +301,9 @@ function DepartmentQueue({
   const [activities, setActivities] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [detailTarget, setDetailTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deletingJob, setDeletingJob] = useState(false);
   const [editDesignTarget, setEditDesignTarget] = useState(null);
   const [additionalDesignPhotos, setAdditionalDesignPhotos] = useState([]);
   const [additionalDesignFiles, setAdditionalDesignFiles] = useState([]);
@@ -1380,6 +1400,7 @@ function DepartmentQueue({
 
   function workflowStage(workOrder) {
     const order = jobDetails[workOrder.production_job_id]?.order;
+    if (order?.archived_at || order?.status === "Archived") return "Completed / Archive";
     if (order?.status === "Completed" || order?.fulfillment_completed) return "Completed / Archive";
     if (order?.status === "Ready for Pickup") return "Waiting for Pickup";
     if (["Ready to Ship", "Ready for Installation"].includes(order?.status)) return "Ready to Ship";
@@ -1390,9 +1411,7 @@ function DepartmentQueue({
 
   const displayedWorkOrders = useMemo(() => {
     if (!unifiedArtwork || stageFilter === "All Active Stages") {
-      return unifiedArtwork
-        ? workOrders.filter((workOrder) => workflowStage(workOrder) !== "Completed / Archive")
-        : workOrders;
+      return workOrders.filter((workOrder) => workflowStage(workOrder) !== "Completed / Archive");
     }
     return workOrders.filter((workOrder) => workflowStage(workOrder) === stageFilter);
   }, [jobDetails, stageFilter, unifiedArtwork, workOrders]);
@@ -1514,6 +1533,149 @@ function DepartmentQueue({
   const pendingArtworkUpdates = unifiedArtwork
     ? workOrders.filter(artworkDraftChanged)
     : [];
+
+
+  function printArtworkJobSheet(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id];
+    if (!detail) {
+      notifications.show({ title: "Job Details Not Ready", message: "Refresh the queue and try again.", color: "orange" });
+      return;
+    }
+    const printWindow = window.open("", "_blank", "width=1050,height=800");
+    if (!printWindow) {
+      notifications.show({ title: "Print Window Blocked", message: "Allow pop-ups for Metal Worx OS and try again.", color: "red" });
+      return;
+    }
+
+    const job = detail.job || {};
+    const order = detail.order || {};
+    const customer = detail.customer;
+    const project = detail.project;
+    const items = detail.items || [];
+    const images = detail.images || [];
+    const customerName = order.artwork_customer_name || project?.contact_name || getCustomerName(customer);
+    const itemName = order.title || project?.project_name || getProductNames(items, detail.products || []);
+    const designNotes = String(order.design_notes || "");
+    const designLines = designNotes.split("\n").map((line) => line.trim()).filter(Boolean);
+    const designSource = designLines[0] || "Not specified";
+    const designFile = designLines.find((line) => line.toLowerCase().startsWith("design file:"));
+    const dateOrdered = String(order.notes || "").match(/Date ordered:\s*([^\n]*)/i)?.[1] || "Not recorded";
+    const instructionsFromOrder = String(order.notes || "").match(/Special instructions:\s*([\s\S]*)$/i)?.[1];
+    const descriptions = items.map((item) => item.description).filter(Boolean);
+    const descriptionsText = descriptions.join("\n\n") ||
+      designLines.slice(1).filter((line) => !line.toLowerCase().startsWith("design file:")).join("\n");
+    const instructions = items.map((item) => item.notes).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
+    const quantity = items.reduce((total, item) => total + Math.max(1, Math.floor(Number(item.quantity) || 1)), 0) || 1;
+    const totalPrice = Number(order.total_amount || 0);
+    const fields = [
+      ["Customer", customerName],
+      ["Phone", customer?.phone || order.artwork_customer_phone || "Not provided"],
+      ["Email", customer?.email || order.artwork_customer_email || "Not provided"],
+      ["Date Ordered", dateOrdered],
+      ["Due Date", formatPrintDate(job.due_date || order.due_date || project?.due_date)],
+      ["Assigned To", workOrder.assigned_to || order.order_owner || "Unassigned"],
+      ["Stage", stationFor(workOrder)],
+      ["Status", workOrder.status || "Ready"],
+      ["Quantity", quantity],
+      ["Order Total", totalPrice.toLocaleString("en-US", { style: "currency", currency: "USD" })],
+      ["Artwork Source", designSource],
+      ["Design Fee", order.design_fee_required
+        ? (order.design_fee_paid || order.design_fee_status === "Paid" ? "Paid" : "Pending")
+        : "Not required"],
+      ["Rush", job.rush || order.rush || workOrder.priority === "High" || workOrder.priority === "Rush" ? "YES" : "NO"],
+      ["Needs Plaque", job.plaque_required ? "YES" : "NO"],
+    ].map(([label, value]) =>
+      "<div class='field'><div class='label'>" + escapePrintHtml(label) +
+      "</div><div class='value'>" + escapePrintHtml(value || "Not provided") + "</div></div>"
+    ).join("");
+    const itemRows = items.length
+      ? items.map((item) =>
+          "<article class='project'><div class='project-heading'><strong>" +
+          escapePrintHtml(item.item_name || item.design_name || itemName) +
+          "</strong><span>Qty " + escapePrintHtml(item.quantity || 1) +
+          " · Unit " + escapePrintHtml(Number(item.unit_price || 0).toLocaleString("en-US", { style: "currency", currency: "USD" })) +
+          "</span></div><div class='description'><b>Project Description</b><br>" +
+          escapePrintHtml(item.description || "No description entered.") +
+          "</div><div class='instructions'><b>Special Instructions</b><br>" +
+          escapePrintHtml(item.notes || instructionsFromOrder || "None") + "</div></article>"
+        ).join("")
+      : "<article class='project'><div class='description'><b>Project Description</b><br>" +
+        escapePrintHtml(descriptionsText || "No description entered.") +
+        "</div><div class='instructions'><b>Special Instructions</b><br>" +
+        escapePrintHtml(instructions) + "</div></article>";
+    const imageCards = images.length
+      ? images.map((image) =>
+          "<figure><img src='" + escapePrintHtml(image.image_url) + "' alt='" +
+          escapePrintHtml(image.caption || image.image_type || "Reference image") + "'><figcaption>" +
+          escapePrintHtml(image.caption || image.image_type || "Reference image") + "</figcaption></figure>"
+        ).join("")
+      : "<p class='empty'>No reference images attached.</p>";
+    const logoUrl = window.location.origin + "/metal_worx_header_logo_transparent(1).png";
+    const html = [
+      "<!doctype html><html><head><meta charset='utf-8'><title>Artwork Job Sheet - ",
+      escapePrintHtml(order.order_number || workOrder.work_order_number || "Artwork Job"),
+      "</title><style>*{box-sizing:border-box}body{margin:0;color:#171717;background:#fff;font:11px/1.4 Arial,Helvetica,sans-serif}",
+      ".sheet{max-width:980px;margin:0 auto;padding:24px}.header{display:grid;grid-template-columns:145px 1fr auto;gap:18px;align-items:center;border-bottom:4px solid #c90018;padding-bottom:14px}.logo{width:140px;max-height:68px;object-fit:contain}",
+      "h1{font-size:23px;margin:3px 0}.eyebrow{font-weight:800;color:#c90018;letter-spacing:.12em;text-transform:uppercase}.number{text-align:right}.number strong{font-size:16px;display:block}",
+      ".grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:13px}.field,.project{border:1px solid #bbb;border-radius:6px;padding:8px;break-inside:avoid}.label{font-size:8px;font-weight:800;color:#666;text-transform:uppercase;letter-spacing:.07em}.value{font-size:11px;font-weight:700;margin-top:3px;overflow-wrap:anywhere}",
+      "section{margin-top:16px;break-inside:avoid}h2{font-size:14px;text-transform:uppercase;margin:0 0 8px;border-bottom:2px solid #c90018;padding-bottom:4px}.project{margin-bottom:9px}.project-heading{display:flex;justify-content:space-between;gap:10px;font-size:13px}.description,.instructions{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.instructions{padding:7px;background:#f4f4f4;border-left:3px solid #c90018}",
+      ".file{padding:8px;border:1px dashed #999;border-radius:5px}.images{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}figure{margin:0;border:1px solid #ccc;border-radius:5px;padding:6px;break-inside:avoid}figure img{display:block;width:100%;height:145px;object-fit:contain}figcaption{text-align:center;color:#555;font-size:9px;margin-top:4px}.empty{color:#666;font-style:italic}",
+      "footer{margin-top:18px;padding-top:7px;border-top:1px solid #aaa;display:flex;justify-content:space-between;color:#666;font-size:8px}@page{size:letter;margin:.4in}@media print{.sheet{max-width:none;padding:0}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>",
+      "<main class='sheet'><header class='header'><img class='logo' src='", escapePrintHtml(logoUrl),
+      "' alt='Metal Worx'><div><div class='eyebrow'>Artwork Job Sheet</div><h1>",
+      escapePrintHtml(itemName), "</h1><div>", escapePrintHtml(customerName), "</div></div><div class='number'><span class='label'>Order Number</span><strong>",
+      escapePrintHtml(order.order_number || workOrder.work_order_number || "Not assigned"), "</strong><span>",
+      escapePrintHtml(job.production_job_number || workOrder.work_order_number || "No job number"),
+      "</span></div></header><div class='grid'>", fields, "</div>",
+      "<section><h2>Project Details</h2>", itemRows, "</section>",
+      "<section><h2>Design File / Search Name</h2><div class='file'>",
+      escapePrintHtml(designFile ? designFile.slice(designFile.indexOf(":") + 1).trim() : "Not specified"),
+      "</div></section><section><h2>Reference Images</h2><div class='images'>", imageCards, "</div></section>",
+      "<footer><span>Metal Worx OS · Artwork Job Sheet</span><span>Printed ", escapePrintHtml(new Date().toLocaleString()), "</span></footer></main>",
+      "<script>window.addEventListener('load',function(){window.setTimeout(function(){window.print()},700)})</script></body></html>"
+    ].join("");
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
+  async function deleteArtworkJob() {
+    if (!deleteTarget || !deleteReason.trim() || deletingJob) return;
+    const order = jobDetails[deleteTarget.production_job_id]?.order;
+    if (!order?.id) {
+      notifications.show({ title: "Job Could Not Be Deleted", message: "This artwork job is not linked to a customer order.", color: "red" });
+      return;
+    }
+    setDeletingJob(true);
+    try {
+      const { error } = await supabase.from("customer_orders").update({
+        archive_previous_status: order.status || "New",
+        status: "Archived",
+        archived_at: new Date().toISOString(),
+        archived_by: activeUser || "Administrator",
+        archive_reason: deleteReason.trim(),
+      }).eq("id", order.id);
+      if (error) throw error;
+      notifications.show({
+        title: "Job Removed From Active Workflow",
+        message: "The job is now in Archived Orders, where it can be restored if needed.",
+        color: "green",
+      });
+      setDeleteTarget(null);
+      setDeleteReason("");
+      setDetailTarget(null);
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Job Could Not Be Deleted",
+        message: error?.message || "The job was not removed from the active workflow.",
+        color: "red",
+      });
+    } finally {
+      setDeletingJob(false);
+    }
+  }
 
   function renderWorkOrder(workOrder) {
     const detail = jobDetails[workOrder.production_job_id];
@@ -1798,6 +1960,33 @@ function DepartmentQueue({
                 onClick={() => openDesignEditor(workOrder)}
               >
                 Edit File / Design Info
+              </Button>
+            )}
+            {unifiedArtwork && order?.id && (
+              <Button
+                fullWidth
+                size="xs"
+                color="red"
+                variant="light"
+                leftSection={<IconPrinter size={15} />}
+                onClick={() => printArtworkJobSheet(workOrder)}
+              >
+                Print Artwork Sheet
+              </Button>
+            )}
+            {unifiedArtwork && isAdministrator && order?.id && !order.archived_at && (
+              <Button
+                fullWidth
+                size="xs"
+                color="red"
+                variant="subtle"
+                leftSection={<IconTrash size={15} />}
+                onClick={() => {
+                  setDeleteTarget(workOrder);
+                  setDeleteReason("");
+                }}
+              >
+                Delete Job
               </Button>
             )}
             <Button fullWidth size="xs" variant="subtle" color="gray" leftSection={<IconHistory size={15} />} onClick={() => openHistory(workOrder)}>
@@ -2384,7 +2573,7 @@ function DepartmentQueue({
           )}
 
           {unifiedArtwork && (queueFilter === "Completed / Archive") && (
-            <MWSection title="Completed Artwork Archive" subtitle={`${archivedOrders.length} completed item${archivedOrders.length === 1 ? "" : "s"}`}>
+            <MWSection title="Completed / Archived Artwork" subtitle={`${archivedOrders.length} completed or removed item${archivedOrders.length === 1 ? "" : "s"}`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
                 {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
@@ -2402,6 +2591,34 @@ function DepartmentQueue({
         scrollAreaComponent={Modal.NativeScrollArea}
       >
         {detailTarget && renderWorkOrder(detailTarget)}
+      </Modal>
+
+      <Modal
+        opened={Boolean(deleteTarget)}
+        onClose={() => !deletingJob && setDeleteTarget(null)}
+        title="Delete Artwork Job"
+        centered
+        closeOnClickOutside={!deletingJob}
+        closeOnEscape={!deletingJob}
+      >
+        <Stack>
+          <Alert color="orange" icon={<IconAlertTriangle size={18} />}>
+            This removes the job from active queues and places it in Archived Orders. Its customer record, files, notes, and payment history stay saved, and an administrator can restore it later.
+          </Alert>
+          <Textarea
+            label="Reason"
+            placeholder="Example: duplicate entry, customer cancelled, or entered by mistake"
+            minRows={3}
+            value={deleteReason}
+            onChange={(event) => setDeleteReason(event.currentTarget.value)}
+            required
+            autoFocus
+          />
+          <Group justify="flex-end">
+            <Button variant="default" disabled={deletingJob} onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button color="red" loading={deletingJob} disabled={!deleteReason.trim()} onClick={deleteArtworkJob}>Delete Job</Button>
+          </Group>
+        </Stack>
       </Modal>
 
       <Modal
