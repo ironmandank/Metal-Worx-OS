@@ -803,6 +803,102 @@ function CustomerOrderDetails({
     printWindow.document.close();
   }
 
+
+  function printArtworkJobSheet() {
+    const printWindow = window.open("", "_blank", "width=1050,height=800");
+    if (!printWindow) {
+      notifications.show({
+        title: "Print Window Blocked",
+        message: "Allow pop-ups for Metal Worx OS and try again.",
+        color: "red",
+      });
+      return;
+    }
+
+    const orderedMatch = order.notes?.match(/Date ordered:\\s*([^\\n]*)/i);
+    const designNotes = order.design_notes || "";
+    const designSource = designNotes.split("\\n")[0] || "Not specified";
+    const designFileMatch = designNotes.match(/Design file:\\s*([^\\n]*)/i);
+    const designFileName = designFileMatch?.[1] || "Not specified";
+    const detailCards = [
+      ["Customer", customerName],
+      ["Company", companyName || "Not provided"],
+      ["Phone", customer?.phone || order.artwork_customer_phone || "Not provided"],
+      ["Email", customer?.email || order.artwork_customer_email || "Not provided"],
+      ["Date Ordered", orderedMatch?.[1] || "Not recorded"],
+      ["Date Requested / Due", formatDate(order.due_date)],
+      ["Assigned Designer / Owner", order.order_owner || "Unassigned"],
+      ["Artwork Source", designSource],
+      ["Design Fee", order.design_fee_required
+        ? (order.design_fee_paid || order.design_fee_status === "Paid" ? "Paid" : "Pending")
+        : "Not required"],
+    ].map(([label, value]) =>
+      "<div class='field'><div class='label'>" + escapeHtml(label) +
+      "</div><div class='value'>" + escapeHtml(value || "Not provided") + "</div></div>"
+    ).join("");
+
+    const flags = [
+      ["Rush / Priority", order.rush ? "YES" : "NO", Boolean(order.rush)],
+      ["Needs Plaque", productionJob?.plaque_required ? "YES" : "NO", Boolean(productionJob?.plaque_required)],
+      ["Design Status", designStatusDisplay, false],
+      ["Job Status", order.status || "New", false],
+    ].map(([label, value, active]) =>
+      "<div class='flag " + (active ? "active" : "") + "'><span>" + escapeHtml(label) +
+      "</span><strong>" + escapeHtml(value) + "</strong></div>"
+    ).join("");
+
+    const projectItems = items.length
+      ? items.map((item) =>
+          "<article class='project'><div class='project-heading'><strong>" +
+          escapeHtml(getOrderItemName(item)) + "</strong><span>Qty " +
+          escapeHtml(item.quantity || 1) + "</span></div>" +
+          "<div class='project-description'><b>Project Description</b><br>" +
+          escapeHtml(item.description || "No project description entered.") + "</div>" +
+          "<div class='instructions'><b>Special Instructions</b><br>" +
+          escapeHtml(item.notes || "None") + "</div></article>"
+        ).join("")
+      : "<p>No project items have been recorded.</p>";
+
+    const imageCards = referenceImages.length
+      ? referenceImages.map((image) =>
+          "<figure><img src='" + escapeHtml(image.image_url) + "' alt='" +
+          escapeHtml(image.caption || "Reference image") + "'><figcaption>" +
+          escapeHtml(image.caption || "Reference Image") + "</figcaption></figure>"
+        ).join("")
+      : "<p class='empty'>No reference images attached.</p>";
+
+    const generatedAt = new Date().toLocaleString();
+    const logoUrl = window.location.origin + "/metal_worx_header_logo_transparent(1).png";
+    const html = [
+      "<!doctype html><html><head><meta charset='utf-8'><title>",
+      escapeHtml(order.order_number || "Artwork Job"), " - Artwork Job Sheet</title>",
+      "<style>*{box-sizing:border-box}body{margin:0;color:#171717;background:#fff;font:11px/1.4 Arial,Helvetica,sans-serif}",
+      ".sheet{max-width:980px;margin:0 auto;padding:24px}.header{display:grid;grid-template-columns:145px 1fr auto;gap:18px;align-items:center;border-bottom:4px solid #c90018;padding-bottom:14px}",
+      ".logo{width:140px;max-height:68px;object-fit:contain}h1{font-size:24px;margin:3px 0}.eyebrow{font-weight:800;color:#c90018;letter-spacing:.12em;text-transform:uppercase}",
+      ".number{text-align:right}.number strong{font-size:16px;display:block}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:13px}",
+      ".field,.project,.flag{border:1px solid #bbb;border-radius:6px;padding:8px;break-inside:avoid}.label{font-size:8px;font-weight:800;color:#666;text-transform:uppercase;letter-spacing:.07em}.value{font-size:11px;font-weight:700;margin-top:3px;overflow-wrap:anywhere}",
+      ".flags{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.flag{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:700}.flag.active{border-color:#c90018;background:#fff0f1;color:#9c0011}",
+      "section{margin-top:16px;break-inside:avoid}h2{font-size:14px;text-transform:uppercase;margin:0 0 8px;border-bottom:2px solid #c90018;padding-bottom:4px}",
+      ".project{margin-bottom:9px}.project-heading{display:flex;justify-content:space-between;gap:10px;font-size:13px}.project-description,.instructions{margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}.instructions{padding:7px;background:#f4f4f4;border-left:3px solid #c90018}",
+      ".file{margin-top:10px;padding:8px;border:1px dashed #999;border-radius:5px}.images{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}figure{margin:0;border:1px solid #ccc;border-radius:5px;padding:6px;break-inside:avoid}figure img{display:block;width:100%;height:145px;object-fit:contain}figcaption{text-align:center;color:#555;font-size:9px;margin-top:4px}.empty{color:#666;font-style:italic}",
+      "footer{margin-top:18px;padding-top:7px;border-top:1px solid #aaa;display:flex;justify-content:space-between;color:#666;font-size:8px}@page{size:letter;margin:.4in}@media print{.sheet{max-width:none;padding:0}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>",
+      "<main class='sheet'><header class='header'><img class='logo' src='", escapeHtml(logoUrl),
+      "' alt='Metal Worx'><div><div class='eyebrow'>Artwork Job Sheet</div><h1>",
+      escapeHtml(itemNames), "</h1><div>", escapeHtml(customerName), "</div></div><div class='number'><span class='label'>Order Number</span><strong>",
+      escapeHtml(order.order_number || "Not assigned"), "</strong><span>", escapeHtml(productionJob?.production_job_number || "No production job"), "</span></div></header>",
+      "<div class='grid'>", detailCards, "</div><div class='flags'>", flags, "</div>",
+      "<section><h2>Project Details</h2>", projectItems, "</section>",
+      "<section><h2>Design File / Search Name</h2><div class='file'>", escapeHtml(designFileName), "</div></section>",
+      "<section><h2>Reference Images</h2><div class='images'>", imageCards, "</div></section>",
+      "<footer><span>Metal Worx OS · Artwork Job Sheet</span><span>Generated ", escapeHtml(generatedAt), "</span></footer></main>",
+      "<script>window.addEventListener('load',function(){window.setTimeout(function(){window.print()},700)})</script></body></html>"
+    ].join("");
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+  }
+
   return (
     <Stack gap="lg">
       <MWPageHeader
@@ -835,6 +931,14 @@ function CustomerOrderDetails({
         subtitle="Customer, production, payment, and closeout status"
         rightSection={
           <Group gap="sm">
+            <Button
+              variant="light"
+              color="red"
+              leftSection={<IconPrinter size={17} />}
+              onClick={printArtworkJobSheet}
+            >
+              Print Artwork Job Sheet
+            </Button>
             <Button
               variant="light"
               color="gray"
