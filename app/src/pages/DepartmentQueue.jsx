@@ -56,13 +56,85 @@ import {
 import { selectCurrentArtworkWorkOrder } from "../lib/artworkRoute";
 import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
-import { getTodaysHotTodayItems } from "../services/hotTodayService";
 import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
-import {
-  getDesignComplexity,
-  getDesignPriority,
-  sortDesignQueue,
-} from "../lib/designPriority";
+import { getDesignComplexity } from "../lib/designPriority";
+
+const PRIORITY_QUEUE_STATIONS = new Set(["Design", "Laser", "Paint/Powder"]);
+
+function queueDateTimestamp(value) {
+  if (!value) return null;
+  const normalized = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value))
+    ? `${value}T00:00:00`
+    : value;
+  const timestamp = new Date(normalized).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function getQueueDueTimestamp(workOrder, detail) {
+  const dueDate = detail?.job?.due_date || detail?.project?.due_date || detail?.order?.due_date;
+  return queueDateTimestamp(dueDate);
+}
+
+function isQueueRush(workOrder, detail) {
+  return Boolean(
+    detail?.job?.rush ||
+    detail?.project?.priority === "Rush" ||
+    detail?.order?.rush ||
+    ["High", "Rush"].includes(workOrder?.priority)
+  );
+}
+
+function getStationEnteredTimestamp(workOrder) {
+  const enteredAt = workOrder?.station_entered_at || workOrder?.started_at || workOrder?.created_at;
+  return queueDateTimestamp(enteredAt) ?? Number.MAX_SAFE_INTEGER;
+}
+
+function sortStationQueue(workOrders, detailsByJob = {}, groupByStage = false) {
+  return [...workOrders].sort((left, right) => {
+    const leftStation = canonicalStation(left.department) || left.department || "";
+    const rightStation = canonicalStation(right.department) || right.department || "";
+
+    if (groupByStage && leftStation !== rightStation) {
+      const leftStageOrder = SHOP_STATIONS.indexOf(leftStation);
+      const rightStageOrder = SHOP_STATIONS.indexOf(rightStation);
+      const stageDifference =
+        (leftStageOrder < 0 ? Number.MAX_SAFE_INTEGER : leftStageOrder) -
+        (rightStageOrder < 0 ? Number.MAX_SAFE_INTEGER : rightStageOrder);
+      if (stageDifference !== 0) return stageDifference;
+    }
+
+    const leftDetail = detailsByJob[left.production_job_id];
+    const rightDetail = detailsByJob[right.production_job_id];
+    const leftRush = isQueueRush(left, leftDetail);
+    const rightRush = isQueueRush(right, rightDetail);
+    if (leftRush !== rightRush) return leftRush ? -1 : 1;
+
+    const leftDue = getQueueDueTimestamp(left, leftDetail);
+    const rightDue = getQueueDueTimestamp(right, rightDetail);
+    if (leftDue !== rightDue) {
+      if (leftDue === null) return 1;
+      if (rightDue === null) return -1;
+      return leftDue - rightDue;
+    }
+
+    const ageDifference = getStationEnteredTimestamp(left) - getStationEnteredTimestamp(right);
+    if (ageDifference !== 0) return ageDifference;
+    return String(left.work_order_number || left.id).localeCompare(
+      String(right.work_order_number || right.id),
+      undefined,
+      { numeric: true }
+    );
+  });
+}
+
+function getStationQueueReason(workOrder, detail) {
+  if (isQueueRush(workOrder, detail)) return "Rush";
+  const dueTimestamp = getQueueDueTimestamp(workOrder, detail);
+  if (dueTimestamp === null) return "FIFO";
+  if (dueTimestamp < new Date().setHours(0, 0, 0, 0)) return "Overdue";
+  const dueDate = new Date(dueTimestamp);
+  return `Due ${dueDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
 
 function referenceImageLabel(image, index) {
   return image?.caption || image?.image_type || `Reference image ${index + 1}`;
@@ -230,7 +302,6 @@ function DepartmentQueue({
     phone: "",
     email: "",
   });
-  const [hotTodayItems, setHotTodayItems] = useState([]);
   const moneyPrivacy = useProjectMoneyPrivacy(activeUser);
 
   useEffect(() => {
@@ -281,17 +352,7 @@ function DepartmentQueue({
 
     setWorkOrders(queue);
     try {
-      await Promise.all([
-        loadJobDetails(queue),
-        (department === "Design" || unifiedArtwork)
-          ? getTodaysHotTodayItems({ department: "Design" })
-              .then(setHotTodayItems)
-              .catch((hotError) => {
-                console.warn("Hot Today design ranking unavailable:", hotError);
-                setHotTodayItems([]);
-              })
-          : Promise.resolve(),
-      ]);
+      await loadJobDetails(queue);
     } catch (detailError) {
       console.error("Could not load queue details:", detailError);
       notifications.show({
@@ -1336,12 +1397,12 @@ function DepartmentQueue({
     return workOrders.filter((workOrder) => workflowStage(workOrder) === stageFilter);
   }, [jobDetails, stageFilter, unifiedArtwork, workOrders]);
 
+  const priorityQueueStation = PRIORITY_QUEUE_STATIONS.has(canonicalStation(department));
   const readyOrders = useMemo(() => {
     const ready = displayedWorkOrders.filter((workOrder) => workOrder.status === "Ready" && !["Customer Approval", "Waiting for Pickup", "Ready to Ship", "Completed / Archive"].includes(workflowStage(workOrder)));
-    return (department === "Design" || unifiedArtwork)
-      ? sortDesignQueue(ready, jobDetails, hotTodayItems)
-      : ready;
-  }, [department, displayedWorkOrders, hotTodayItems, jobDetails, unifiedArtwork]);
+    if (unifiedArtwork) return sortStationQueue(ready, jobDetails, true);
+    return priorityQueueStation ? sortStationQueue(ready, jobDetails) : ready;
+  }, [displayedWorkOrders, jobDetails, priorityQueueStation, unifiedArtwork]);
 
   const allAwaitingApprovalOrders = workOrders.filter((workOrder) => {
     const order = jobDetails[workOrder.production_job_id]?.order;
@@ -1839,7 +1900,7 @@ function DepartmentQueue({
     );
   }
 
-  function renderQueueCard(workOrder, index) {
+  function renderQueueCard(workOrder, showQueuePosition = false) {
     const detail = jobDetails[workOrder.production_job_id];
     const job = detail?.job;
     const customer = detail?.customer;
@@ -1849,9 +1910,13 @@ function DepartmentQueue({
     const customerName = order?.artwork_customer_name || project?.contact_name || getCustomerName(customer);
     const workName = order?.title || project?.project_name || getProductNames(detail?.items || [], detail?.products || []);
     const overdue = isPastDue(job?.due_date);
-    const designRank = isDesignStation(workOrder) && workOrder.status === "Ready"
-      ? getDesignPriority(workOrder, detail, hotTodayItems)
-      : null;
+    const workOrderStation = canonicalStation(workOrder.department) || workOrder.department;
+    const stationReadyOrders = showQueuePosition && PRIORITY_QUEUE_STATIONS.has(workOrderStation)
+      ? readyOrders.filter((candidate) => (canonicalStation(candidate.department) || candidate.department) === workOrderStation)
+      : [];
+    const stationQueueIndex = stationReadyOrders.findIndex((candidate) => candidate.id === workOrder.id);
+    const queuePosition = stationQueueIndex >= 0 ? stationQueueIndex + 1 : null;
+    const queueReason = getStationQueueReason(workOrder, detail);
 
     return (
       <Card
@@ -1878,9 +1943,9 @@ function DepartmentQueue({
                   onChange={() => toggleWorkOrderSelection(workOrder.id)}
                 />
               )}
-              {designRank && (
-                <Badge color={designRank.color} variant="filled">
-                  #{index + 1} · {designRank.reason}
+              {queuePosition && (
+                <Badge color={queuePosition === 1 ? "red" : "gray"} variant={queuePosition === 1 ? "filled" : "light"}>
+                  Queue #{queuePosition} · {queueReason}
                 </Badge>
               )}
               <Badge color={getStatusColor(workOrder.status)} variant="light">{workOrder.status}</Badge>
@@ -2070,6 +2135,12 @@ function DepartmentQueue({
         onButtonClick={(department === "Design" || unifiedArtwork) ? onCreateDesign : () => setPage("productionControl")}
       />
 
+      {(unifiedArtwork || priorityQueueStation) && (
+        <Alert icon={<IconInfoCircle size={18} />} color="red" mb="md" title="Queue Order">
+          Jobs sort within each station by rush first, then earliest due date, then oldest time waiting at that station. Queue numbers show the current order and update as jobs move or are completed.
+        </Alert>
+      )}
+
       {unifiedArtwork ? (
         <Stack gap="md" mb="md">
           <Alert icon={<IconInfoCircle />} color="blue" title="One job, one record">
@@ -2255,7 +2326,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Ready") && (
             <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map(renderQueueCard)}
+                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map((workOrder) => renderQueueCard(workOrder, true))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2263,7 +2334,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "In Progress") && (
             <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
+                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2271,7 +2342,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Blocked") && (
             <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderQueueCard)}
+                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2279,7 +2350,7 @@ function DepartmentQueue({
           {unifiedArtwork && queueFilter === "All" && needsPlaqueOrders.length > 0 && (
             <MWSection title="Needs Plaque" subtitle={`${needsPlaqueOrders.length} item${needsPlaqueOrders.length === 1 ? "" : "s"} waiting for a plaque`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {needsPlaqueOrders.map(renderQueueCard)}
+                {needsPlaqueOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2290,7 +2361,7 @@ function DepartmentQueue({
                 {awaitingApprovalOrders.length === 0 ? (
                   <Text c="dimmed">No designs are awaiting customer approval.</Text>
                 ) : (
-                  awaitingApprovalOrders.map(renderQueueCard)
+                  awaitingApprovalOrders.map((workOrder) => renderQueueCard(workOrder))
                 )}
               </SimpleGrid>
             </MWSection>
@@ -2299,7 +2370,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "All" || queueFilter === "Waiting for Pickup") && (
             <MWSection title="Waiting for Customer Pickup" subtitle={`${waitingPickupOrders.length} completed item${waitingPickupOrders.length === 1 ? "" : "s"} waiting for the customer`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {waitingPickupOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for customer pickup.</Text> : waitingPickupOrders.map(renderQueueCard)}
+                {waitingPickupOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for customer pickup.</Text> : waitingPickupOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2307,7 +2378,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "All" || queueFilter === "Ready to Ship") && (
             <MWSection title="Ready to Ship" subtitle={`${readyToShipOrders.length} completed item${readyToShipOrders.length === 1 ? "" : "s"} waiting to be shipped`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {readyToShipOrders.length === 0 ? <Text c="dimmed">No artwork is currently ready to ship.</Text> : readyToShipOrders.map(renderQueueCard)}
+                {readyToShipOrders.length === 0 ? <Text c="dimmed">No artwork is currently ready to ship.</Text> : readyToShipOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2315,7 +2386,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "Completed / Archive") && (
             <MWSection title="Completed Artwork Archive" subtitle={`${archivedOrders.length} completed item${archivedOrders.length === 1 ? "" : "s"}`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map(renderQueueCard)}
+                {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
