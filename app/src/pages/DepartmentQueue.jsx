@@ -1706,6 +1706,25 @@ function DepartmentQueue({
         !["Fulfilled", "Received", "Completed", "Cancelled"].includes(request.status)
     );
     const materialsReady = materials.length === 0 || materialBlockers.length === 0;
+    const orderNoteLines = String(order?.notes || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const specialInstructionLine = orderNoteLines.findIndex((line) => /^special instructions?:/i.test(line));
+    const specialInstructionText = [
+      specialInstructionLine >= 0
+        ? orderNoteLines.slice(specialInstructionLine).join("\n").replace(/^special instructions?:\s*/i, "")
+        : "",
+      ...items.map((item) => item.notes).filter(Boolean),
+    ].join("\n").trim();
+    const projectDescription = [
+      ...items.map((item) => item.description).filter(Boolean),
+      designWork.description,
+    ].map((value) => String(value || "").trim()).filter(Boolean)[0] || "";
+    const projectNoteLines = [
+      ...(specialInstructionLine >= 0 ? orderNoteLines.slice(0, specialInstructionLine) : orderNoteLines),
+      job?.notes,
+      project?.internal_notes,
+      workOrder.notes,
+    ].flatMap((value) => String(value || "").split("\n").map((line) => line.trim()).filter(Boolean));
+    const uniqueProjectNotes = [...new Set(projectNoteLines)];
 
     return (
       <Card key={workOrder.id} withBorder radius="lg" p="md">
@@ -1752,14 +1771,29 @@ function DepartmentQueue({
             {customerName} — {project?.project_name || productNames}
           </Title>
 
-          {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
-            <Alert color="blue" variant="light" title="Job Notes / Special Instructions" icon={<IconNotes size={17} />}>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {[...new Set([order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
-                  .filter(Boolean))]
-                  .join("\n")}
-              </Text>
-            </Alert>
+          {(projectDescription || specialInstructionText || uniqueProjectNotes.length > 0) && (
+            <Paper withBorder radius="md" p="sm" bg="dark.6">
+              <Stack gap="sm">
+                {projectDescription && (
+                  <div>
+                    <Text size="sm" fw={800}>Project Description</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{projectDescription}</Text>
+                  </div>
+                )}
+                {specialInstructionText && (
+                  <div>
+                    <Text size="sm" fw={800}>Special Instructions</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{specialInstructionText}</Text>
+                  </div>
+                )}
+                {uniqueProjectNotes.length > 0 && (
+                  <div>
+                    <Text size="sm" fw={800}>Project Notes</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{uniqueProjectNotes.join("\n")}</Text>
+                  </div>
+                )}
+              </Stack>
+            </Paper>
           )}
 
           {unifiedArtwork && (
@@ -1914,15 +1948,17 @@ function DepartmentQueue({
             </Paper>
           </SimpleGrid>
 
-          {images.length > 0 && (
-            <div>
-              <Group gap="xs" mb="xs">
-                <IconPhoto size={16} />
-                <Text size="sm" fw={800}>Artwork & Reference Files ({images.length})</Text>
-              </Group>
-              <DesignImageGallery images={images} imageHeight={82} />
-            </div>
-          )}
+          <div>
+            <Group gap="xs" mb="xs">
+              <IconPhoto size={16} />
+              <Text size="sm" fw={800}>Artwork & Reference Images ({images.length})</Text>
+            </Group>
+            <DesignImageGallery
+              images={images}
+              imageHeight={120}
+              emptyMessage="No artwork or reference images are attached yet. Use Edit File / Design Info to add them."
+            />
+          </div>
 
           <FileButton
             multiple
