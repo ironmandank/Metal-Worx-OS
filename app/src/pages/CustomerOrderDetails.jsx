@@ -815,10 +815,10 @@ function CustomerOrderDetails({
       return;
     }
 
-    const orderedMatch = order.notes?.match(/Date ordered:\\s*([^\\n]*)/i);
+    const orderedMatch = order.notes?.match(/Date ordered:\s*([^\n]*)/i);
     const designNotes = order.design_notes || "";
-    const designSource = designNotes.split("\\n")[0] || "Not specified";
-    const designFileMatch = designNotes.match(/Design file:\\s*([^\\n]*)/i);
+    const designSource = designNotes.split("\n")[0] || "Not specified";
+    const designFileMatch = designNotes.match(/Design file:\s*([^\n]*)/i);
     const designFileName = designFileMatch?.[1] || "Not specified";
     const detailCards = [
       ["Customer", customerName],
