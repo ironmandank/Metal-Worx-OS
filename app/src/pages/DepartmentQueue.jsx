@@ -80,7 +80,7 @@ const PRIORITY_QUEUE_STATIONS = new Set(["Design", "Laser", "Paint/Powder"]);
 
 function queueDateTimestamp(value) {
   if (!value) return null;
-  const normalized = /^\\d{4}-\\d{2}-\\d{2}$/.test(String(value))
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(String(value))
     ? `${value}T00:00:00`
     : value;
   const timestamp = new Date(normalized).getTime();
@@ -1556,15 +1556,15 @@ function DepartmentQueue({
     const customerName = order.artwork_customer_name || project?.contact_name || getCustomerName(customer);
     const itemName = order.title || project?.project_name || getProductNames(items, detail.products || []);
     const designNotes = String(order.design_notes || "");
-    const designLines = designNotes.split("\\n").map((line) => line.trim()).filter(Boolean);
+    const designLines = designNotes.split("\n").map((line) => line.trim()).filter(Boolean);
     const designSource = designLines[0] || "Not specified";
     const designFile = designLines.find((line) => line.toLowerCase().startsWith("design file:"));
-    const dateOrdered = String(order.notes || "").match(/Date ordered:\\s*([^\\n]*)/i)?.[1] || "Not recorded";
-    const instructionsFromOrder = String(order.notes || "").match(/Special instructions:\\s*([\\s\\S]*)$/i)?.[1];
+    const dateOrdered = String(order.notes || "").match(/Date ordered:\s*([^\n]*)/i)?.[1] || "Not recorded";
+    const instructionsFromOrder = String(order.notes || "").match(/Special instructions:\s*([\s\S]*)$/i)?.[1];
     const descriptions = items.map((item) => item.description).filter(Boolean);
-    const descriptionsText = descriptions.join("\\n\\n") ||
-      designLines.slice(1).filter((line) => !line.toLowerCase().startsWith("design file:")).join("\\n");
-    const instructions = items.map((item) => item.notes).filter(Boolean).join("\\n\\n") || instructionsFromOrder || "None";
+    const descriptionsText = descriptions.join("\n\n") ||
+      designLines.slice(1).filter((line) => !line.toLowerCase().startsWith("design file:")).join("\n");
+    const instructions = items.map((item) => item.notes).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
     const quantity = items.reduce((total, item) => total + Math.max(1, Math.floor(Number(item.quantity) || 1)), 0) || 1;
     const totalPrice = Number(order.total_amount || 0);
     const fields = [
