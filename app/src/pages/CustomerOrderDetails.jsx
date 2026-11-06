@@ -829,9 +829,11 @@ function CustomerOrderDetails({
       ["Date Requested / Due", formatDate(order.due_date)],
       ["Assigned Designer / Owner", order.order_owner || "Unassigned"],
       ["Artwork Source", designSource],
+      ["Order Total", formatMoney(getOrderTotal(order))],
       ["Design Fee", order.design_fee_required
         ? (order.design_fee_paid || order.design_fee_status === "Paid" ? "Paid" : "Pending")
         : "Not required"],
+      ["Design Fee Method", payments.find((payment) => payment.payment_type === "Design Fee")?.payment_method || "Not recorded"],
     ].map(([label, value]) =>
       "<div class='field'><div class='label'>" + escapeHtml(label) +
       "</div><div class='value'>" + escapeHtml(value || "Not provided") + "</div></div>"
