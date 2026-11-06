@@ -1706,6 +1706,34 @@ function DepartmentQueue({
         !["Fulfilled", "Received", "Completed", "Cancelled"].includes(request.status)
     );
     const materialsReady = materials.length === 0 || materialBlockers.length === 0;
+    const orderNoteLines = String(order?.notes || "").split("\n");
+    const specialInstructionIndex = orderNoteLines.findIndex((line) =>
+      /^special instructions:/i.test(line.trim())
+    );
+    const specialInstructionsFromOrder = specialInstructionIndex >= 0
+      ? [
+          orderNoteLines[specialInstructionIndex].replace(/^special instructions:\s*/i, ""),
+          ...orderNoteLines.slice(specialInstructionIndex + 1),
+        ].join("\n").trim()
+      : "";
+    const cleanOrderNoteLines = specialInstructionIndex >= 0
+      ? orderNoteLines.slice(0, specialInstructionIndex)
+      : orderNoteLines;
+    const projectDescription = items
+      .map((item) => item.description)
+      .filter(Boolean)
+      .join("\n\n") || designWork.description || "";
+    const specialInstructions = [...new Set([
+      ...items.map((item) => item.notes),
+      specialInstructionsFromOrder,
+    ].map((note) => String(note || "").trim()).filter(Boolean))].join("\n\n");
+    const projectNoteLines = [...new Set([
+      ...cleanOrderNoteLines,
+      ...[job?.notes, project?.internal_notes, workOrder.notes]
+        .filter(Boolean)
+        .flatMap((note) => String(note).split("\n")),
+    ].map((note) => String(note || "").trim()).filter(Boolean))];
+    const projectNotes = projectNoteLines.join("\n");
 
     return (
       <Card key={workOrder.id} withBorder radius="lg" p="md">
@@ -1752,14 +1780,29 @@ function DepartmentQueue({
             {customerName} — {project?.project_name || productNames}
           </Title>
 
-          {(order?.notes || job?.notes || project?.internal_notes || workOrder.notes) && (
-            <Alert color="blue" variant="light" title="Job Notes / Special Instructions" icon={<IconNotes size={17} />}>
-              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {[...new Set([order?.notes, job?.notes, project?.internal_notes, workOrder.notes]
-                  .filter(Boolean))]
-                  .join("\n")}
-              </Text>
-            </Alert>
+          {(projectDescription || specialInstructions || projectNotes) && (
+            <Paper withBorder radius="md" p="sm">
+              <Stack gap="sm">
+                {projectDescription && (
+                  <div>
+                    <Text fw={800} size="sm">Project Description</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{projectDescription}</Text>
+                  </div>
+                )}
+                {specialInstructions && (
+                  <div>
+                    <Text fw={800} size="sm">Special Instructions</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{specialInstructions}</Text>
+                  </div>
+                )}
+                {projectNotes && (
+                  <div>
+                    <Text fw={800} size="sm">Project Notes</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{projectNotes}</Text>
+                  </div>
+                )}
+              </Stack>
+            </Paper>
           )}
 
           {unifiedArtwork && (
@@ -1914,15 +1957,17 @@ function DepartmentQueue({
             </Paper>
           </SimpleGrid>
 
-          {images.length > 0 && (
-            <div>
-              <Group gap="xs" mb="xs">
-                <IconPhoto size={16} />
-                <Text size="sm" fw={800}>Artwork & Reference Files ({images.length})</Text>
-              </Group>
-              <DesignImageGallery images={images} imageHeight={82} />
-            </div>
-          )}
+          <div>
+            <Group gap="xs" mb="xs">
+              <IconPhoto size={16} />
+              <Text size="sm" fw={800}>Artwork & Reference Images ({images.length})</Text>
+            </Group>
+            <DesignImageGallery
+              images={images}
+              imageHeight={120}
+              emptyMessage="No artwork or reference images are attached yet. Use Edit File / Design Info to add them."
+            />
+          </div>
 
           <FileButton
             multiple
