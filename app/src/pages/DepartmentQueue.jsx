@@ -80,7 +80,7 @@ function isQueueRush(workOrder, detail) {
     detail?.job?.rush ||
     detail?.project?.priority === "Rush" ||
     detail?.order?.rush ||
-    workOrder?.priority === "High"
+    ["High", "Rush"].includes(workOrder?.priority)
   );
 }
 
@@ -1900,7 +1900,7 @@ function DepartmentQueue({
     );
   }
 
-  function renderQueueCard(workOrder, index, showQueuePosition = false) {
+  function renderQueueCard(workOrder, showQueuePosition = false) {
     const detail = jobDetails[workOrder.production_job_id];
     const job = detail?.job;
     const customer = detail?.customer;
@@ -2326,7 +2326,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Ready") && (
             <MWSection title="Ready" subtitle={`${readyOrders.length} ready to start`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map((workOrder, index) => renderQueueCard(workOrder, index, true))}
+                {readyOrders.length === 0 ? <Text c="dimmed">No work ready to start.</Text> : readyOrders.map((workOrder) => renderQueueCard(workOrder, true))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2334,7 +2334,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "In Progress") && (
             <MWSection title="In Progress" subtitle={`${inProgressOrders.length} currently being worked`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map(renderQueueCard)}
+                {inProgressOrders.length === 0 ? <Text c="dimmed">No work currently in progress.</Text> : inProgressOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2342,7 +2342,7 @@ function DepartmentQueue({
           {(queueFilter === "All" || queueFilter === "Blocked") && (
             <MWSection title="Blocked Work" subtitle={`${blockedOrders.length} waiting on a resolution`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map(renderQueueCard)}
+                {blockedOrders.length === 0 ? <Text c="dimmed">No blocked work at this station.</Text> : blockedOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2350,7 +2350,7 @@ function DepartmentQueue({
           {unifiedArtwork && queueFilter === "All" && needsPlaqueOrders.length > 0 && (
             <MWSection title="Needs Plaque" subtitle={`${needsPlaqueOrders.length} item${needsPlaqueOrders.length === 1 ? "" : "s"} waiting for a plaque`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {needsPlaqueOrders.map(renderQueueCard)}
+                {needsPlaqueOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2361,7 +2361,7 @@ function DepartmentQueue({
                 {awaitingApprovalOrders.length === 0 ? (
                   <Text c="dimmed">No designs are awaiting customer approval.</Text>
                 ) : (
-                  awaitingApprovalOrders.map(renderQueueCard)
+                  awaitingApprovalOrders.map((workOrder) => renderQueueCard(workOrder))
                 )}
               </SimpleGrid>
             </MWSection>
@@ -2370,7 +2370,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "All" || queueFilter === "Waiting for Pickup") && (
             <MWSection title="Waiting for Customer Pickup" subtitle={`${waitingPickupOrders.length} completed item${waitingPickupOrders.length === 1 ? "" : "s"} waiting for the customer`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {waitingPickupOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for customer pickup.</Text> : waitingPickupOrders.map(renderQueueCard)}
+                {waitingPickupOrders.length === 0 ? <Text c="dimmed">No artwork is currently waiting for customer pickup.</Text> : waitingPickupOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2378,7 +2378,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "All" || queueFilter === "Ready to Ship") && (
             <MWSection title="Ready to Ship" subtitle={`${readyToShipOrders.length} completed item${readyToShipOrders.length === 1 ? "" : "s"} waiting to be shipped`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {readyToShipOrders.length === 0 ? <Text c="dimmed">No artwork is currently ready to ship.</Text> : readyToShipOrders.map(renderQueueCard)}
+                {readyToShipOrders.length === 0 ? <Text c="dimmed">No artwork is currently ready to ship.</Text> : readyToShipOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
@@ -2386,7 +2386,7 @@ function DepartmentQueue({
           {unifiedArtwork && (queueFilter === "Completed / Archive") && (
             <MWSection title="Completed Artwork Archive" subtitle={`${archivedOrders.length} completed item${archivedOrders.length === 1 ? "" : "s"}`}>
               <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 4 }} spacing="md" align="start">
-                {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map(renderQueueCard)}
+                {archivedOrders.length === 0 ? <Text c="dimmed">No completed artwork is in the archive.</Text> : archivedOrders.map((workOrder) => renderQueueCard(workOrder))}
               </SimpleGrid>
             </MWSection>
           )}
