@@ -46,6 +46,7 @@ const DEFAULT_FORM = {
   assignedDesigner: "Kory",
   rush: false,
   plaqueRequired: false,
+  plaqueWriteup: "",
   salePrice: "",
 };
 
@@ -285,7 +286,10 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
         description: clean(form.description),
         quantity,
         unit_price: Number(form.salePrice || 0),
-        notes: clean(form.specialInstructions) || null,
+        notes: [
+          clean(form.specialInstructions) ? `Special instructions:\n${clean(form.specialInstructions)}` : "",
+          clean(form.plaqueWriteup) ? `Plaque write-up:\n${clean(form.plaqueWriteup)}` : "",
+        ].filter(Boolean).join("\n") || null,
       });
       if (itemError) throw itemError;
 
@@ -514,6 +518,18 @@ function DesignIntakeModal({ opened, onClose, onCreated, activeUser }) {
             update("plaqueRequired", nextValue);
           }} />
         </SimpleGrid>
+
+        {!isSmallFabrication && form.plaqueRequired && (
+          <Textarea
+            label="Plaque Write-Up"
+            description="Enter the exact text for the plaque. Line breaks are preserved, and the whole write-up stays together for Lori to copy into CorelDRAW."
+            placeholder="Paste the complete plaque wording here"
+            minRows={3}
+            autosize
+            value={form.plaqueWriteup}
+            onChange={(event) => update("plaqueWriteup", event.currentTarget.value)}
+          />
+        )}
 
         <Group justify="flex-end">
           <Button variant="default" onClick={onClose}>Cancel</Button>
