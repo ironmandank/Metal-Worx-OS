@@ -190,6 +190,24 @@ async function downloadReferenceImage(image, index) {
   }
 }
 
+function parseArtworkItemNotes(value) {
+  const sections = { specialInstructions: [], plaqueWriteup: [] };
+  let currentSection = "specialInstructions";
+  String(value || "").split("\n").map((line) => line.trim()).filter(Boolean).forEach((line) => {
+    const match = line.match(/^(special instructions?|plaque write-up|plaque text):\s*(.*)$/i);
+    if (match) {
+      currentSection = /^special/i.test(match[1]) ? "specialInstructions" : "plaqueWriteup";
+      if (match[2]) sections[currentSection].push(match[2]);
+      return;
+    }
+    sections[currentSection].push(line);
+  });
+  return {
+    specialInstructions: sections.specialInstructions.join("\n"),
+    plaqueWriteup: sections.plaqueWriteup.join("\n"),
+  };
+}
+
 function DesignImageGallery({ images, imageHeight = 100, emptyMessage = "No artwork or reference images have been added." }) {
   if (!images?.length) {
     return <Text size="sm" c="dimmed">{emptyMessage}</Text>;
@@ -1564,7 +1582,8 @@ function DepartmentQueue({
     const descriptions = items.map((item) => item.description).filter(Boolean);
     const descriptionsText = descriptions.join("\n\n") ||
       designLines.slice(1).filter((line) => !line.toLowerCase().startsWith("design file:")).join("\n");
-    const instructions = items.map((item) => item.notes).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
+    const itemNoteDetails = items.map((item) => parseArtworkItemNotes(item.notes));
+    const instructions = itemNoteDetails.map((notes) => notes.specialInstructions).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
     const quantity = items.reduce((total, item) => total + Math.max(1, Math.floor(Number(item.quantity) || 1)), 0) || 1;
     const totalPrice = Number(order.total_amount || 0);
     const fields = [
@@ -1589,16 +1608,20 @@ function DepartmentQueue({
       "</div><div class='value'>" + escapePrintHtml(value || "Not provided") + "</div></div>"
     ).join("");
     const itemRows = items.length
-      ? items.map((item) =>
-          "<article class='project'><div class='project-heading'><strong>" +
-          escapePrintHtml(item.item_name || item.design_name || itemName) +
-          "</strong><span>Qty " + escapePrintHtml(item.quantity || 1) +
-          " · Unit " + escapePrintHtml(Number(item.unit_price || 0).toLocaleString("en-US", { style: "currency", currency: "USD" })) +
-          "</span></div><div class='description'><b>Project Description</b><br>" +
-          escapePrintHtml(item.description || "No description entered.") +
-          "</div><div class='instructions'><b>Special Instructions</b><br>" +
-          escapePrintHtml(item.notes || instructionsFromOrder || "None") + "</div></article>"
-        ).join("")
+      ? items.map((item, index) => {
+          const itemNotes = itemNoteDetails[index] || parseArtworkItemNotes(item.notes);
+          return "<article class='project'><div class='project-heading'><strong>" +
+            escapePrintHtml(item.item_name || item.design_name || itemName) +
+            "</strong><span>Qty " + escapePrintHtml(item.quantity || 1) +
+            " · Unit " + escapePrintHtml(Number(item.unit_price || 0).toLocaleString("en-US", { style: "currency", currency: "USD" })) +
+            "</span></div><div class='description'><b>Project Description</b><br>" +
+            escapePrintHtml(item.description || "No description entered.") +
+            "</div><div class='instructions'><b>Special Instructions</b><br>" +
+            escapePrintHtml(itemNotes.specialInstructions || instructionsFromOrder || "None") + "</div>" +
+            (itemNotes.plaqueWriteup
+              ? "<div class='instructions'><b>Plaque Write-Up</b><br>" + escapePrintHtml(itemNotes.plaqueWriteup) + "</div>"
+              : "") + "</article>";
+        }).join("")
       : "<article class='project'><div class='description'><b>Project Description</b><br>" +
         escapePrintHtml(descriptionsText || "No description entered.") +
         "</div><div class='instructions'><b>Special Instructions</b><br>" +
@@ -1708,12 +1731,14 @@ function DepartmentQueue({
     const materialsReady = materials.length === 0 || materialBlockers.length === 0;
     const orderNoteLines = String(order?.notes || "").split("\n").map((line) => line.trim()).filter(Boolean);
     const specialInstructionLine = orderNoteLines.findIndex((line) => /^special instructions?:/i.test(line));
-    const specialInstructionText = [
+    const itemNoteDetails = items.map((item) => parseArtworkItemNotes(item.notes));
+    const specialInstructionText = [...new Set([
       specialInstructionLine >= 0
         ? orderNoteLines.slice(specialInstructionLine).join("\n").replace(/^special instructions?:\s*/i, "")
         : "",
-      ...items.map((item) => item.notes).filter(Boolean),
-    ].join("\n").trim();
+      ...itemNoteDetails.map((notes) => notes.specialInstructions),
+    ].filter(Boolean))].join("\n");
+    const plaqueWriteupText = [...new Set(itemNoteDetails.map((notes) => notes.plaqueWriteup).filter(Boolean))].join("\n");
     const projectDescription = [
       ...items.map((item) => item.description).filter(Boolean),
       designWork.description,
@@ -1790,6 +1815,12 @@ function DepartmentQueue({
                   <div>
                     <Text size="sm" fw={800}>Project Notes</Text>
                     <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{uniqueProjectNotes.join("\n")}</Text>
+                  </div>
+                )}
+                {plaqueWriteupText && (
+                  <div>
+                    <Text size="sm" fw={800}>Plaque Write-Up</Text>
+                    <Text size="sm" mt={4} style={{ whiteSpace: "pre-wrap" }}>{plaqueWriteupText}</Text>
                   </div>
                 )}
               </Stack>
