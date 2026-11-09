@@ -1582,7 +1582,8 @@ function DepartmentQueue({
     const descriptions = items.map((item) => item.description).filter(Boolean);
     const descriptionsText = descriptions.join("\n\n") ||
       designLines.slice(1).filter((line) => !line.toLowerCase().startsWith("design file:")).join("\n");
-    const instructions = items.map((item) => item.notes).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
+    const itemNoteDetails = items.map((item) => parseArtworkItemNotes(item.notes));
+    const instructions = itemNoteDetails.map((notes) => notes.specialInstructions).filter(Boolean).join("\n\n") || instructionsFromOrder || "None";
     const quantity = items.reduce((total, item) => total + Math.max(1, Math.floor(Number(item.quantity) || 1)), 0) || 1;
     const totalPrice = Number(order.total_amount || 0);
     const fields = [
