@@ -49,6 +49,7 @@ const EMPTY_FORM = {
   display_name: "",
   email: "",
   department: "Operations",
+  access_level: "Read Only",
   password: "",
 };
 
@@ -108,6 +109,7 @@ function EmployeeLoginManagement() {
       display_name: employee.display_name || "",
       email: employee.email || "",
       department: employee.department || "Operations",
+      access_level: "Read Only",
       password: "",
     });
   }
@@ -287,9 +289,10 @@ function EmployeeLoginManagement() {
       >
         <Stack gap="lg">
           <Alert color="blue" icon={<IconShieldCheck size={20} />}>
-            Every authenticated employee receives the same operational access
-            during the pilot. Selecting an existing employee prevents duplicate
-            personnel records.
+            Choose the access each employee needs. Design Station Only opens
+            the Artwork Workflow and allows design file uploads without access
+            to the rest of the workspace. Selecting an existing employee
+            prevents duplicate personnel records.
           </Alert>
 
           <Select
@@ -337,6 +340,23 @@ function EmployeeLoginManagement() {
               data={EMPLOYEE_DEPARTMENTS}
               value={form.department}
               onChange={(value) => setField("department", value || "Operations")}
+            />
+            <Select
+              required
+              label="App Access"
+              description={form.access_level === "Design Station Only"
+                ? "This login opens only the Design station and can attach design files to artwork jobs."
+                : "Read-only access across the employee workspace."}
+              data={[
+                { value: "Read Only", label: "Read Only" },
+                { value: "Design Station Only", label: "Design Station Only" },
+              ]}
+              value={form.access_level}
+              onChange={(value) => setForm((current) => ({
+                ...current,
+                access_level: value || "Read Only",
+                department: value === "Design Station Only" ? "Design" : current.department,
+              }))}
             />
           </SimpleGrid>
 

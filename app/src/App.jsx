@@ -291,10 +291,15 @@ function App() {
       }
 
       setAuthSession(nextSession);
+      const accessLevel = profile.access_level || "Employee";
       setAuthenticatedProfile({
         ...profile,
-        access_level: profile.access_level || "Employee",
+        access_level: accessLevel,
       });
+      if (accessLevel === "Design Station Only") {
+        setSelectedDepartment("Design");
+        setPage("designQueue");
+      }
       setActiveUser(profile.display_name);
       setAuthError("");
       setAuthLoading(false);
@@ -526,6 +531,19 @@ function App() {
   }
 
   function renderPage() {
+    const isDesignStationOnly =
+      authenticatedProfile?.access_level === "Design Station Only";
+
+    if (isDesignStationOnly && page !== "designQueue") {
+      return (
+        <AccessDenied
+          accessLevel={authenticatedProfile?.access_level}
+          requestedPage="Only the Artwork Workflow is available for this login."
+          setPage={() => setPage("designQueue")}
+        />
+      );
+    }
+
     const administratorOnlyPages = new Set([
       "employeeLogins",
       "inventoryImport",

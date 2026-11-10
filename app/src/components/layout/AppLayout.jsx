@@ -422,10 +422,17 @@ function AppLayout({
   const isReadOnly = String(
     authenticatedProfile?.access_level || "",
   ).toLowerCase().includes("read only");
+  const isDesignStationOnly =
+    authenticatedProfile?.access_level === "Design Station Only";
+  const visiblePrimaryNav = isDesignStationOnly
+    ? PRIMARY_NAV.filter((item) => item.page === "designQueue")
+    : PRIMARY_NAV;
 
   const visibleNavGroups = useMemo(
     () =>
-      NAV_GROUPS.map((group) => ({
+      isDesignStationOnly
+        ? []
+        : NAV_GROUPS.map((group) => ({
         ...group,
         items: group.items.filter(
           (item) =>
@@ -433,7 +440,7 @@ function AppLayout({
             (!item.writeRestricted || !isReadOnly),
         ),
       })),
-    [isAdministrator, isReadOnly],
+    [isAdministrator, isReadOnly, isDesignStationOnly],
   );
 
   const activeGroup = useMemo(
@@ -613,7 +620,7 @@ function AppLayout({
 
         <nav className="mw-rail-navigation">
           <div className="mw-rail-primary">
-            {PRIMARY_NAV.map((item) => {
+            {visiblePrimaryNav.map((item) => {
               const ItemIcon = item.icon;
               const active = activePage === item.page;
 
@@ -735,24 +742,28 @@ function AppLayout({
 
       <main className="mw-main">
         <header className="mw-topbar mw-compact-topbar">
-          <button
-            type="button"
-          className="mw-mobile-menu-button"
-          data-tour="nav-menu"
-            onClick={() => {
-              setExpanded(true);
-              setOpenGroup("");
-            }}
-            aria-label="Open navigation"
-          >
-            <IconMenu2 />
-            <span>Menu</span>
-          </button>
-          <SearchBar onOpenResult={openGlobalSearchResult} />
+          {!isDesignStationOnly && (
+            <>
+              <button
+                type="button"
+                className="mw-mobile-menu-button"
+                data-tour="nav-menu"
+                onClick={() => {
+                  setExpanded(true);
+                  setOpenGroup("");
+                }}
+                aria-label="Open navigation"
+              >
+                <IconMenu2 />
+                <span>Menu</span>
+              </button>
+              <SearchBar onOpenResult={openGlobalSearchResult} />
+            </>
+          )}
 
           <div className="mw-topbar-actions">
-            {isReadOnly && <div className="mw-readonly-indicator">View Only</div>}
-            <div
+            {!isDesignStationOnly && isReadOnly && <div className="mw-readonly-indicator">View Only</div>}
+            {!isDesignStationOnly && <div
               className="mw-global-shop-status"
               data-tour="shop-status"
               title="Metal Worx shop systems are online"
@@ -761,9 +772,9 @@ function AppLayout({
               <i />
               <span>Shop Status:</span>
               <small>Live</small>
-            </div>
+            </div>}
 
-            <div className="mw-notification-wrap" data-tour="notifications">
+            {!isDesignStationOnly && <div className="mw-notification-wrap" data-tour="notifications">
               <button
                 type="button"
                 className="mw-notification-button"
@@ -823,9 +834,9 @@ function AppLayout({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
-            <AnimatedWalkthrough currentPage={activePage} navigate={navigate} />
+            {!isDesignStationOnly && <AnimatedWalkthrough currentPage={activePage} navigate={navigate} />}
 
             <div className="mw-topbar-user">
               <div className="mw-topbar-avatar">
@@ -840,7 +851,7 @@ function AppLayout({
         </header>
 
         <section className="mw-content" data-tour="page-content">{children}</section>
-        <SparkyAssistant currentPage={activePage} activeUser={safeActiveUser} authenticatedProfile={authenticatedProfile} setPage={setPage}/>
+        {!isDesignStationOnly && <SparkyAssistant currentPage={activePage} activeUser={safeActiveUser} authenticatedProfile={authenticatedProfile} setPage={setPage} />}
       </main>
     </div>
   );

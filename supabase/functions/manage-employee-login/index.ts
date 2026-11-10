@@ -6,7 +6,7 @@ type AccountAction =
   | "reset_password"
   | "set_active"
   | "remove_login";
-type AccessLevel = "Administrator" | "Read Only";
+type AccessLevel = "Administrator" | "Read Only" | "Design Station Only";
 
 type RequestBody = {
   action?: AccountAction;
@@ -29,6 +29,7 @@ const corsHeaders = {
 const allowedAccessLevels = new Set<AccessLevel>([
   "Administrator",
   "Read Only",
+  "Design Station Only",
 ]);
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -294,6 +295,10 @@ Deno.serve(async (request: Request) => {
         displayName = cleanText(existingProfile.display_name);
         department =
           cleanText(existingProfile.department) || department;
+      }
+
+      if (accessLevel === "Design Station Only") {
+        department = "Design";
       }
 
       if (!displayName) {
