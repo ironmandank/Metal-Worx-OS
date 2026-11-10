@@ -289,9 +289,10 @@ function EmployeeLoginManagement() {
       >
         <Stack gap="lg">
           <Alert color="blue" icon={<IconShieldCheck size={20} />}>
-            Every authenticated employee receives the same operational access
-            during the pilot. Selecting an existing employee prevents duplicate
-            personnel records.
+            Choose the access each employee needs. Design Station Only opens
+            the Artwork Workflow and allows design file uploads without access
+            to the rest of the workspace. Selecting an existing employee
+            prevents duplicate personnel records.
           </Alert>
 
           <Select
