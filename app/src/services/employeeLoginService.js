@@ -85,7 +85,7 @@ export async function createEmployeeLogin(values) {
     email: values.email,
     department: values.department,
     password: values.password,
-    access_level: "Read Only",
+    access_level: values.access_level || "Read Only",
   });
 }
 
