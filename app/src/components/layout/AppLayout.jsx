@@ -834,7 +834,7 @@ function AppLayout({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {!isDesignStationOnly && <AnimatedWalkthrough currentPage={activePage} navigate={navigate} />}
 
