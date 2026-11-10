@@ -851,7 +851,7 @@ function AppLayout({
         </header>
 
         <section className="mw-content" data-tour="page-content">{children}</section>
-        {!isDesignStationOnly && <SparkyAssistant currentPage={activePage} activeUser={safeActiveUser} authenticatedProfile={authenticatedProfile} setPage={setPage}/ >}
+        {!isDesignStationOnly && <SparkyAssistant currentPage={activePage} activeUser={safeActiveUser} authenticatedProfile={authenticatedProfile} setPage={setPage} />}
       </main>
     </div>
   );
