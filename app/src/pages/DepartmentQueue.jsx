@@ -2387,8 +2387,9 @@ function DepartmentQueue({
           : department === "Design"
           ? "Add customer design work, track Kory's progress, and hold finished proofs for customer approval."
           : `Only work currently ready or in progress for ${department}.`}
-        buttonText={(department === "Design" || unifiedArtwork) ? "Add Artwork / Small Job" : "Production Control"}
+        buttonText={accessLevel === "Design Station Only" ? undefined : (department === "Design" || unifiedArtwork) ? "Add Artwork / Small Job" : "Production Control"}
         onButtonClick={(department === "Design" || unifiedArtwork) ? onCreateDesign : () => setPage("productionControl")}
+        showDashboard={accessLevel !== "Design Station Only"}
       />
 
       {(unifiedArtwork || priorityQueueStation) && (
@@ -2802,10 +2803,11 @@ function DepartmentQueue({
               }}
             />
           </SimpleGrid>
-          <Paper withBorder radius="md" p="md">
-            <Stack gap="sm">
-              <Switch
-                label="Design fee is required"
+          {accessLevel !== "Design Station Only" && (
+            <Paper withBorder radius="md" p="md">
+              <Stack gap="sm">
+                <Switch
+                  label="Design fee is required"
                 checked={designDraft.feeRequired}
                 onChange={(event) => {
                   const checked = event.currentTarget.checked;
@@ -2824,9 +2826,10 @@ function DepartmentQueue({
                   const checked = event.currentTarget.checked;
                   setDesignDraft((current) => ({ ...current, feePaid: checked }));
                 }}
-              />
-            </Stack>
-          </Paper>
+                />
+              </Stack>
+            </Paper>
+          )}
           <Paper withBorder radius="md" p="md">
             <Stack gap="sm">
               <div>
