@@ -304,6 +304,7 @@ function DepartmentQueue({
 }) {
   const [workOrders, setWorkOrders] = useState([]);
   const [jobDetails, setJobDetails] = useState({});
+  const [hotPriorityJobIds, setHotPriorityJobIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [queueFilter, setQueueFilter] = useState("All");
   const [stageFilter, setStageFilter] = useState("All Active Stages");
@@ -373,6 +374,17 @@ function DepartmentQueue({
       console.error(error);
       setLoading(false);
       return;
+    }
+
+    const { data: hotRows, error: hotRowsError } = await supabase
+      .from("artwork_priority_items")
+      .select("production_job_id")
+      .eq("status", "Open");
+    if (hotRowsError) {
+      console.error("Could not load Hot Priority markers:", hotRowsError);
+      setHotPriorityJobIds(new Set());
+    } else {
+      setHotPriorityJobIds(new Set((hotRows || []).map((item) => String(item.production_job_id))));
     }
 
     const rows = data || [];
@@ -2359,7 +2371,9 @@ function DepartmentQueue({
                 </Badge>
               )}
               {overdue && <Badge color="red">Overdue</Badge>}
-              {workOrder.priority === "High" && <Badge color="orange">High Priority</Badge>}
+              {hotPriorityJobIds.has(String(workOrder.production_job_id))
+                ? <Badge color="red" variant="filled">Hot Priority</Badge>
+                : workOrder.priority === "High" && <Badge color="orange">High Priority</Badge>}
             </Group>
             <IconChevronRight size={20} color="var(--mantine-color-dimmed)" />
           </Group>
