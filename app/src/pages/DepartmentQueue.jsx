@@ -311,15 +311,7 @@ function DepartmentQueue({
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState([]);
   const [priorityModalOpen, setPriorityModalOpen] = useState(false);
   const [prioritySaving, setPrioritySaving] = useState(false);
-  const [priorityChecklist, setPriorityChecklist] = useState({
-    needs_cut: false,
-    needs_paint: false,
-    needs_powder_coat: false,
-    needs_prep: false,
-    needs_touch_up: false,
-    other_requirements: "",
-    notes: "",
-  });
+  const [priorityChecklistByJob, setPriorityChecklistByJob] = useState({});
   const [bulkStage, setBulkStage] = useState(null);
   const [bulkMoving, setBulkMoving] = useState(false);
   const [artworkDrafts, setArtworkDrafts] = useState({});
@@ -1495,13 +1487,39 @@ function DepartmentQueue({
       : [...current, workOrderId]);
   }
 
-  async function addSelectedToHotPriority() {
-    if (prioritySaving || selectedWorkOrderIds.length === 0) return;
-    const selectedOrders = workOrders
+  function selectedPriorityOrders() {
+    return workOrders
       .filter((workOrder) => selectedWorkOrderIds.includes(workOrder.id) && workOrder.production_job_id)
       .filter((workOrder, index, list) =>
         list.findIndex((item) => item.production_job_id === workOrder.production_job_id) === index
       );
+  }
+
+  function priorityItemLabel(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id] || {};
+    const customerName = detail.order?.artwork_customer_name || getCustomerName(detail.customer);
+    const itemName = (detail.items || [])
+      .map((item) => item.item_name || item.description)
+      .filter(Boolean)
+      .join(", ");
+    return `${customerName} — ${itemName || detail.job?.production_job_number || workOrder.work_order_number || "Artwork item"}`;
+  }
+
+  function priorityChecklistFor(workOrder) {
+    return priorityChecklistByJob[String(workOrder.production_job_id)] || {};
+  }
+
+  function updatePriorityChecklist(workOrder, field, value) {
+    const key = String(workOrder.production_job_id);
+    setPriorityChecklistByJob((current) => ({
+      ...current,
+      [key]: { ...(current[key] || {}), [field]: value },
+    }));
+  }
+
+  async function addSelectedToHotPriority() {
+    if (prioritySaving || selectedWorkOrderIds.length === 0) return;
+    const selectedOrders = selectedPriorityOrders();
 
     if (selectedOrders.length === 0) {
       notifications.show({ title: "No Artwork Selected", message: "Select at least one artwork item first.", color: "orange" });
@@ -1516,22 +1534,27 @@ function DepartmentQueue({
       if (userError) throw userError;
 
       const now = new Date().toISOString();
-      const payload = selectedOrders.map((workOrder) => ({
-        production_job_id: workOrder.production_job_id,
-        employee_profile_id: profile.id,
-        needs_cut: priorityChecklist.needs_cut,
-        needs_paint: priorityChecklist.needs_paint,
-        needs_powder_coat: priorityChecklist.needs_powder_coat,
-        needs_prep: priorityChecklist.needs_prep,
-        needs_touch_up: priorityChecklist.needs_touch_up,
-        other_requirements: priorityChecklist.other_requirements.trim() || null,
-        notes: priorityChecklist.notes.trim() || null,
-        status: "Open",
-        created_by: userData?.user?.id || null,
-        completed_at: null,
-        completed_by: null,
-        updated_at: now,
-      }));
+      const payload = selectedOrders.map((workOrder) => {
+        const checklist = priorityChecklistFor(workOrder);
+        return {
+          production_job_id: workOrder.production_job_id,
+          employee_profile_id: profile.id,
+          needs_cut: Boolean(checklist.needs_cut),
+          needs_paint: Boolean(checklist.needs_paint),
+          needs_powder_coat: Boolean(checklist.needs_powder_coat),
+          needs_prep: Boolean(checklist.needs_prep),
+          needs_touch_up: Boolean(checklist.needs_touch_up),
+          needs_patina: Boolean(checklist.needs_patina),
+          needs_welding: Boolean(checklist.needs_welding),
+          other_requirements: String(checklist.other_requirements || "").trim() || null,
+          notes: String(checklist.notes || "").trim() || null,
+          status: "Open",
+          created_by: userData?.user?.id || null,
+          completed_at: null,
+          completed_by: null,
+          updated_at: now,
+        };
+      });
       const { error: listError } = await supabase
         .from("artwork_priority_items")
         .upsert(payload, { onConflict: "production_job_id,employee_profile_id" });
@@ -1545,15 +1568,7 @@ function DepartmentQueue({
 
       setSelectedWorkOrderIds([]);
       setPriorityModalOpen(false);
-      setPriorityChecklist({
-        needs_cut: false,
-        needs_paint: false,
-        needs_powder_coat: false,
-        needs_prep: false,
-        needs_touch_up: false,
-        other_requirements: "",
-        notes: "",
-      });
+      setPriorityChecklistByJob({});
       notifications.show({
         title: "Added to Hot Priority",
         message: `${selectedOrders.length} item${selectedOrders.length === 1 ? " is" : "s are"} now on the shared Hot Priority list.`,
@@ -3111,66 +3126,79 @@ function DepartmentQueue({
       <Modal
         opened={priorityModalOpen}
         onClose={() => setPriorityModalOpen(false)}
-        title="Add Selected Items to Hot Priority"
+        title="Set Hot Priority Work"
         centered
-        size="md"
+        size="lg"
+        fullScreen={false}
+        scrollAreaComponent={undefined}
       >
         <Stack gap="sm">
           <Alert color="orange" icon={<IconFlag size={18} />}>
-            Selected artwork will be marked High Priority and appear on the shared Hot Priority list with its current station.
+            Set the work needed for each item separately. The list will show the item’s current station.
           </Alert>
-          <Text fw={800} size="sm">Work needed</Text>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-            <Checkbox
-              label="Needs cutting"
-              checked={priorityChecklist.needs_cut}
-              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_cut: event.currentTarget.checked }))}
-            />
-            <Checkbox
-              label="Needs paint"
-              checked={priorityChecklist.needs_paint}
-              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_paint: event.currentTarget.checked }))}
-            />
-            <Checkbox
-              label="Needs powder coat"
-              checked={priorityChecklist.needs_powder_coat}
-              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_powder_coat: event.currentTarget.checked }))}
-            />
-            <Checkbox
-              label="Needs prep / sanding"
-              checked={priorityChecklist.needs_prep}
-              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_prep: event.currentTarget.checked }))}
-            />
-            <Checkbox
-              label="Needs touch-up"
-              checked={priorityChecklist.needs_touch_up}
-              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_touch_up: event.currentTarget.checked }))}
-            />
-          </SimpleGrid>
-          <Textarea
-            label="Other work needed"
-            placeholder="Add any other finishing or paint instructions"
-            minRows={2}
-            value={priorityChecklist.other_requirements}
-            onChange={(event) => setPriorityChecklist((current) => ({ ...current, other_requirements: event.currentTarget.value }))}
-          />
-          <Textarea
-            label="Notes for the team"
-            placeholder="Color, finish, or what needs attention"
-            minRows={2}
-            value={priorityChecklist.notes}
-            onChange={(event) => setPriorityChecklist((current) => ({ ...current, notes: event.currentTarget.value }))}
-          />
-          <Text size="xs" c="dimmed">
-            The same checklist and notes will be applied to all {selectedWorkOrderIds.length} selected item{selectedWorkOrderIds.length === 1 ? "" : "s"}.
-          </Text>
+          <Stack gap="md">
+            {selectedPriorityOrders().map((workOrder) => {
+              const checklist = priorityChecklistFor(workOrder);
+              return (
+                <Paper key={workOrder.id} withBorder radius="md" p="sm">
+                  <Stack gap="xs">
+                    <Group justify="space-between" align="flex-start">
+                      <Text fw={800} size="sm">{priorityItemLabel(workOrder)}</Text>
+                      <Badge color="violet" variant="light">Station: {stationFor(workOrder)}</Badge>
+                    </Group>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                      {[
+                        ["needs_cut", "Needs cutting"],
+                        ["needs_paint", "Needs paint"],
+                        ["needs_powder_coat", "Needs powder coat"],
+                        ["needs_prep", "Needs prep / sanding"],
+                        ["needs_touch_up", "Needs touch-up"],
+                        ["needs_patina", "Needs patina"],
+                        ["needs_welding", "Needs welding / fabrication"],
+                      ].map(([field, label]) => (
+                        <Checkbox
+                          key={field}
+                          label={label}
+                          checked={Boolean(checklist[field])}
+                          onChange={(event) => {
+                            const checked = Boolean(event?.currentTarget?.checked ?? event?.target?.checked);
+                            updatePriorityChecklist(workOrder, field, checked);
+                          }}
+                        />
+                      ))}
+                    </SimpleGrid>
+                    <Textarea
+                      label="Other work needed"
+                      placeholder="Additional work for this item"
+                      minRows={2}
+                      value={checklist.other_requirements || ""}
+                      onChange={(event) => {
+                        const value = event?.currentTarget?.value ?? event?.target?.value ?? "";
+                        updatePriorityChecklist(workOrder, "other_requirements", value);
+                      }}
+                    />
+                    <Textarea
+                      label="Notes for the team"
+                      placeholder="Color, finish, or anything the team should know"
+                      minRows={2}
+                      value={checklist.notes || ""}
+                      onChange={(event) => {
+                        const value = event?.currentTarget?.value ?? event?.target?.value ?? "";
+                        updatePriorityChecklist(workOrder, "notes", value);
+                      }}
+                    />
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Stack>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setPriorityModalOpen(false)}>Cancel</Button>
             <Button
               color="orange"
               leftSection={<IconFlag size={16} />}
               loading={prioritySaving}
-              disabled={selectedWorkOrderIds.length === 0}
+              disabled={selectedPriorityOrders().length === 0}
               onClick={addSelectedToHotPriority}
             >
               Add to Hot Priority
