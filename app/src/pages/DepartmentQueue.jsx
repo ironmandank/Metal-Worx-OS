@@ -60,7 +60,7 @@ import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
 import { getDesignComplexity } from "../lib/designPriority";
-import { createNotificationForProfile, getProfileByName } from "../services/notificationService";
+
 
 function escapePrintHtml(value) {
   return String(value ?? "")
@@ -311,6 +311,7 @@ function DepartmentQueue({
   const [priorityModalOpen, setPriorityModalOpen] = useState(false);
   const [prioritySaving, setPrioritySaving] = useState(false);
   const [priorityChecklist, setPriorityChecklist] = useState({
+    needs_cut: false,
     needs_paint: false,
     needs_powder_coat: false,
     needs_prep: false,
@@ -1503,7 +1504,7 @@ function DepartmentQueue({
     return `${customerName} — ${itemName || detail.job?.production_job_number || workOrder.work_order_number || "Artwork item"}`;
   }
 
-  async function addSelectedToChrisPriority() {
+  async function addSelectedToHotPriority() {
     if (prioritySaving || selectedWorkOrderIds.length === 0) return;
     const selectedOrders = workOrders
       .filter((workOrder) => selectedWorkOrderIds.includes(workOrder.id) && workOrder.production_job_id)
@@ -1518,15 +1519,13 @@ function DepartmentQueue({
 
     setPrioritySaving(true);
     try {
-      const profile = await getProfileByName("Chris");
-      if (!profile) throw new Error("Chris's active employee profile could not be found.");
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
 
       const now = new Date().toISOString();
       const payload = selectedOrders.map((workOrder) => ({
         production_job_id: workOrder.production_job_id,
-        employee_profile_id: profile.id,
+        needs_cut: priorityChecklist.needs_cut,
         needs_paint: priorityChecklist.needs_paint,
         needs_powder_coat: priorityChecklist.needs_powder_coat,
         needs_prep: priorityChecklist.needs_prep,
@@ -1541,7 +1540,7 @@ function DepartmentQueue({
       }));
       const { error: listError } = await supabase
         .from("artwork_priority_items")
-        .upsert(payload, { onConflict: "production_job_id,employee_profile_id" });
+        .upsert(payload, { onConflict: "production_job_id" });
       if (listError) throw listError;
 
       const { error: priorityError } = await supabase
@@ -1550,25 +1549,10 @@ function DepartmentQueue({
         .in("id", selectedOrders.map((workOrder) => workOrder.id));
       if (priorityError) throw priorityError;
 
-      const labels = selectedOrders.slice(0, 4).map(priorityItemLabel).join("; ");
-      try {
-        await createNotificationForProfile({
-          recipientProfileId: profile.id,
-          notificationType: "Task",
-          title: `${selectedOrders.length} artwork item${selectedOrders.length === 1 ? "" : "s"} marked priority`,
-          message: `See My Tasks → Artwork Priority Needed. ${labels}${selectedOrders.length > 4 ? "; and more" : ""}`,
-          sourceType: "artwork_priority",
-          sourceId: selectedOrders[0]?.production_job_id,
-          targetPage: "myTasks",
-          priority: "High",
-        });
-      } catch (notificationError) {
-        console.warn("Priority list saved, but Chris's in-app alert could not be created:", notificationError);
-      }
-
       setSelectedWorkOrderIds([]);
       setPriorityModalOpen(false);
       setPriorityChecklist({
+        needs_cut: false,
         needs_paint: false,
         needs_powder_coat: false,
         needs_prep: false,
@@ -1577,8 +1561,8 @@ function DepartmentQueue({
         notes: "",
       });
       notifications.show({
-        title: "Added to Chris's Priority List",
-        message: `${selectedOrders.length} item${selectedOrders.length === 1 ? " is" : "s are"} marked high priority and will appear in My Tasks.`,
+        title: "Added to Hot Priority",
+        message: `${selectedOrders.length} item${selectedOrders.length === 1 ? " is" : "s are"} now on the shared Hot Priority list.`,
         color: "green",
       });
       await loadQueue();
@@ -2620,7 +2604,7 @@ function DepartmentQueue({
                 disabled={selectedWorkOrderIds.length === 0}
                 onClick={() => setPriorityModalOpen(true)}
               >
-                Priority Needed for Chris
+                Add to Hot Priority List
               </Button>
               <Select
                 label={`${selectedWorkOrderIds.length} selected`}
@@ -3133,16 +3117,21 @@ function DepartmentQueue({
       <Modal
         opened={priorityModalOpen}
         onClose={() => setPriorityModalOpen(false)}
-        title="Add to Chris's Priority Needed List"
+        title="Add Selected Items to Hot Priority"
         centered
         size="md"
       >
         <Stack gap="sm">
           <Alert color="orange" icon={<IconFlag size={18} />}>
-            Selected artwork will be marked High Priority and will appear in Chris's My Tasks list on his phone.
+            Selected artwork will be marked High Priority and appear on the shared Hot Priority list with its current station.
           </Alert>
           <Text fw={800} size="sm">Work needed</Text>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            <Checkbox
+              label="Needs cutting"
+              checked={priorityChecklist.needs_cut}
+              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_cut: event.currentTarget.checked }))}
+            />
             <Checkbox
               label="Needs paint"
               checked={priorityChecklist.needs_paint}
@@ -3172,7 +3161,7 @@ function DepartmentQueue({
             onChange={(event) => setPriorityChecklist((current) => ({ ...current, other_requirements: event.currentTarget.value }))}
           />
           <Textarea
-            label="Notes for Chris"
+            label="Notes for the team"
             placeholder="Color, finish, or what needs attention"
             minRows={2}
             value={priorityChecklist.notes}
@@ -3188,9 +3177,9 @@ function DepartmentQueue({
               leftSection={<IconFlag size={16} />}
               loading={prioritySaving}
               disabled={selectedWorkOrderIds.length === 0}
-              onClick={addSelectedToChrisPriority}
+              onClick={addSelectedToHotPriority}
             >
-              Add to Priority List
+              Add to Hot Priority
             </Button>
           </Group>
         </Stack>
