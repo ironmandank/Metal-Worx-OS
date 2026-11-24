@@ -2522,6 +2522,8 @@ function DepartmentQueue({
           : `Only work currently ready or in progress for ${department}.`}
         buttonText={accessLevel === "Design Station Only" ? undefined : (department === "Design" || unifiedArtwork) ? "Add Artwork / Small Job" : "Production Control"}
         onButtonClick={(department === "Design" || unifiedArtwork) ? onCreateDesign : () => setPage("productionControl")}
+        secondaryButtonText={unifiedArtwork ? "Hot Priority List" : undefined}
+        onSecondaryButtonClick={unifiedArtwork ? () => setPage("myTasks") : undefined}
         showDashboard={accessLevel !== "Design Station Only"}
       />
 
