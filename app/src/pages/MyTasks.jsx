@@ -331,6 +331,7 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
       [item.needs_paint, "Paint"],
       [item.needs_powder_coat, "Powder coat"],
       [item.needs_patina, "Patina"],
+      [item.needs_clear_coat, "Clear coat"],
       [item.needs_touch_up, "Touch-up"],
     ].filter(([needed]) => needed).map(([, label]) => label);
     const isExpanded = expandedPriorityIds.includes(item.id);
