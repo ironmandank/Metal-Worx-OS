@@ -134,7 +134,7 @@ async function loadArtworkPriorityDetails(rows = []) {
       item_name: itemName,
       department: workOrder?.department || job?.current_department || "Station not set",
       work_status: workOrder?.status || job?.status || "Open",
-      due_date: job?.due_date || order?.due_date || null,
+      due_date: row.due_date || job?.due_date || order?.due_date || null,
     };
   });
 }
