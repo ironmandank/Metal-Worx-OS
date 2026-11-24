@@ -303,9 +303,11 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
   function ArtworkPriorityCard({ item }) {
     const checklist = [
       [item.needs_cut, "Needs cutting"],
+      [item.needs_welding, "Needs welding / fabrication"],
+      [item.needs_prep, "Needs prep / sanding"],
       [item.needs_paint, "Needs paint"],
       [item.needs_powder_coat, "Needs powder coat"],
-      [item.needs_prep, "Needs prep / sanding"],
+      [item.needs_patina, "Needs patina"],
       [item.needs_touch_up, "Needs touch-up"],
     ];
     return <Card withBorder radius="lg" p="md" style={{ borderLeft: "4px solid #f08c00" }}>
