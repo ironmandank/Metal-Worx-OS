@@ -188,9 +188,15 @@ const [isExpanded, setIsExpanded] = useState(false);
               <Badge color="violet" variant="light">Station: {item.department}</Badge>
               <Badge color="gray" variant="light">{item.work_status}</Badge>
             </Group>
-            <Text c="red.7" fw={900} size="lg" style={{ letterSpacing: 0.2 }}>
+            <Badge
+              size="lg"
+              variant="filled"
+              color="white"
+              c="red.9"
+              style={{ fontWeight: 900, fontSize: 16, letterSpacing: 0.2 }}
+            >
               {dueDateLabel ? `DUE: ${dueDateLabel}` : "DUE DATE NOT SET"}
-            </Text>
+            </Badge>
           </Stack>
           <Group gap="xs">
             <Button
