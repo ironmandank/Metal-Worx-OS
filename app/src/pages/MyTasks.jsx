@@ -74,7 +74,7 @@ async function loadArtworkPriorityDetails(rows = []) {
   const profileIds = [...new Set(rows.map((row) => row.employee_profile_id).filter(Boolean))];
   const [jobsResult, employeesResult] = await Promise.all([
     jobIds.length
-      ? supabase.from("production_jobs").select("id,customer_order_id,current_department,due_date,production_job_number,status").in("id", jobIds)
+      ? supabase.from("production_jobs").select("*").in("id", jobIds)
       : Promise.resolve({ data: [], error: null }),
     profileIds.length
       ? supabase.from("employee_profiles").select("id,display_name").in("id", profileIds)
@@ -85,7 +85,7 @@ async function loadArtworkPriorityDetails(rows = []) {
 
   const jobs = jobsResult.data || [];
   const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
-  const [ordersResult, itemsResult, workOrdersResult, customersResult, imagesResult] = await Promise.all([
+  const [ordersResult, itemsResult, workOrdersResult, imagesResult] = await Promise.all([
     orderIds.length
       ? supabase.from("customer_orders").select("*").in("id", orderIds)
       : Promise.resolve({ data: [], error: null }),
@@ -96,19 +96,23 @@ async function loadArtworkPriorityDetails(rows = []) {
       ? supabase.from("work_orders").select("production_job_id,department,status,step_order").in("production_job_id", jobIds).eq("is_active", true).in("status", ["Ready", "In Progress", "Blocked"]).order("step_order", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
     orderIds.length
-      ? supabase.from("customer_orders").select("id,customer:customers(first_name,last_name,company_name)").in("id", orderIds)
-      : Promise.resolve({ data: [], error: null }),
-    orderIds.length
       ? supabase.from("customer_order_reference_images").select("*").in("customer_order_id", orderIds).order("sort_order", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
   ]);
-  const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error || imagesResult.error;
+  const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || imagesResult.error;
   if (relatedError) throw relatedError;
+
+  const orders = ordersResult.data || [];
+  const customerIds = [...new Set(orders.map((order) => order.customer_id).filter(Boolean))];
+  const customersResult = customerIds.length
+    ? await supabase.from("customers").select("id,first_name,last_name,company_name").in("id", customerIds)
+    : { data: [], error: null };
+  if (customersResult.error) throw customersResult.error;
 
   const byId = (items) => Object.fromEntries((items || []).map((item) => [String(item.id), item]));
   const jobsById = byId(jobs);
-  const ordersById = byId(ordersResult.data);
-  const customerRowsByOrderId = byId(customersResult.data);
+  const ordersById = byId(orders);
+  const customersById = byId(customersResult.data);
   const employeesById = byId(employeesResult.data);
   const workOrdersByJob = {};
   (workOrdersResult.data || []).forEach((workOrder) => {
@@ -119,7 +123,7 @@ async function loadArtworkPriorityDetails(rows = []) {
   return rows.map((row) => {
     const job = jobsById[String(row.production_job_id)] || null;
     const order = ordersById[String(job?.customer_order_id)] || null;
-    const customer = customerRowsByOrderId[String(order?.id)]?.customer || null;
+    const customer = customersById[String(order?.customer_id)] || null;
     const orderItems = (itemsResult.data || []).filter((item) => String(item.order_id) === String(order?.id));
     const workOrder = workOrdersByJob[String(row.production_job_id)] || null;
     const customerName = order?.artwork_customer_name
