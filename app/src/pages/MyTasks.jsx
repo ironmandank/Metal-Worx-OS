@@ -161,12 +161,129 @@ async function loadArtworkPriorityDetails(rows = []) {
   });
 }
 
+function ArtworkPriorityCard({ item, isAdministrator, prioritySavingId, onComplete }) {
+const [isExpanded, setIsExpanded] = useState(false);
+  const workNeeded = [
+    [item.needs_cut, "Cutting"],
+    [item.needs_welding, "Welding / fabrication"],
+    [item.needs_prep, "Prep / sanding"],
+    [item.needs_paint, "Paint"],
+    [item.needs_powder_coat, "Powder coat"],
+    [item.needs_patina, "Patina"],
+    [item.needs_clear_coat, "Clear coat"],
+    [item.needs_touch_up, "Touch-up"],
+  ].filter(([needed]) => needed).map(([, label]) => label);
+  const dueDateLabel = item.due_date
+    ? new Date(`${item.due_date}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+    : null;
+
+  return (
+    <Card withBorder radius="lg" p="md" style={{ borderLeft: "4px solid #f08c00" }}>
+      <Stack gap="sm">
+        <Group align="flex-start" justify="space-between" wrap="wrap">
+          <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+            <Group gap="xs" wrap="wrap">
+              <Text fw={900}>{item.customer_name} — {item.item_name}</Text>
+              <Badge color="red" variant="filled">Priority now</Badge>
+              <Badge color="violet" variant="light">Station: {item.department}</Badge>
+              <Badge color="gray" variant="light">{item.work_status}</Badge>
+            </Group>
+            <Text c="red.7" fw={900} size="lg" style={{ letterSpacing: 0.2 }}>
+              {dueDateLabel ? `DUE: ${dueDateLabel}` : "DUE DATE NOT SET"}
+            </Text>
+          </Stack>
+          <Group gap="xs">
+            <Button
+              variant="light"
+              color="orange"
+              size="compact-sm"
+              onClick={() => setIsExpanded((current) => !current)}
+            >
+              {isExpanded ? "Hide Details" : "Show Details"}
+            </Button>
+            {isAdministrator ? (
+              <Button
+                color="green"
+                size="compact-md"
+                leftSection={<IconCheck size={16} />}
+                loading={prioritySavingId === item.id}
+                onClick={() => onComplete(item)}
+              >
+                Mark Complete
+              </Button>
+            ) : (
+              <Text size="xs" c="dimmed">A manager can mark this complete.</Text>
+            )}
+          </Group>
+        </Group>
+
+        {workNeeded.length > 0 && (
+          <Group gap="xs">
+            {workNeeded.map((task) => <Badge key={task} color="orange" variant="light">Needs {task}</Badge>)}
+          </Group>
+        )}
+
+        <Collapse in={isExpanded} transitionDuration={180}>
+          <Stack gap="sm" pt="xs">
+            {item.description && (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                <strong>Project description:</strong> {item.description}
+              </Text>
+            )}
+            {item.project_notes && (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                <strong>Project notes:</strong> {item.project_notes}
+              </Text>
+            )}
+            {item.other_requirements && (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                <strong>Other work needed:</strong> {item.other_requirements}
+              </Text>
+            )}
+            {item.notes && (
+              <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                <strong>Priority notes:</strong> {item.notes}
+              </Text>
+            )}
+            {item.images?.length > 0 && (
+              <Stack gap={4}>
+                <Text size="xs" fw={800} c="dimmed">REFERENCE IMAGES</Text>
+                <SimpleGrid cols={{ base: 2, sm: Math.min(item.images.length, 4) }} spacing="xs">
+                  {item.images.slice(0, 4).map((image, index) => {
+                    const label = image.caption || image.image_type || `Reference image ${index + 1}`;
+                    const isDesignFile = /\.(cdr|dxf|pdf|ai|eps|dwg|plt|svg)$/i.test(label);
+                    return (
+                      <Card key={image.id || image.image_url || index} withBorder radius="sm" p={4}>
+                        <a href={image.image_url} target="_blank" rel="noreferrer">
+                          {isDesignFile ? (
+                            <Text size="xs" c="blue" ta="center" py="md">{label}</Text>
+                          ) : (
+                            <Image src={image.image_url} alt={label} h={110} fit="contain" />
+                          )}
+                        </a>
+                        <Text size="xs" lineClamp={1} mt={4}>{label}</Text>
+                      </Card>
+                    );
+                  })}
+                </SimpleGrid>
+                {item.images.length > 4 && <Text size="xs" c="dimmed">Plus {item.images.length - 4} more file(s)</Text>}
+              </Stack>
+            )}
+            {!item.description && !item.project_notes && !item.other_requirements && !item.notes && !item.images?.length && (
+              <Text size="sm" c="dimmed">No description, notes, or reference images are attached to this item.</Text>
+            )}
+          </Stack>
+        </Collapse>
+      </Stack>
+    </Card>
+  );
+}
+
 export default function MyTasks({ setPage, authenticatedProfile }) {
   const [tasks, setTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [artworkPriorityItems, setArtworkPriorityItems] = useState([]);
   const [prioritySavingId, setPrioritySavingId] = useState(null);
-  const [expandedPriorityIds, setExpandedPriorityIds] = useState([]);
   const [userId, setUserId] = useState("");
   const [viewOwnerId, setViewOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -323,125 +440,7 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     else await loadTasks();
   }
 
-  function ArtworkPriorityCard({ item }) {
-    const workNeeded = [
-      [item.needs_cut, "Cutting"],
-      [item.needs_welding, "Welding / fabrication"],
-      [item.needs_prep, "Prep / sanding"],
-      [item.needs_paint, "Paint"],
-      [item.needs_powder_coat, "Powder coat"],
-      [item.needs_patina, "Patina"],
-      [item.needs_clear_coat, "Clear coat"],
-      [item.needs_touch_up, "Touch-up"],
-    ].filter(([needed]) => needed).map(([, label]) => label);
-    const isExpanded = expandedPriorityIds.includes(item.id);
-    const dueDateLabel = item.due_date
-      ? new Date(`${item.due_date}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" })
-      : null;
 
-    return (
-      <Card withBorder radius="lg" p="md" style={{ borderLeft: "4px solid #f08c00" }}>
-        <Stack gap="sm">
-          <Group align="flex-start" justify="space-between" wrap="wrap">
-            <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
-              <Group gap="xs" wrap="wrap">
-                <Text fw={900}>{item.customer_name} — {item.item_name}</Text>
-                <Badge color="red" variant="filled">Priority now</Badge>
-                <Badge color="violet" variant="light">Station: {item.department}</Badge>
-                <Badge color="gray" variant="light">{item.work_status}</Badge>
-              </Group>
-              <Text c="red.7" fw={900} size="lg" style={{ letterSpacing: 0.2 }}>
-                {dueDateLabel ? `DUE: ${dueDateLabel}` : "DUE DATE NOT SET"}
-              </Text>
-            </Stack>
-            <Group gap="xs">
-              <Button
-                variant="light"
-                color="orange"
-                size="compact-sm"
-                onClick={() => setExpandedPriorityIds((current) =>
-                  isExpanded ? current.filter((id) => id !== item.id) : [...current, item.id]
-                )}
-              >
-                {isExpanded ? "Hide Details" : "Show Details"}
-              </Button>
-              {isAdministrator ? (
-                <Button
-                  color="green"
-                  size="compact-md"
-                  leftSection={<IconCheck size={16} />}
-                  loading={prioritySavingId === item.id}
-                  onClick={() => completeArtworkPriorityItem(item)}
-                >
-                  Mark Complete
-                </Button>
-              ) : (
-                <Text size="xs" c="dimmed">A manager can mark this complete.</Text>
-              )}
-            </Group>
-          </Group>
-
-          {workNeeded.length > 0 && (
-            <Group gap="xs">
-              {workNeeded.map((task) => <Badge key={task} color="orange" variant="light">Needs {task}</Badge>)}
-            </Group>
-          )}
-
-          <Collapse in={isExpanded} transitionDuration={180}>
-            <Stack gap="sm" pt="xs">
-              {item.description && (
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  <strong>Project description:</strong> {item.description}
-                </Text>
-              )}
-              {item.project_notes && (
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  <strong>Project notes:</strong> {item.project_notes}
-                </Text>
-              )}
-              {item.other_requirements && (
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  <strong>Other work needed:</strong> {item.other_requirements}
-                </Text>
-              )}
-              {item.notes && (
-                <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                  <strong>Priority notes:</strong> {item.notes}
-                </Text>
-              )}
-              {item.images?.length > 0 && (
-                <Stack gap={4}>
-                  <Text size="xs" fw={800} c="dimmed">REFERENCE IMAGES</Text>
-                  <SimpleGrid cols={{ base: 2, sm: Math.min(item.images.length, 4) }} spacing="xs">
-                    {item.images.slice(0, 4).map((image, index) => {
-                      const label = image.caption || image.image_type || `Reference image ${index + 1}`;
-                      const isDesignFile = /\.(cdr|dxf|pdf|ai|eps|dwg|plt|svg)$/i.test(label);
-                      return (
-                        <Card key={image.id || image.image_url || index} withBorder radius="sm" p={4}>
-                          <a href={image.image_url} target="_blank" rel="noreferrer">
-                            {isDesignFile ? (
-                              <Text size="xs" c="blue" ta="center" py="md">{label}</Text>
-                            ) : (
-                              <Image src={image.image_url} alt={label} h={110} fit="contain" />
-                            )}
-                          </a>
-                          <Text size="xs" lineClamp={1} mt={4}>{label}</Text>
-                        </Card>
-                      );
-                    })}
-                  </SimpleGrid>
-                  {item.images.length > 4 && <Text size="xs" c="dimmed">Plus {item.images.length - 4} more file(s)</Text>}
-                </Stack>
-              )}
-              {!item.description && !item.project_notes && !item.other_requirements && !item.notes && !item.images?.length && (
-                <Text size="sm" c="dimmed">No description, notes, or reference images are attached to this item.</Text>
-              )}
-            </Stack>
-          </Collapse>
-        </Stack>
-      </Card>
-    );
-  }
   function TaskCard({ task, completed = false }) {
     const overdue = !completed && task.due_at && localDateKey(task.due_at) < today;
     return <Card withBorder radius="lg" p="md" style={{ borderLeft: `4px solid ${overdue ? "#fa5252" : completed ? "#40c057" : "#e03131"}` }}>
@@ -476,7 +475,7 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
       color="orange"
     >
       {visibleArtworkPriorityItems.length
-        ? <Stack gap="sm">{visibleArtworkPriorityItems.map((item) => <ArtworkPriorityCard key={item.id} item={item} />)}</Stack>
+        ? <Stack gap="sm">{visibleArtworkPriorityItems.map((item) => <ArtworkPriorityCard key={item.id} item={item} isAdministrator={isAdministrator} prioritySavingId={prioritySavingId} onComplete={completeArtworkPriorityItem} />)}</Stack>
         : <Alert color="green" icon={<IconCheck size={18} />}>No artwork items are marked hot priority right now.</Alert>}
     </MWPanel>
 
