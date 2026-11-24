@@ -66,6 +66,79 @@ function priorityColor(priority) {
   return "blue";
 }
 
+async function loadArtworkPriorityDetails(rows = []) {
+  if (!rows.length) return [];
+
+  const jobIds = [...new Set(rows.map((row) => row.production_job_id).filter(Boolean))];
+  const profileIds = [...new Set(rows.map((row) => row.employee_profile_id).filter(Boolean))];
+  const [jobsResult, employeesResult] = await Promise.all([
+    jobIds.length
+      ? supabase.from("production_jobs").select("id,customer_order_id,current_department,due_date,production_job_number,status").in("id", jobIds)
+      : Promise.resolve({ data: [], error: null }),
+    profileIds.length
+      ? supabase.from("employee_profiles").select("id,display_name").in("id", profileIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (jobsResult.error) throw jobsResult.error;
+  if (employeesResult.error) throw employeesResult.error;
+
+  const jobs = jobsResult.data || [];
+  const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
+  const [ordersResult, itemsResult, workOrdersResult, customersResult] = await Promise.all([
+    orderIds.length
+      ? supabase.from("customer_orders").select("id,customer_id,artwork_customer_name,order_number,due_date").in("id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+    orderIds.length
+      ? supabase.from("customer_order_items").select("id,order_id,item_name,description,quantity").in("order_id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+    jobIds.length
+      ? supabase.from("work_orders").select("production_job_id,department,status,step_order").in("production_job_id", jobIds).eq("is_active", true).in("status", ["Ready", "In Progress", "Blocked"]).order("step_order", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+    orderIds.length
+      ? supabase.from("customer_orders").select("id,customer:customers(first_name,last_name,company_name)").in("id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error;
+  if (relatedError) throw relatedError;
+
+  const byId = (items) => Object.fromEntries((items || []).map((item) => [String(item.id), item]));
+  const jobsById = byId(jobs);
+  const ordersById = byId(ordersResult.data);
+  const customerRowsByOrderId = byId(customersResult.data);
+  const employeesById = byId(employeesResult.data);
+  const workOrdersByJob = {};
+  (workOrdersResult.data || []).forEach((workOrder) => {
+    const key = String(workOrder.production_job_id);
+    if (!workOrdersByJob[key]) workOrdersByJob[key] = workOrder;
+  });
+
+  return rows.map((row) => {
+    const job = jobsById[String(row.production_job_id)] || null;
+    const order = ordersById[String(job?.customer_order_id)] || null;
+    const customer = customerRowsByOrderId[String(order?.id)]?.customer || null;
+    const orderItems = (itemsResult.data || []).filter((item) => String(item.order_id) === String(order?.id));
+    const workOrder = workOrdersByJob[String(row.production_job_id)] || null;
+    const customerName = order?.artwork_customer_name
+      || [customer?.first_name, customer?.last_name].filter(Boolean).join(" ")
+      || customer?.company_name
+      || "Customer not assigned";
+    const itemName = orderItems
+      .map((item) => item.item_name || item.description)
+      .filter(Boolean)
+      .join(", ") || job?.production_job_number || "Artwork item";
+
+    return {
+      ...row,
+      employee_name: employeesById[String(row.employee_profile_id)]?.display_name || "Team member",
+      customer_name: customerName,
+      item_name: itemName,
+      department: workOrder?.department || job?.current_department || "Station not set",
+      work_status: workOrder?.status || job?.status || "Open",
+      due_date: job?.due_date || order?.due_date || null,
+    };
+  });
+}
+
 export default function MyTasks({ setPage, authenticatedProfile }) {
   const [tasks, setTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -85,79 +158,6 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     owner_user_id: "",
   });
   const isAdministrator = String(authenticatedProfile?.access_level || "").toLowerCase().includes("admin");
-
-  async function loadArtworkPriorityDetails(rows = []) {
-    if (!rows.length) return [];
-
-    const jobIds = [...new Set(rows.map((row) => row.production_job_id).filter(Boolean))];
-    const profileIds = [...new Set(rows.map((row) => row.employee_profile_id).filter(Boolean))];
-    const [jobsResult, employeesResult] = await Promise.all([
-      jobIds.length
-        ? supabase.from("production_jobs").select("id,customer_order_id,current_department,due_date,production_job_number,status").in("id", jobIds)
-        : Promise.resolve({ data: [], error: null }),
-      profileIds.length
-        ? supabase.from("employee_profiles").select("id,display_name").in("id", profileIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    if (jobsResult.error) throw jobsResult.error;
-    if (employeesResult.error) throw employeesResult.error;
-
-    const jobs = jobsResult.data || [];
-    const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
-    const [ordersResult, itemsResult, workOrdersResult, customersResult] = await Promise.all([
-      orderIds.length
-        ? supabase.from("customer_orders").select("id,customer_id,artwork_customer_name,order_number,due_date").in("id", orderIds)
-        : Promise.resolve({ data: [], error: null }),
-      orderIds.length
-        ? supabase.from("customer_order_items").select("id,order_id,item_name,description,quantity").in("order_id", orderIds)
-        : Promise.resolve({ data: [], error: null }),
-      jobIds.length
-        ? supabase.from("work_orders").select("production_job_id,department,status,step_order").in("production_job_id", jobIds).eq("is_active", true).in("status", ["Ready", "In Progress", "Blocked"]).order("step_order", { ascending: true })
-        : Promise.resolve({ data: [], error: null }),
-      orderIds.length
-        ? supabase.from("customer_orders").select("id,customer:customers(first_name,last_name,company_name)").in("id", orderIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error;
-    if (relatedError) throw relatedError;
-
-    const byId = (items) => Object.fromEntries((items || []).map((item) => [String(item.id), item]));
-    const jobsById = byId(jobs);
-    const ordersById = byId(ordersResult.data);
-    const customerRowsByOrderId = byId(customersResult.data);
-    const employeesById = byId(employeesResult.data);
-    const workOrdersByJob = {};
-    (workOrdersResult.data || []).forEach((workOrder) => {
-      const key = String(workOrder.production_job_id);
-      if (!workOrdersByJob[key]) workOrdersByJob[key] = workOrder;
-    });
-
-    return rows.map((row) => {
-      const job = jobsById[String(row.production_job_id)] || null;
-      const order = ordersById[String(job?.customer_order_id)] || null;
-      const customer = customerRowsByOrderId[String(order?.id)]?.customer || null;
-      const orderItems = (itemsResult.data || []).filter((item) => String(item.order_id) === String(order?.id));
-      const workOrder = workOrdersByJob[String(row.production_job_id)] || null;
-      const customerName = order?.artwork_customer_name
-        || [customer?.first_name, customer?.last_name].filter(Boolean).join(" ")
-        || customer?.company_name
-        || "Customer not assigned";
-      const itemName = orderItems
-        .map((item) => item.item_name || item.description)
-        .filter(Boolean)
-        .join(", ") || job?.production_job_number || "Artwork item";
-
-      return {
-        ...row,
-        employee_name: employeesById[String(row.employee_profile_id)]?.display_name || "Team member",
-        customer_name: customerName,
-        item_name: itemName,
-        department: workOrder?.department || job?.current_department || "Station not set",
-        work_status: workOrder?.status || job?.status || "Open",
-        due_date: job?.due_date || order?.due_date || null,
-      };
-    });
-  }
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
