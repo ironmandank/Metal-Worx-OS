@@ -7,6 +7,7 @@ import {
   Image,
   Loader,
   Modal,
+  Paper,
   Select,
   SimpleGrid,
   Stack,
