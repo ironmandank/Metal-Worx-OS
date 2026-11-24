@@ -330,15 +330,19 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
           {item.other_requirements && <Text size="sm"><strong>Other work:</strong> {item.other_requirements}</Text>}
           {item.notes && <Text size="sm" c="dimmed"><strong>Notes:</strong> {item.notes}</Text>}
         </Stack>
-        <Button
-          color="green"
-          size="compact-md"
-          leftSection={<IconCheck size={16} />}
-          loading={prioritySavingId === item.id}
-          onClick={() => completeArtworkPriorityItem(item)}
-        >
-          Mark Complete
-        </Button>
+        {isAdministrator ? (
+          <Button
+            color="green"
+            size="compact-md"
+            leftSection={<IconCheck size={16} />}
+            loading={prioritySavingId === item.id}
+            onClick={() => completeArtworkPriorityItem(item)}
+          >
+            Mark Complete
+          </Button>
+        ) : (
+          <Text size="xs" c="dimmed">A manager can mark this complete.</Text>
+        )}
       </Group>
     </Card>;
   }
