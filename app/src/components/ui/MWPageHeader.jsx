@@ -5,6 +5,8 @@ function MWPageHeader({
   subtitle,
   buttonText,
   onButtonClick,
+  secondaryButtonText,
+  onSecondaryButtonClick,
   setPage,
   showBack = false,
   backPage,
@@ -50,11 +52,20 @@ function MWPageHeader({
         )}
       </Stack>
 
-      {buttonText && onButtonClick && (
-        <Button color="red" onClick={onButtonClick}>
-          {buttonText}
-        </Button>
-      )}
+      {(buttonText && onButtonClick) || (secondaryButtonText && onSecondaryButtonClick) ? (
+        <Group gap="xs" wrap="wrap" justify="flex-end">
+          {secondaryButtonText && onSecondaryButtonClick && (
+            <Button color="orange" variant="light" onClick={onSecondaryButtonClick}>
+              {secondaryButtonText}
+            </Button>
+          )}
+          {buttonText && onButtonClick && (
+            <Button color="red" onClick={onButtonClick}>
+              {buttonText}
+            </Button>
+          )}
+        </Group>
+      ) : null}
     </div>
   );
 }
