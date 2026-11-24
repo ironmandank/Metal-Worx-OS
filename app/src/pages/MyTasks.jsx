@@ -5,6 +5,7 @@ import {
   Card,
   Checkbox,
   Group,
+  Image,
   Loader,
   Modal,
   Select,
@@ -84,12 +85,12 @@ async function loadArtworkPriorityDetails(rows = []) {
 
   const jobs = jobsResult.data || [];
   const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
-  const [ordersResult, itemsResult, workOrdersResult, customersResult] = await Promise.all([
+  const [ordersResult, itemsResult, workOrdersResult, customersResult, imagesResult] = await Promise.all([
     orderIds.length
-      ? supabase.from("customer_orders").select("id,customer_id,artwork_customer_name,order_number,due_date").in("id", orderIds)
+      ? supabase.from("customer_orders").select("*").in("id", orderIds)
       : Promise.resolve({ data: [], error: null }),
     orderIds.length
-      ? supabase.from("customer_order_items").select("id,order_id,item_name,description,quantity").in("order_id", orderIds)
+      ? supabase.from("customer_order_items").select("*").in("order_id", orderIds)
       : Promise.resolve({ data: [], error: null }),
     jobIds.length
       ? supabase.from("work_orders").select("production_job_id,department,status,step_order").in("production_job_id", jobIds).eq("is_active", true).in("status", ["Ready", "In Progress", "Blocked"]).order("step_order", { ascending: true })
@@ -97,8 +98,11 @@ async function loadArtworkPriorityDetails(rows = []) {
     orderIds.length
       ? supabase.from("customer_orders").select("id,customer:customers(first_name,last_name,company_name)").in("id", orderIds)
       : Promise.resolve({ data: [], error: null }),
+    orderIds.length
+      ? supabase.from("customer_order_reference_images").select("*").in("customer_order_id", orderIds).order("sort_order", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error;
+  const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error || imagesResult.error;
   if (relatedError) throw relatedError;
 
   const byId = (items) => Object.fromEntries((items || []).map((item) => [String(item.id), item]));
@@ -126,12 +130,22 @@ async function loadArtworkPriorityDetails(rows = []) {
       .map((item) => item.item_name || item.description)
       .filter(Boolean)
       .join(", ") || job?.production_job_number || "Artwork item";
+    const description = job?.description
+      || job?.project_description
+      || order?.description
+      || order?.special_instructions
+      || order?.notes
+      || orderItems.map((item) => item.description || item.notes || item.special_instructions).filter(Boolean).join("\n")
+      || "";
+    const images = (imagesResult.data || []).filter((image) => String(image.customer_order_id) === String(order?.id));
 
     return {
       ...row,
       employee_name: employeesById[String(row.employee_profile_id)]?.display_name || "Team member",
       customer_name: customerName,
       item_name: itemName,
+      description,
+      images,
       department: workOrder?.department || job?.current_department || "Station not set",
       work_status: workOrder?.status || job?.status || "Open",
       due_date: row.due_date || job?.due_date || order?.due_date || null,
@@ -324,6 +338,35 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
               ? `Due ${new Date(`${item.due_date}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })}`
               : "No due date"}
           </Text>
+          {item.description && (
+            <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+              <strong>Project description:</strong> {item.description}
+            </Text>
+          )}
+          {item.images?.length > 0 && (
+            <Stack gap={4}>
+              <Text size="xs" fw={800} c="dimmed">REFERENCE IMAGES</Text>
+              <SimpleGrid cols={{ base: 2, sm: Math.min(item.images.length, 4) }} spacing="xs">
+                {item.images.slice(0, 4).map((image, index) => {
+                  const label = image.caption || image.image_type || `Reference image ${index + 1}`;
+                  const isDesignFile = /\.(cdr|dxf|pdf|ai|eps|dwg|plt|svg)$/i.test(label);
+                  return (
+                    <Card key={image.id || image.image_url || index} withBorder radius="sm" p={4}>
+                      <a href={image.image_url} target="_blank" rel="noreferrer">
+                        {isDesignFile ? (
+                          <Text size="xs" c="blue" ta="center" py="md">{label}</Text>
+                        ) : (
+                          <Image src={image.image_url} alt={label} h={110} fit="contain" />
+                        )}
+                      </a>
+                      <Text size="xs" lineClamp={1} mt={4}>{label}</Text>
+                    </Card>
+                  );
+                })}
+              </SimpleGrid>
+              {item.images.length > 4 && <Text size="xs" c="dimmed">Plus {item.images.length - 4} more file(s)</Text>}
+            </Stack>
+          )}
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={4}>
             {checklist.map(([checked, label]) => (
               <Checkbox key={label} size="xs" checked={Boolean(checked)} disabled label={label} />
