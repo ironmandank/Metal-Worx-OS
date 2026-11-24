@@ -3,6 +3,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
   Loader,
   Modal,
@@ -21,6 +22,7 @@ import {
   IconCheck,
   IconClipboardList,
   IconClock,
+  IconFlag,
   IconPlus,
   IconRefresh,
   IconTrash,
@@ -67,6 +69,8 @@ function priorityColor(priority) {
 export default function MyTasks({ setPage, authenticatedProfile }) {
   const [tasks, setTasks] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [artworkPriorityItems, setArtworkPriorityItems] = useState([]);
+  const [prioritySavingId, setPrioritySavingId] = useState(null);
   const [userId, setUserId] = useState("");
   const [viewOwnerId, setViewOwnerId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -81,6 +85,79 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     owner_user_id: "",
   });
   const isAdministrator = String(authenticatedProfile?.access_level || "").toLowerCase().includes("admin");
+
+  async function loadArtworkPriorityDetails(rows = []) {
+    if (!rows.length) return [];
+
+    const jobIds = [...new Set(rows.map((row) => row.production_job_id).filter(Boolean))];
+    const profileIds = [...new Set(rows.map((row) => row.employee_profile_id).filter(Boolean))];
+    const [jobsResult, employeesResult] = await Promise.all([
+      jobIds.length
+        ? supabase.from("production_jobs").select("id,customer_order_id,current_department,due_date,production_job_number,status").in("id", jobIds)
+        : Promise.resolve({ data: [], error: null }),
+      profileIds.length
+        ? supabase.from("employee_profiles").select("id,display_name").in("id", profileIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (jobsResult.error) throw jobsResult.error;
+    if (employeesResult.error) throw employeesResult.error;
+
+    const jobs = jobsResult.data || [];
+    const orderIds = [...new Set(jobs.map((job) => job.customer_order_id).filter(Boolean))];
+    const [ordersResult, itemsResult, workOrdersResult, customersResult] = await Promise.all([
+      orderIds.length
+        ? supabase.from("customer_orders").select("id,customer_id,artwork_customer_name,order_number,due_date").in("id", orderIds)
+        : Promise.resolve({ data: [], error: null }),
+      orderIds.length
+        ? supabase.from("customer_order_items").select("id,order_id,item_name,description,quantity").in("order_id", orderIds)
+        : Promise.resolve({ data: [], error: null }),
+      jobIds.length
+        ? supabase.from("work_orders").select("production_job_id,department,status,step_order").in("production_job_id", jobIds).eq("is_active", true).in("status", ["Ready", "In Progress", "Blocked"]).order("step_order", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+      orderIds.length
+        ? supabase.from("customer_orders").select("id,customer:customers(first_name,last_name,company_name)").in("id", orderIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const relatedError = ordersResult.error || itemsResult.error || workOrdersResult.error || customersResult.error;
+    if (relatedError) throw relatedError;
+
+    const byId = (items) => Object.fromEntries((items || []).map((item) => [String(item.id), item]));
+    const jobsById = byId(jobs);
+    const ordersById = byId(ordersResult.data);
+    const customerRowsByOrderId = byId(customersResult.data);
+    const employeesById = byId(employeesResult.data);
+    const workOrdersByJob = {};
+    (workOrdersResult.data || []).forEach((workOrder) => {
+      const key = String(workOrder.production_job_id);
+      if (!workOrdersByJob[key]) workOrdersByJob[key] = workOrder;
+    });
+
+    return rows.map((row) => {
+      const job = jobsById[String(row.production_job_id)] || null;
+      const order = ordersById[String(job?.customer_order_id)] || null;
+      const customer = customerRowsByOrderId[String(order?.id)]?.customer || null;
+      const orderItems = (itemsResult.data || []).filter((item) => String(item.order_id) === String(order?.id));
+      const workOrder = workOrdersByJob[String(row.production_job_id)] || null;
+      const customerName = order?.artwork_customer_name
+        || [customer?.first_name, customer?.last_name].filter(Boolean).join(" ")
+        || customer?.company_name
+        || "Customer not assigned";
+      const itemName = orderItems
+        .map((item) => item.item_name || item.description)
+        .filter(Boolean)
+        .join(", ") || job?.production_job_number || "Artwork item";
+
+      return {
+        ...row,
+        employee_name: employeesById[String(row.employee_profile_id)]?.display_name || "Team member",
+        customer_name: customerName,
+        item_name: itemName,
+        department: workOrder?.department || job?.current_department || "Station not set",
+        work_status: workOrder?.status || job?.status || "Open",
+        due_date: job?.due_date || order?.due_date || null,
+      };
+    });
+  }
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -97,14 +174,18 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
         .order("status", { ascending: false })
         .order("due_at", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
-      const [{ data, error }, { data: profileRows, error: profilesError }] = await Promise.all([
+      const [{ data, error }, { data: profileRows, error: profilesError }, { data: priorityRows, error: priorityError }] = await Promise.all([
         isAdministrator ? tasksQuery : tasksQuery.eq("owner_user_id", currentUserId),
         supabase.from("employee_profiles").select("id,auth_user_id,display_name,role_title,is_active").eq("is_active", true).not("auth_user_id", "is", null).order("display_name"),
+        supabase.from("artwork_priority_items").select("*").order("created_at", { ascending: false }),
       ]);
       if (error) throw error;
       if (profilesError) throw profilesError;
+      if (priorityError) throw priorityError;
+      const hydratedPriorityItems = await loadArtworkPriorityDetails(priorityRows || []);
       setTasks(data || []);
       setProfiles(profileRows || []);
+      setArtworkPriorityItems(hydratedPriorityItems);
       setViewOwnerId((current) => current || currentUserId);
       setForm((current) => ({ ...current, owner_user_id: current.owner_user_id || currentUserId }));
     } catch (error) {
@@ -118,6 +199,12 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
 
   const today = localDateKey();
   const visibleTasks = useMemo(() => isAdministrator && viewOwnerId === "all" ? tasks : tasks.filter((task) => task.owner_user_id === (viewOwnerId || userId)), [isAdministrator, tasks, userId, viewOwnerId]);
+  const visibleArtworkPriorityItems = useMemo(() => {
+    const openItems = artworkPriorityItems.filter((item) => item.status !== "Completed");
+    if (isAdministrator && viewOwnerId === "all") return openItems;
+    const selectedProfile = profiles.find((profile) => profile.auth_user_id === (viewOwnerId || userId));
+    return openItems.filter((item) => item.employee_profile_id === selectedProfile?.id);
+  }, [artworkPriorityItems, isAdministrator, profiles, userId, viewOwnerId]);
   const openTasks = useMemo(() => visibleTasks.filter((task) => task.status !== "Completed"), [visibleTasks]);
   const todayTasks = useMemo(() => openTasks.filter((task) => localDateKey(task.due_at) === today), [openTasks, today]);
   const overdueTasks = useMemo(() => openTasks.filter((task) => task.due_at && localDateKey(task.due_at) < today), [openTasks, today]);
@@ -164,6 +251,32 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     }
   }
 
+  async function completeArtworkPriorityItem(item) {
+    if (prioritySavingId) return;
+    setPrioritySavingId(item.id);
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from("artwork_priority_items")
+        .update({
+          status: "Completed",
+          completed_at: now,
+          completed_by: userData?.user?.id || null,
+          updated_at: now,
+        })
+        .eq("id", item.id);
+      if (error) throw error;
+      notifications.show({ title: "Priority Item Completed", message: `${item.customer_name} — ${item.item_name} was marked complete.`, color: "green" });
+      await loadTasks();
+    } catch (error) {
+      notifications.show({ title: "Priority Item Could Not Be Updated", message: error.message, color: "red" });
+    } finally {
+      setPrioritySavingId(null);
+    }
+  }
+
   async function completeTask(task, completed) {
     const { error } = await supabase.from("personal_follow_ups").update({
       status: completed ? "Completed" : "Open",
@@ -187,6 +300,48 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     const { error } = await supabase.from("personal_follow_ups").delete().eq("id", task.id);
     if (error) notifications.show({ title: "Task Could Not Be Deleted", message: error.message, color: "red" });
     else await loadTasks();
+  }
+
+  function ArtworkPriorityCard({ item }) {
+    const checklist = [
+      [item.needs_paint, "Needs paint"],
+      [item.needs_powder_coat, "Needs powder coat"],
+      [item.needs_prep, "Needs prep / sanding"],
+      [item.needs_touch_up, "Needs touch-up"],
+    ];
+    return <Card withBorder radius="lg" p="md" style={{ borderLeft: "4px solid #f08c00" }}>
+      <Group align="flex-start" justify="space-between" wrap="wrap">
+        <Stack gap="xs" style={{ flex: 1, minWidth: 0 }}>
+          <Group gap="xs" wrap="wrap">
+            <Text fw={900}>{item.customer_name} — {item.item_name}</Text>
+            <Badge color="red" variant="filled">Priority now</Badge>
+            <Badge color="violet" variant="light">{item.department}</Badge>
+            <Badge color="gray" variant="light">{item.work_status}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {item.due_date
+              ? `Due ${new Date(`${item.due_date}T12:00:00`).toLocaleDateString([], { month: "short", day: "numeric" })}`
+              : "No due date"}
+          </Text>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing={4}>
+            {checklist.map(([checked, label]) => (
+              <Checkbox key={label} size="xs" checked={Boolean(checked)} disabled label={label} />
+            ))}
+          </SimpleGrid>
+          {item.other_requirements && <Text size="sm"><strong>Other work:</strong> {item.other_requirements}</Text>}
+          {item.notes && <Text size="sm" c="dimmed"><strong>Notes:</strong> {item.notes}</Text>}
+        </Stack>
+        <Button
+          color="green"
+          size="compact-md"
+          leftSection={<IconCheck size={16} />}
+          loading={prioritySavingId === item.id}
+          onClick={() => completeArtworkPriorityItem(item)}
+        >
+          Mark Complete
+        </Button>
+      </Group>
+    </Card>;
   }
 
   function TaskCard({ task, completed = false }) {
@@ -215,6 +370,17 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
 
   return <Stack gap="xl">
     <MWPageHeader title="My Tasks" subtitle="Plan today, check work off, and keep unfinished items visible." setPage={setPage} showBack backPage="dashboard" backLabel="Command" showDashboard={false}/>
+
+    <MWPanel
+      title="Artwork Priority Needed"
+      subtitle="High priority artwork Chris needs to handle. Check the work requirements and mark each item complete when finished."
+      icon={IconFlag}
+      color="orange"
+    >
+      {visibleArtworkPriorityItems.length
+        ? <Stack gap="sm">{visibleArtworkPriorityItems.map((item) => <ArtworkPriorityCard key={item.id} item={item} />)}</Stack>
+        : <Alert color="green" icon={<IconCheck size={18} />}>No artwork items are on this priority list right now.</Alert>}
+    </MWPanel>
 
     <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
       <Card withBorder radius="lg" p="lg"><Group><ThemeIcon color="red" variant="light" size="lg"><IconCalendarCheck size={22}/></ThemeIcon><div><Text size="xs" c="dimmed" fw={800}>TODAY</Text><Title order={2}>{todayTasks.length}</Title></div></Group></Card>
