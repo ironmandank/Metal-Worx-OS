@@ -41,6 +41,7 @@ import {
 } from "@tabler/icons-react";
 
 import { supabase } from "../lib/supabase";
+import { getProfileByName } from "../services/notificationService";
 import { confirmPlaqueUncheck } from "../lib/plaqueGate";
 import MWPageHeader from "../components/ui/MWPageHeader";
 import MWSection from "../components/ui/MWSection";
@@ -1519,12 +1520,15 @@ function DepartmentQueue({
 
     setPrioritySaving(true);
     try {
+      const profile = await getProfileByName("Chris");
+      if (!profile) throw new Error("The legacy priority owner profile could not be found.");
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
 
       const now = new Date().toISOString();
       const payload = selectedOrders.map((workOrder) => ({
         production_job_id: workOrder.production_job_id,
+        employee_profile_id: profile.id,
         needs_cut: priorityChecklist.needs_cut,
         needs_paint: priorityChecklist.needs_paint,
         needs_powder_coat: priorityChecklist.needs_powder_coat,
@@ -1540,7 +1544,7 @@ function DepartmentQueue({
       }));
       const { error: listError } = await supabase
         .from("artwork_priority_items")
-        .upsert(payload, { onConflict: "production_job_id" });
+        .upsert(payload, { onConflict: "production_job_id,employee_profile_id" });
       if (listError) throw listError;
 
       const { error: priorityError } = await supabase
