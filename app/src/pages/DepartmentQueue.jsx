@@ -566,19 +566,6 @@ function DepartmentQueue({
         return next;
       });
 
-      if (draft.status === "Waiting for Customer Pickup") {
-        setStageFilter("Waiting for Pickup");
-        setQueueFilter("All");
-      } else if (draft.status === "Ready to Ship") {
-        setStageFilter("Ready to Ship");
-        setQueueFilter("All");
-      } else if (["Completed — Picked Up", "Completed — Shipped"].includes(draft.status)) {
-        setStageFilter("Completed / Archive");
-        setQueueFilter("Completed / Archive");
-      } else if (stageChanged) {
-        setStageFilter(draft.stage);
-        setQueueFilter("All");
-      }
       await loadQueue();
     } catch (error) {
       notifications.show({
