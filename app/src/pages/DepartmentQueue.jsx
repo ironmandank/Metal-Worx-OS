@@ -60,6 +60,7 @@ import { uploadOrderImages } from "../services/orderImageService";
 import { notifyTeam } from "../services/teamNotificationService";
 import { useProjectMoneyPrivacy } from "../components/ProjectMoneyPrivacy";
 import { getDesignComplexity } from "../lib/designPriority";
+import { createNotificationForProfile, getProfileByName } from "../services/notificationService";
 
 function escapePrintHtml(value) {
   return String(value ?? "")
@@ -307,6 +308,16 @@ function DepartmentQueue({
   const [stageFilter, setStageFilter] = useState("All Active Stages");
   const [movingStageId, setMovingStageId] = useState(null);
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState([]);
+  const [priorityModalOpen, setPriorityModalOpen] = useState(false);
+  const [prioritySaving, setPrioritySaving] = useState(false);
+  const [priorityChecklist, setPriorityChecklist] = useState({
+    needs_paint: false,
+    needs_powder_coat: false,
+    needs_prep: false,
+    needs_touch_up: false,
+    other_requirements: "",
+    notes: "",
+  });
   const [bulkStage, setBulkStage] = useState(null);
   const [bulkMoving, setBulkMoving] = useState(false);
   const [artworkDrafts, setArtworkDrafts] = useState({});
@@ -1482,6 +1493,106 @@ function DepartmentQueue({
       : [...current, workOrderId]);
   }
 
+  function priorityItemLabel(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id] || {};
+    const customerName = detail.order?.artwork_customer_name || getCustomerName(detail.customer);
+    const itemName = (detail.items || [])
+      .map((item) => item.item_name || item.description)
+      .filter(Boolean)
+      .join(", ");
+    return `${customerName} — ${itemName || detail.job?.production_job_number || workOrder.work_order_number || "Artwork item"}`;
+  }
+
+  async function addSelectedToChrisPriority() {
+    if (prioritySaving || selectedWorkOrderIds.length === 0) return;
+    const selectedOrders = workOrders
+      .filter((workOrder) => selectedWorkOrderIds.includes(workOrder.id) && workOrder.production_job_id)
+      .filter((workOrder, index, list) =>
+        list.findIndex((item) => item.production_job_id === workOrder.production_job_id) === index
+      );
+
+    if (selectedOrders.length === 0) {
+      notifications.show({ title: "No Artwork Selected", message: "Select at least one artwork item first.", color: "orange" });
+      return;
+    }
+
+    setPrioritySaving(true);
+    try {
+      const profile = await getProfileByName("Chris");
+      if (!profile) throw new Error("Chris's active employee profile could not be found.");
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      const now = new Date().toISOString();
+      const payload = selectedOrders.map((workOrder) => ({
+        production_job_id: workOrder.production_job_id,
+        employee_profile_id: profile.id,
+        needs_paint: priorityChecklist.needs_paint,
+        needs_powder_coat: priorityChecklist.needs_powder_coat,
+        needs_prep: priorityChecklist.needs_prep,
+        needs_touch_up: priorityChecklist.needs_touch_up,
+        other_requirements: priorityChecklist.other_requirements.trim() || null,
+        notes: priorityChecklist.notes.trim() || null,
+        status: "Open",
+        created_by: userData?.user?.id || null,
+        completed_at: null,
+        completed_by: null,
+        updated_at: now,
+      }));
+      const { error: listError } = await supabase
+        .from("artwork_priority_items")
+        .upsert(payload, { onConflict: "production_job_id,employee_profile_id" });
+      if (listError) throw listError;
+
+      const { error: priorityError } = await supabase
+        .from("work_orders")
+        .update({ priority: "High", updated_at: now })
+        .in("id", selectedOrders.map((workOrder) => workOrder.id));
+      if (priorityError) throw priorityError;
+
+      const labels = selectedOrders.slice(0, 4).map(priorityItemLabel).join("; ");
+      try {
+        await createNotificationForProfile({
+          recipientProfileId: profile.id,
+          notificationType: "Task",
+          title: `${selectedOrders.length} artwork item${selectedOrders.length === 1 ? "" : "s"} marked priority`,
+          message: `See My Tasks → Artwork Priority Needed. ${labels}${selectedOrders.length > 4 ? "; and more" : ""}`,
+          sourceType: "artwork_priority",
+          sourceId: selectedOrders[0]?.production_job_id,
+          targetPage: "myTasks",
+          priority: "High",
+        });
+      } catch (notificationError) {
+        console.warn("Priority list saved, but Chris's in-app alert could not be created:", notificationError);
+      }
+
+      setSelectedWorkOrderIds([]);
+      setPriorityModalOpen(false);
+      setPriorityChecklist({
+        needs_paint: false,
+        needs_powder_coat: false,
+        needs_prep: false,
+        needs_touch_up: false,
+        other_requirements: "",
+        notes: "",
+      });
+      notifications.show({
+        title: "Added to Chris's Priority List",
+        message: `${selectedOrders.length} item${selectedOrders.length === 1 ? " is" : "s are"} marked high priority and will appear in My Tasks.`,
+        color: "green",
+      });
+      await loadQueue();
+    } catch (error) {
+      notifications.show({
+        title: "Priority Items Could Not Be Saved",
+        message: error?.message || "Please refresh and try again.",
+        color: "red",
+      });
+    } finally {
+      setPrioritySaving(false);
+    }
+  }
+
   function visibleSelectableOrders() {
     if (queueFilter === "Ready") return readyOrders;
     if (queueFilter === "In Progress") return inProgressOrders;
@@ -2502,6 +2613,15 @@ function DepartmentQueue({
               >
                 Clear
               </Button>
+              <Button
+                variant="light"
+                color="orange"
+                leftSection={<IconFlag size={16} />}
+                disabled={selectedWorkOrderIds.length === 0}
+                onClick={() => setPriorityModalOpen(true)}
+              >
+                Priority Needed for Chris
+              </Button>
               <Select
                 label={`${selectedWorkOrderIds.length} selected`}
                 placeholder="Choose destination"
@@ -3006,6 +3126,72 @@ function DepartmentQueue({
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setNoteTarget(null)}>Cancel</Button>
             <Button color="red" loading={savingAction} disabled={!noteText.trim()} onClick={saveNote}>Save Note</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={priorityModalOpen}
+        onClose={() => setPriorityModalOpen(false)}
+        title="Add to Chris's Priority Needed List"
+        centered
+        size="md"
+      >
+        <Stack gap="sm">
+          <Alert color="orange" icon={<IconFlag size={18} />}>
+            Selected artwork will be marked High Priority and will appear in Chris's My Tasks list on his phone.
+          </Alert>
+          <Text fw={800} size="sm">Work needed</Text>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            <Checkbox
+              label="Needs paint"
+              checked={priorityChecklist.needs_paint}
+              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_paint: event.currentTarget.checked }))}
+            />
+            <Checkbox
+              label="Needs powder coat"
+              checked={priorityChecklist.needs_powder_coat}
+              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_powder_coat: event.currentTarget.checked }))}
+            />
+            <Checkbox
+              label="Needs prep / sanding"
+              checked={priorityChecklist.needs_prep}
+              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_prep: event.currentTarget.checked }))}
+            />
+            <Checkbox
+              label="Needs touch-up"
+              checked={priorityChecklist.needs_touch_up}
+              onChange={(event) => setPriorityChecklist((current) => ({ ...current, needs_touch_up: event.currentTarget.checked }))}
+            />
+          </SimpleGrid>
+          <Textarea
+            label="Other work needed"
+            placeholder="Add any other finishing or paint instructions"
+            minRows={2}
+            value={priorityChecklist.other_requirements}
+            onChange={(event) => setPriorityChecklist((current) => ({ ...current, other_requirements: event.currentTarget.value }))}
+          />
+          <Textarea
+            label="Notes for Chris"
+            placeholder="Color, finish, or what needs attention"
+            minRows={2}
+            value={priorityChecklist.notes}
+            onChange={(event) => setPriorityChecklist((current) => ({ ...current, notes: event.currentTarget.value }))}
+          />
+          <Text size="xs" c="dimmed">
+            The same checklist and notes will be applied to all {selectedWorkOrderIds.length} selected item{selectedWorkOrderIds.length === 1 ? "" : "s"}.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setPriorityModalOpen(false)}>Cancel</Button>
+            <Button
+              color="orange"
+              leftSection={<IconFlag size={16} />}
+              loading={prioritySaving}
+              disabled={selectedWorkOrderIds.length === 0}
+              onClick={addSelectedToChrisPriority}
+            >
+              Add to Priority List
+            </Button>
           </Group>
         </Stack>
       </Modal>
