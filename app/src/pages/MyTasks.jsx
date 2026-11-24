@@ -3,7 +3,6 @@ import {
   Badge,
   Button,
   Card,
-  Collapse,
   Group,
   Image,
   Loader,
@@ -223,8 +222,9 @@ const [isExpanded, setIsExpanded] = useState(false);
           </Group>
         )}
 
-        <Collapse in={isExpanded} transitionDuration={180}>
-          <Stack gap="sm" pt="xs">
+        {isExpanded && (
+          <Paper withBorder radius="md" p="sm" mt="xs" style={{ borderColor: "rgba(255,255,255,0.16)" }}>
+          <Stack gap="sm">
             {item.description && (
               <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
                 <strong>Project description:</strong> {item.description}
@@ -273,7 +273,8 @@ const [isExpanded, setIsExpanded] = useState(false);
               <Text size="sm" c="dimmed">No description, notes, or reference images are attached to this item.</Text>
             )}
           </Stack>
-        </Collapse>
+        </Paper>
+        )}
       </Stack>
     </Card>
   );
