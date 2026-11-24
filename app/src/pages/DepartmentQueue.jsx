@@ -1509,6 +1509,47 @@ function DepartmentQueue({
     return priorityChecklistByJob[String(workOrder.production_job_id)] || {};
   }
 
+  function cardDueDateFor(workOrder) {
+    const detail = jobDetails[workOrder.production_job_id] || {};
+    const value = detail.job?.due_date || detail.project?.due_date || detail.order?.due_date || "";
+    return value ? String(value).slice(0, 10) : "";
+  }
+
+  function priorityDueDateFor(workOrder) {
+    const checklist = priorityChecklistFor(workOrder);
+    return checklist.due_date !== undefined ? checklist.due_date : cardDueDateFor(workOrder);
+  }
+
+  async function openHotPriorityModal() {
+    const selectedOrders = selectedPriorityOrders();
+    if (!selectedOrders.length) return;
+    const jobIds = selectedOrders.map((workOrder) => workOrder.production_job_id);
+    const { data, error } = await supabase
+      .from("artwork_priority_items")
+      .select("production_job_id,needs_cut,needs_paint,needs_powder_coat,needs_prep,needs_touch_up,needs_patina,needs_welding,other_requirements,notes,due_date")
+      .in("production_job_id", jobIds);
+    if (error) {
+      notifications.show({ title: "Priority Details Could Not Load", message: error.message, color: "red" });
+      return;
+    }
+    setPriorityChecklistByJob(Object.fromEntries((data || []).map((row) => [
+      String(row.production_job_id),
+      {
+        needs_cut: Boolean(row.needs_cut),
+        needs_paint: Boolean(row.needs_paint),
+        needs_powder_coat: Boolean(row.needs_powder_coat),
+        needs_prep: Boolean(row.needs_prep),
+        needs_touch_up: Boolean(row.needs_touch_up),
+        needs_patina: Boolean(row.needs_patina),
+        needs_welding: Boolean(row.needs_welding),
+        other_requirements: row.other_requirements || "",
+        notes: row.notes || "",
+        due_date: row.due_date || cardDueDateFor(selectedOrders.find((workOrder) => String(workOrder.production_job_id) === String(row.production_job_id)) || {}),
+      },
+    ])));
+    setPriorityModalOpen(true);
+  }
+
   function updatePriorityChecklist(workOrder, field, value) {
     const key = String(workOrder.production_job_id);
     setPriorityChecklistByJob((current) => ({
@@ -1546,6 +1587,7 @@ function DepartmentQueue({
           needs_touch_up: Boolean(checklist.needs_touch_up),
           needs_patina: Boolean(checklist.needs_patina),
           needs_welding: Boolean(checklist.needs_welding),
+          due_date: checklist.due_date !== undefined ? (checklist.due_date || null) : (cardDueDateFor(workOrder) || null),
           other_requirements: String(checklist.other_requirements || "").trim() || null,
           notes: String(checklist.notes || "").trim() || null,
           status: "Open",
@@ -2611,7 +2653,7 @@ function DepartmentQueue({
                 color="orange"
                 leftSection={<IconFlag size={16} />}
                 disabled={selectedWorkOrderIds.length === 0}
-                onClick={() => setPriorityModalOpen(true)}
+                onClick={openHotPriorityModal}
               >
                 Add to Hot Priority List
               </Button>
@@ -3146,6 +3188,15 @@ function DepartmentQueue({
                       <Text fw={800} size="sm">{priorityItemLabel(workOrder)}</Text>
                       <Badge color="violet" variant="light">Station: {stationFor(workOrder)}</Badge>
                     </Group>
+                    <TextInput
+                      label="Due date"
+                      type="date"
+                      value={priorityDueDateFor(workOrder)}
+                      onChange={(event) => {
+                        const value = event?.currentTarget?.value ?? event?.target?.value ?? "";
+                        updatePriorityChecklist(workOrder, "due_date", value);
+                      }}
+                    />
                     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
                       {[
                         ["needs_cut", "Needs cutting"],
