@@ -199,12 +199,10 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
 
   const today = localDateKey();
   const visibleTasks = useMemo(() => isAdministrator && viewOwnerId === "all" ? tasks : tasks.filter((task) => task.owner_user_id === (viewOwnerId || userId)), [isAdministrator, tasks, userId, viewOwnerId]);
-  const visibleArtworkPriorityItems = useMemo(() => {
-    const openItems = artworkPriorityItems.filter((item) => item.status !== "Completed");
-    if (isAdministrator && viewOwnerId === "all") return openItems;
-    const selectedProfile = profiles.find((profile) => profile.auth_user_id === (viewOwnerId || userId));
-    return openItems.filter((item) => item.employee_profile_id === selectedProfile?.id);
-  }, [artworkPriorityItems, isAdministrator, profiles, userId, viewOwnerId]);
+  const visibleArtworkPriorityItems = useMemo(
+    () => artworkPriorityItems.filter((item) => item.status !== "Completed"),
+    [artworkPriorityItems],
+  );
   const openTasks = useMemo(() => visibleTasks.filter((task) => task.status !== "Completed"), [visibleTasks]);
   const todayTasks = useMemo(() => openTasks.filter((task) => localDateKey(task.due_at) === today), [openTasks, today]);
   const overdueTasks = useMemo(() => openTasks.filter((task) => task.due_at && localDateKey(task.due_at) < today), [openTasks, today]);
@@ -304,6 +302,7 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
 
   function ArtworkPriorityCard({ item }) {
     const checklist = [
+      [item.needs_cut, "Needs cutting"],
       [item.needs_paint, "Needs paint"],
       [item.needs_powder_coat, "Needs powder coat"],
       [item.needs_prep, "Needs prep / sanding"],
@@ -315,7 +314,7 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
           <Group gap="xs" wrap="wrap">
             <Text fw={900}>{item.customer_name} — {item.item_name}</Text>
             <Badge color="red" variant="filled">Priority now</Badge>
-            <Badge color="violet" variant="light">{item.department}</Badge>
+            <Badge color="violet" variant="light">Station: {item.department}</Badge>
             <Badge color="gray" variant="light">{item.work_status}</Badge>
           </Group>
           <Text size="xs" c="dimmed">
@@ -372,14 +371,14 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     <MWPageHeader title="My Tasks" subtitle="Plan today, check work off, and keep unfinished items visible." setPage={setPage} showBack backPage="dashboard" backLabel="Command" showDashboard={false}/>
 
     <MWPanel
-      title="Artwork Priority Needed"
-      subtitle="High priority artwork Chris needs to handle. Check the work requirements and mark each item complete when finished."
+      title="Hot Priority List"
+      subtitle="Shared high priority artwork for the team. Each item shows its current station, status, and the work it still needs."
       icon={IconFlag}
       color="orange"
     >
       {visibleArtworkPriorityItems.length
         ? <Stack gap="sm">{visibleArtworkPriorityItems.map((item) => <ArtworkPriorityCard key={item.id} item={item} />)}</Stack>
-        : <Alert color="green" icon={<IconCheck size={18} />}>No artwork items are on this priority list right now.</Alert>}
+        : <Alert color="green" icon={<IconCheck size={18} />}>No artwork items are marked hot priority right now.</Alert>}
     </MWPanel>
 
     <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
