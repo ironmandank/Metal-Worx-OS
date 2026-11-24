@@ -1495,16 +1495,6 @@ function DepartmentQueue({
       : [...current, workOrderId]);
   }
 
-  function priorityItemLabel(workOrder) {
-    const detail = jobDetails[workOrder.production_job_id] || {};
-    const customerName = detail.order?.artwork_customer_name || getCustomerName(detail.customer);
-    const itemName = (detail.items || [])
-      .map((item) => item.item_name || item.description)
-      .filter(Boolean)
-      .join(", ");
-    return `${customerName} — ${itemName || detail.job?.production_job_number || workOrder.work_order_number || "Artwork item"}`;
-  }
-
   async function addSelectedToHotPriority() {
     if (prioritySaving || selectedWorkOrderIds.length === 0) return;
     const selectedOrders = workOrders
