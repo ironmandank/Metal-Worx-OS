@@ -503,10 +503,12 @@ function App() {
       return;
     }
     if (result.type === "project") {
+      setSelectedQuote(null);
       openProject(result.record);
       return;
     }
     if (result.type === "quote") {
+      setSelectedProject(null);
       setSelectedQuote(result.record);
       setPage("quoteBuilder");
       return;
@@ -734,6 +736,7 @@ function App() {
       return (
         <InventoryStorageLocations
           setPage={setPage}
+          selectedInventoryBin={selectedInventoryBin}
           setSelectedInventoryBin={setSelectedInventoryBin}
         />
       );
