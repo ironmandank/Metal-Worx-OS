@@ -156,7 +156,7 @@ async function loadArtworkPriorityDetails(rows = []) {
       images,
       department: workOrder?.department || job?.current_department || "Station not set",
       work_status: workOrder?.status || job?.status || "Open",
-      due_date: row.due_date || job?.due_date || order?.due_date || null,
+      due_date: job?.due_date || row.due_date || order?.due_date || null,
     };
   });
 }
@@ -343,7 +343,18 @@ export default function MyTasks({ setPage, authenticatedProfile }) {
     }
   }, [isAdministrator]);
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+    loadTasks();
+    const channel = supabase
+      .channel("artwork-priority-list-sync")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "artwork_priority_items",
+      }, () => loadTasks())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [loadTasks]);
 
   const today = localDateKey();
   const visibleTasks = useMemo(() => isAdministrator && viewOwnerId === "all" ? tasks : tasks.filter((task) => task.owner_user_id === (viewOwnerId || userId)), [isAdministrator, tasks, userId, viewOwnerId]);
