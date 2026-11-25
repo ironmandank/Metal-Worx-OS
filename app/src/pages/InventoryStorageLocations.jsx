@@ -85,6 +85,7 @@ function cleanCode(value) {
 
 function InventoryStorageLocations({
   setPage,
+  selectedInventoryBin,
   setSelectedInventoryBin,
 }) {
   const [loading, setLoading] = useState(true);
@@ -162,6 +163,18 @@ function InventoryStorageLocations({
       };
     });
   }, [balances, bins]);
+
+  useEffect(() => {
+    if (!selectedInventoryBin?.id || binSummaries.length === 0) return;
+    const selected = binSummaries.find(
+      (bin) => String(bin.id) === String(selectedInventoryBin.id)
+    );
+    if (!selected) return;
+    setLocationFilter(selected.location_id || "all");
+    setStatusFilter("all");
+    setPositionTypeFilter("all");
+    setSearch(selected.code || selected.name || "");
+  }, [binSummaries, selectedInventoryBin]);
 
   const filteredBins = useMemo(() => {
     const term = search.trim().toLowerCase();
