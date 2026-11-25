@@ -12,6 +12,7 @@ import {
   ThemeIcon,
 } from "@mantine/core";
 import {
+  IconArrowRight,
   IconBook2,
   IconBox,
   IconBriefcase,
@@ -203,8 +204,8 @@ export default function SearchBar({ onOpenResult }) {
             const ResultIcon = config.icon;
             return <Box key={type}>
               <Group gap="xs" mb="xs"><ThemeIcon color={config.color} variant="light"><ResultIcon size={18}/></ThemeIcon><Text fw={900}>{config.label}s</Text><Badge variant="light" color={config.color}>{items.length}</Badge></Group>
-              <Stack gap={6}>{items.map((result) => <Paper key={`${type}-${result.record.id}`} component="button" type="button" withBorder radius="md" p="sm" onClick={() => openResult(result)} style={{ cursor: "pointer", textAlign: "left", color: "inherit", background: "rgba(255,255,255,.025)" }}>
-                <Group justify="space-between" wrap="nowrap"><Box style={{ minWidth: 0 }}><Text fw={800} truncate>{result.title}</Text><Text size="sm" c="dimmed" truncate>{result.subtitle || config.label}</Text>{result.type === "order" && <><Text size="sm" mt={4} lineClamp={2}>{result.itemSummary}</Text>{result.salePrice && <Text size="sm" fw={800} c="green.4" mt={2}>{result.salePrice}</Text>}</>}</Box>{!result.active && <Badge color="gray" variant="light">Archived</Badge>}</Group>
+              <Stack gap={6}>{items.map((result) => <Paper key={`${type}-${result.record.id}`} component="button" type="button" aria-label={`Open ${result.type === "order" ? `${result.title}: ${result.itemSummary}` : result.title}`} withBorder radius="md" p="sm" onClick={() => openResult(result)} style={{ cursor: "pointer", textAlign: "left", color: "inherit", background: "rgba(255,255,255,.025)" }}>
+                <Group justify="space-between" wrap="nowrap"><Box style={{ minWidth: 0, flex: 1 }}><Text fw={800} truncate>{result.title}</Text><Text size="sm" c="dimmed" truncate>{result.subtitle || config.label}</Text>{result.type === "order" && <><Text size="sm" mt={4} lineClamp={2}>{result.itemSummary}</Text>{result.salePrice && <Text size="sm" fw={800} c="green.4" mt={2}>{result.salePrice}</Text>}</>}</Box><Group gap="xs" wrap="nowrap">{!result.active && <Badge color="gray" variant="light">Archived</Badge>}<Text size="xs" fw={800} c="red.4" visibleFrom="sm">Open</Text><IconArrowRight size={18} aria-hidden="true" /></Group></Group>
               </Paper>)}</Stack>
             </Box>;
           })}
