@@ -100,7 +100,18 @@ function getOrderItemNames(items) {
 }
 
 function getOrderTotal(order) {
-  return Number(order?.order_total ?? order?.total_amount ?? 0);
+  const recordedTotals = [order?.order_total, order?.total_amount]
+    .map((value) => value === null || value === undefined ? null : Number(value))
+    .filter((value) => Number.isFinite(value));
+  const savedTotal = recordedTotals.find((value) => value > 0);
+  if (savedTotal !== undefined) return savedTotal;
+
+  const itemsTotal = (order?.items || []).reduce((total, item) => {
+    const unitPrice = Number(item?.unit_price);
+    const quantity = Number(item?.quantity) || 1;
+    return Number.isFinite(unitPrice) ? total + unitPrice * quantity : total;
+  }, 0);
+  return itemsTotal > 0 ? itemsTotal : recordedTotals[0] ?? 0;
 }
 
 function getDepositAmount(order) {
@@ -521,7 +532,7 @@ function CustomerOrderDetails({
 
   const customer = order.customer;
   const items = order.items || [];
-  const customerName = getCustomerName(customer);
+  const customerName = order.artwork_customer_name || getCustomerName(customer);
   const companyName = getCustomerCompany(customer);
   const itemNames = getOrderItemNames(items);
   const orderTotal = getOrderTotal(order);
