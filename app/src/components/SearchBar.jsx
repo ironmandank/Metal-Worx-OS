@@ -52,30 +52,75 @@ async function loadGlobalResults(rawTerm) {
   if (term.length < 2) return [];
   const pattern = `%${term}%`;
 
-  const [customers, orders, projects, quotes, jobs, inventory, bins, manuals] = await Promise.all([
+  const [customers, orders, projects, quotes, jobs, inventory, bins, manuals, matchingOrderItems] = await Promise.all([
     supabase.from("customers").select("id,customer_number,first_name,last_name,company_name,phone,email,is_active").or(`customer_number.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone.ilike.${pattern},email.ilike.${pattern}`).limit(8),
-    supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner").or(`order_number.ilike.${pattern},artwork_customer_name.ilike.${pattern},order_owner.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
+    supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount").or(`order_number.ilike.${pattern},artwork_customer_name.ilike.${pattern},order_owner.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
     supabase.from("projects").select("id,project_number,project_name,status,assigned_to,contact_name,work_location,is_active").or(`project_number.ilike.${pattern},project_name.ilike.${pattern},contact_name.ilike.${pattern},work_location.ilike.${pattern}`).limit(8),
     supabase.from("project_quotes").select("id,quote_number,quote_title,customer_name,project_name,status,total_amount,document_type,quote_type,is_active").or(`quote_number.ilike.${pattern},quote_title.ilike.${pattern},customer_name.ilike.${pattern},project_name.ilike.${pattern}`).limit(8),
     supabase.from("production_jobs").select("id,production_job_number,status,current_department,due_date,is_active").or(`production_job_number.ilike.${pattern},current_department.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
     supabase.from("inventory_items").select("id,item_number,sku,name,description,manufacturer_part_number,is_active,primary_image_url").or(`item_number.ilike.${pattern},sku.ilike.${pattern},name.ilike.${pattern},description.ilike.${pattern},manufacturer_part_number.ilike.${pattern}`).limit(8),
     supabase.from("inventory_bins").select("id,name,code,zone,description,is_active").or(`name.ilike.${pattern},code.ilike.${pattern},zone.ilike.${pattern},description.ilike.${pattern}`).limit(8),
     supabase.from("knowledge_manuals").select("id,title,category,manufacturer,description,file_name").or(`title.ilike.${pattern},category.ilike.${pattern},manufacturer.ilike.${pattern},description.ilike.${pattern},file_name.ilike.${pattern}`).limit(8),
+    supabase.from("customer_order_items").select("id,order_id,item_name,description,notes,quantity,unit_price").or(`item_name.ilike.${pattern},description.ilike.${pattern},notes.ilike.${pattern}`).limit(40),
   ]);
 
-  const firstError = [customers, orders, projects, quotes, jobs, inventory, bins, manuals].find((result) => result.error)?.error;
+  const firstError = [customers, orders, projects, quotes, jobs, inventory, bins, manuals, matchingOrderItems].find((result) => result.error)?.error;
   if (firstError) throw firstError;
+
+  const directOrders = orders.data || [];
+  const matchingOrderIds = [...new Set((matchingOrderItems.data || []).map((item) => item.order_id).filter(Boolean))];
+  const additionalOrderIds = matchingOrderIds.filter((id) => !directOrders.some((order) => String(order.id) === String(id)));
+  const additionalOrders = additionalOrderIds.length
+    ? await supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount").in("id", additionalOrderIds)
+    : { data: [], error: null };
+  if (additionalOrders.error) throw additionalOrders.error;
+  const orderRows = [...directOrders, ...(additionalOrders.data || [])];
+  const orderIds = orderRows.map((order) => order.id);
+  const itemsResult = orderIds.length
+    ? await supabase.from("customer_order_items").select("id,order_id,item_name,description,notes,quantity,unit_price").in("order_id", orderIds)
+    : { data: [], error: null };
+  if (itemsResult.error) throw itemsResult.error;
+  const itemsByOrder = (itemsResult.data || []).reduce((groups, item) => {
+    groups[item.order_id] = groups[item.order_id] || [];
+    groups[item.order_id].push(item);
+    return groups;
+  }, {});
+  const money = (value) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
+  const describeOrder = (row) => {
+    const orderItems = itemsByOrder[row.id] || [];
+    const itemSummary = orderItems.map((item) => {
+      const name = item.item_name || item.description || item.notes;
+      if (!name) return null;
+      const quantity = Number(item.quantity) > 1 ? ` × ${item.quantity}` : "";
+      return `${name}${quantity}`;
+    }).filter(Boolean).join(", ");
+    const pricedItems = orderItems.filter((item) => item.unit_price !== null && item.unit_price !== undefined && Number.isFinite(Number(item.unit_price)));
+    const lineTotal = pricedItems.length
+      ? pricedItems.reduce((sum, item) => sum + Number(item.unit_price) * (Number(item.quantity) || 1), 0)
+      : null;
+    const total = row.total_amount !== null && row.total_amount !== undefined && Number.isFinite(Number(row.total_amount))
+      ? Number(row.total_amount)
+      : lineTotal;
+    return {
+      type: "order", record: row,
+      title: row.artwork_customer_name || row.order_number || "Customer order",
+      subtitle: [row.order_number, row.status, row.order_owner].filter(Boolean).join(" · "),
+      itemSummary: itemSummary || "Item details not listed",
+      salePrice: total === null ? "" : `Recorded price: ${money(total)}`,
+      active: !["Completed", "Closed", "Cancelled", "Canceled"].includes(row.status),
+    };
+  };
 
   return [
     ...(customers.data || []).map((row) => ({ type: "customer", record: row, title: [row.first_name, row.last_name].filter(Boolean).join(" ") || row.company_name || "Customer", subtitle: [row.company_name, row.customer_number, row.phone].filter(Boolean).join(" · "), active: row.is_active !== false })),
-    ...(orders.data || []).map((row) => ({ type: "order", record: row, title: row.artwork_customer_name || row.order_number || "Customer order", subtitle: [row.order_number, row.status, row.order_owner].filter(Boolean).join(" · "), active: !["Completed", "Closed", "Cancelled", "Canceled"].includes(row.status) })),
+    ...orderRows.map(describeOrder),
     ...(projects.data || []).map((row) => ({ type: "project", record: row, title: row.project_name || row.project_number || "Outside project", subtitle: [row.project_number, row.status, row.assigned_to].filter(Boolean).join(" · "), active: row.is_active !== false })),
     ...(quotes.data || []).map((row) => ({ type: "quote", record: row, title: row.quote_title || row.project_name || row.quote_number || "Quote", subtitle: [row.quote_number, row.customer_name, row.document_type || row.quote_type, row.status].filter(Boolean).join(" · "), active: row.is_active !== false })),
     ...(jobs.data || []).map((row) => ({ type: "productionJob", record: row, title: row.production_job_number || "Production job", subtitle: [row.current_department, row.status].filter(Boolean).join(" · "), active: row.is_active !== false })),
     ...(inventory.data || []).map((row) => ({ type: "inventory", record: row, title: row.name || row.item_number || "Inventory item", subtitle: [row.item_number, row.sku, row.manufacturer_part_number].filter(Boolean).join(" · "), active: row.is_active !== false })),
     ...(bins.data || []).map((row) => ({ type: "crate", record: row, title: row.code || row.name || "Storage location", subtitle: [row.name, row.zone, row.description].filter((value, index, values) => value && values.indexOf(value) === index).join(" · "), active: row.is_active !== false })),
     ...(manuals.data || []).map((row) => ({ type: "manual", record: row, title: row.title || row.file_name || "Manual", subtitle: [row.category, row.manufacturer, row.file_name].filter(Boolean).join(" · "), active: true })),
-  ].filter((result) => includesTerm([result.title, result.subtitle], term));
+  ].filter((result) => includesTerm([result.title, result.subtitle, result.itemSummary], term));
 }
 
 export default function SearchBar({ onOpenResult }) {
@@ -157,7 +202,7 @@ export default function SearchBar({ onOpenResult }) {
             return <Box key={type}>
               <Group gap="xs" mb="xs"><ThemeIcon color={config.color} variant="light"><ResultIcon size={18}/></ThemeIcon><Text fw={900}>{config.label}s</Text><Badge variant="light" color={config.color}>{items.length}</Badge></Group>
               <Stack gap={6}>{items.map((result) => <Paper key={`${type}-${result.record.id}`} component="button" type="button" withBorder radius="md" p="sm" onClick={() => openResult(result)} style={{ cursor: "pointer", textAlign: "left", color: "inherit", background: "rgba(255,255,255,.025)" }}>
-                <Group justify="space-between" wrap="nowrap"><Box style={{ minWidth: 0 }}><Text fw={800} truncate>{result.title}</Text><Text size="sm" c="dimmed" truncate>{result.subtitle || config.label}</Text></Box>{!result.active && <Badge color="gray" variant="light">Archived</Badge>}</Group>
+                <Group justify="space-between" wrap="nowrap"><Box style={{ minWidth: 0 }}><Text fw={800} truncate>{result.title}</Text><Text size="sm" c="dimmed" truncate>{result.subtitle || config.label}</Text>{result.type === "order" && <><Text size="sm" mt={4} lineClamp={2}>{result.itemSummary}</Text>{result.salePrice && <Text size="sm" fw={800} c="green.4" mt={2}>{result.salePrice}</Text>}</>}</Box>{!result.active && <Badge color="gray" variant="light">Archived</Badge>}</Group>
               </Paper>)}</Stack>
             </Box>;
           })}
