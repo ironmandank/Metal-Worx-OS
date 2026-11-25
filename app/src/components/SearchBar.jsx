@@ -54,7 +54,7 @@ async function loadGlobalResults(rawTerm) {
 
   const [customers, orders, projects, quotes, jobs, inventory, bins, manuals, matchingOrderItems] = await Promise.all([
     supabase.from("customers").select("id,customer_number,first_name,last_name,company_name,phone,email,is_active").or(`customer_number.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},company_name.ilike.${pattern},phone.ilike.${pattern},email.ilike.${pattern}`).limit(8),
-    supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount").or(`order_number.ilike.${pattern},artwork_customer_name.ilike.${pattern},order_owner.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
+    supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount,notes").or(`order_number.ilike.${pattern},artwork_customer_name.ilike.${pattern},order_owner.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
     supabase.from("projects").select("id,project_number,project_name,status,assigned_to,contact_name,work_location,is_active").or(`project_number.ilike.${pattern},project_name.ilike.${pattern},contact_name.ilike.${pattern},work_location.ilike.${pattern}`).limit(8),
     supabase.from("project_quotes").select("id,quote_number,quote_title,customer_name,project_name,status,total_amount,document_type,quote_type,is_active").or(`quote_number.ilike.${pattern},quote_title.ilike.${pattern},customer_name.ilike.${pattern},project_name.ilike.${pattern}`).limit(8),
     supabase.from("production_jobs").select("id,production_job_number,status,current_department,due_date,is_active").or(`production_job_number.ilike.${pattern},current_department.ilike.${pattern},notes.ilike.${pattern}`).limit(8),
@@ -71,7 +71,7 @@ async function loadGlobalResults(rawTerm) {
   const matchingOrderIds = [...new Set((matchingOrderItems.data || []).map((item) => item.order_id).filter(Boolean))];
   const additionalOrderIds = matchingOrderIds.filter((id) => !directOrders.some((order) => String(order.id) === String(id)));
   const additionalOrders = additionalOrderIds.length
-    ? await supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount").in("id", additionalOrderIds)
+    ? await supabase.from("customer_orders").select("id,order_number,status,due_date,artwork_customer_name,order_owner,total_amount,notes").in("id", additionalOrderIds)
     : { data: [], error: null };
   if (additionalOrders.error) throw additionalOrders.error;
   const orderRows = [...directOrders, ...(additionalOrders.data || [])];
@@ -98,12 +98,14 @@ async function loadGlobalResults(rawTerm) {
     const lineTotal = pricedItems.length
       ? pricedItems.reduce((sum, item) => sum + Number(item.unit_price) * (Number(item.quantity) || 1), 0)
       : null;
-    const total = row.total_amount !== null && row.total_amount !== undefined && Number.isFinite(Number(row.total_amount))
+    const orderTotal = row.total_amount !== null && row.total_amount !== undefined && Number.isFinite(Number(row.total_amount))
       ? Number(row.total_amount)
-      : lineTotal;
+      : null;
+    const total = orderTotal > 0 ? orderTotal : lineTotal > 0 ? lineTotal : null;
     return {
       type: "order", record: row,
       title: row.artwork_customer_name || row.order_number || "Customer order",
+      searchText: [row.notes, ...orderItems.flatMap((item) => [item.item_name, item.description, item.notes])].filter(Boolean).join(" "),
       subtitle: [row.order_number, row.status, row.order_owner].filter(Boolean).join(" · "),
       itemSummary: itemSummary || "Item details not listed",
       salePrice: total === null ? "" : `Recorded price: ${money(total)}`,
@@ -120,7 +122,7 @@ async function loadGlobalResults(rawTerm) {
     ...(inventory.data || []).map((row) => ({ type: "inventory", record: row, title: row.name || row.item_number || "Inventory item", subtitle: [row.item_number, row.sku, row.manufacturer_part_number].filter(Boolean).join(" · "), active: row.is_active !== false })),
     ...(bins.data || []).map((row) => ({ type: "crate", record: row, title: row.code || row.name || "Storage location", subtitle: [row.name, row.zone, row.description].filter((value, index, values) => value && values.indexOf(value) === index).join(" · "), active: row.is_active !== false })),
     ...(manuals.data || []).map((row) => ({ type: "manual", record: row, title: row.title || row.file_name || "Manual", subtitle: [row.category, row.manufacturer, row.file_name].filter(Boolean).join(" · "), active: true })),
-  ].filter((result) => includesTerm([result.title, result.subtitle, result.itemSummary], term));
+  ].filter((result) => includesTerm([result.title, result.subtitle, result.itemSummary, result.searchText], term));
 }
 
 export default function SearchBar({ onOpenResult }) {
