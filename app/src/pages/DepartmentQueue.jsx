@@ -970,6 +970,10 @@ function DepartmentQueue({
         supabase.from("production_jobs").update({
           due_date: toDateString(designDraft.dueDate),
         }).eq("id", editDesignTarget.production_job_id),
+        supabase.from("artwork_priority_items").update({
+          due_date: toDateString(designDraft.dueDate),
+          updated_at: new Date().toISOString(),
+        }).eq("production_job_id", editDesignTarget.production_job_id).eq("status", "Open"),
       ];
 
       if (detail?.order?.id) {
